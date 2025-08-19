@@ -17,7 +17,7 @@ processor, model = load_model()
 # --- Interface Streamlit ---
 st.set_page_config(page_title="Vision AI", page_icon="🖼️")
 
-st.title("🖼️ BLIP - Image Captioning")
+st.title("🖼️ Vison AI")
 st.write("Charge une image et laisse le modèle **BLIP** générer une description automatique.")
 
 # Upload image
