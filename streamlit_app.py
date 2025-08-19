@@ -15,10 +15,10 @@ def load_model():
 processor, model = load_model()
 
 # --- Interface Streamlit ---
-st.set_page_config(page_title="BLIP Image Captioning", page_icon="🖼️")
+st.set_page_config(page_title="Vision AI", page_icon="🖼️")
 
 st.title("🖼️ BLIP - Image Captioning")
-st.write("Charge une image et laisse le modèle **BLIP** générer une légende automatique.")
+st.write("Charge une image et laisse le modèle **BLIP** générer une description automatique.")
 
 # Upload image
 uploaded_file = st.file_uploader("Choisis une image", type=["jpg", "jpeg", "png"])
