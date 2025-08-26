@@ -367,5 +367,5 @@ with st.expander("ℹ️ Comment utiliser Vision AI Chat"):
     
     ### 🔐 **Sécurité**
     - Ajoutez votre clé API Cohere dans les secrets Streamlit
-    - Format: `COHERE_API_KEY = "votre_cle_ici"`
+    - Format: `COHERE_API_KEY = "Uw540GN865rNyiOs3VMnWhRaYQ97KAfudAHAnXzJ"`
     """)
