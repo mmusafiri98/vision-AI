@@ -210,7 +210,7 @@ if "co" not in st.session_state:
 # --- UI HEADER ---
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 st.markdown('<h1 class="main-header">🎯 Vision AI Chat</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Décrivez vos images & discutez avec l'IA</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Décrivez vos images &amp; discutez avec l\'IA</p>', unsafe_allow_html=True)
 
 # Afficher le statut des services
 col1, col2 = st.columns(2)
@@ -367,5 +367,5 @@ with st.expander("ℹ️ Comment utiliser Vision AI Chat"):
     
     ### 🔐 **Sécurité**
     - Ajoutez votre clé API Cohere dans les secrets Streamlit
-    - Format: `COHERE_API_KEY = "Uw540GN865rNyiOs3VMnWhRaYQ97KAfudAHAnXzJ"`
+    - Format: `COHERE_API_KEY = "votre_cle_ici"`
     """)
