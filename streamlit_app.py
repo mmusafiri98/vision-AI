@@ -4,7 +4,6 @@ from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import torch
 from io import BytesIO
-import base64
 from gradio_client import Client
 
 # --- CONFIG ---
@@ -80,7 +79,7 @@ for message in st.session_state.chat_history:
             <div class="bubble user-bubble">{message['content']}</div>
         </div>
         """, unsafe_allow_html=True)
-        if "image" in message and message["image"] is not None:
+        if "image" in message:
             st.image(message["image"], caption="Image uploadée", width=300)
     else:
         st.markdown(f"""
@@ -101,14 +100,6 @@ with st.form("chat_form", clear_on_submit=True):
         submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
 
 # --- TRAITEMENT ---
-def base64_to_image(b64_string):
-    try:
-        img_bytes = base64.b64decode(b64_string)
-        return Image.open(BytesIO(img_bytes)).convert("RGB")
-    except Exception as e:
-        st.error(f"Erreur lors de la conversion base64: {e}")
-        return None
-
 if submit:
     user_msg = ""
     caption_text = ""
@@ -136,24 +127,9 @@ if submit:
             prompt_enhance=True,
             api_name="/infer"
         )
-
-        # Gestion base64 ou file path
-        generated_image = None
-        if isinstance(result, str):
-            if result.startswith("data:image"):  # base64
-                b64_data = result.split(",")[1]
-                generated_image = base64_to_image(b64_data)
-            else:
-                generated_image = Image.open(result).convert("RGB")
-        elif isinstance(result, BytesIO):
-            generated_image = Image.open(result).convert("RGB")
-
-        if generated_image:
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": "Voici l'image générée par l'IA",
-                "generated_image": generated_image
-            })
+        # Le résultat est un chemin vers l'image générée ou un b64 ?
+        generated_image = Image.open(result) if isinstance(result, str) else result
+        st.session_state.chat_history.append({"role": "assistant", "content=": "Voici l'image générée par l'IA", "generated_image": generated_image})
 
     st.rerun()
 
@@ -167,5 +143,6 @@ if st.session_state.chat_history:
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
