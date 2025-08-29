@@ -7,6 +7,7 @@ from gradio_client import Client
 import json
 import os
 import uuid
+import time
 
 # === CONFIG ===
 st.set_page_config(
@@ -15,11 +16,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# === PATH POUR LES CHATS MULTIPLES ===
+# === PATH PER LE CHAT MULTIPLI ===
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
 
-# === SYSTEM PROMPT INVISIBLE ===
+# === SYSTEM PROMPT ===
 SYSTEM_PROMPT = """
 You are Vision AI.
 Your role is to help users by describing uploaded images with precision
@@ -43,8 +44,7 @@ def load_chat_history(chat_id):
     return []
 
 def list_chats():
-    files = [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
-    return sorted(files)
+    return sorted([f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")])
 
 def get_chat_title(chat_id):
     history = load_chat_history(chat_id)
@@ -56,26 +56,26 @@ def get_chat_title(chat_id):
 # === CSS ===
 st.markdown("""
 <style>
-    body, .stApp { font-family: 'Inter', sans-serif; background: #f9fafb; }
-    .main-header { text-align: center; font-size: 2.5rem; font-weight: 700; color: #2d3748; margin-bottom: 0.5rem; }
-    .subtitle { text-align: center; font-size: 1.1rem; color: #718096; margin-bottom: 2rem; }
-    .chat-container { max-width: 900px; margin: auto; padding: 20px; }
-    .message-user, .message-ai { display: flex; margin: 15px 0; }
-    .message-user { justify-content: flex-end; }
-    .message-ai { justify-content: flex-start; }
-    .bubble { border-radius: 16px; padding: 12px 16px; max-width: 70%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; }
-    .user-bubble { background: #4299e1; color: white; }
-    .ai-bubble { background: white; border: 1px solid #e2e8f0; color: #2d3748; }
-    .uploaded-image { max-width: 300px; border-radius: 12px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .form-container { background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 20px; }
-    .stButton button { background: #4299e1; color: white; border-radius: 8px; border: none; padding: 8px 20px; font-weight: 600; }
-    .stButton button:hover { background: #3182ce; }
-    .stApp > footer {visibility: hidden;}
-    .stApp > header {visibility: hidden;}
+body, .stApp { font-family: 'Inter', sans-serif; background: #f9fafb; }
+.main-header { text-align: center; font-size: 2.5rem; font-weight: 700; color: #2d3748; margin-bottom: 0.5rem; }
+.subtitle { text-align: center; font-size: 1.1rem; color: #718096; margin-bottom: 2rem; }
+.chat-container { max-width: 900px; margin: auto; padding: 20px; }
+.message-user, .message-ai { display: flex; margin: 15px 0; }
+.message-user { justify-content: flex-end; }
+.message-ai { justify-content: flex-start; }
+.bubble { border-radius: 16px; padding: 12px 16px; max-width: 70%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; }
+.user-bubble { background: #4299e1; color: white; }
+.ai-bubble { background: white; border: 1px solid #e2e8f0; color: #2d3748; }
+.uploaded-image { max-width: 300px; border-radius: 12px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+.form-container { background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 20px; }
+.stButton button { background: #4299e1; color: white; border-radius: 8px; border: none; padding: 8px 20px; font-weight: 600; }
+.stButton button:hover { background: #3182ce; }
+.stApp > footer {visibility: hidden;}
+.stApp > header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# === CHARGEMENT BLIP ===
+# === CARICAMENTO BLIP ===
 @st.cache_resource
 def load_model():
     processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
@@ -97,115 +97,106 @@ if "chat_id" not in st.session_state:
     st.session_state.chat_id = str(uuid.uuid4())
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
-
 if "processor" not in st.session_state or "model" not in st.session_state:
-    with st.spinner("🤖 Chargement du modèle BLIP..."):
+    with st.spinner("🤖 Caricamento modello BLIP..."):
         processor, model = load_model()
         st.session_state.processor = processor
         st.session_state.model = model
-
 if "qwen_client" not in st.session_state:
     st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
 
 # === SIDEBAR ===
-st.sidebar.title("📂 Gestion des chats")
-
-if st.sidebar.button("➕ Nouvelle chat"):
+st.sidebar.title("📂 Gestione chat")
+if st.sidebar.button("➕ Nuova chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
     st.rerun()
 
 available_chats = list_chats()
-chat_titles = [get_chat_title(cid) for cid in available_chats]
-
 if available_chats:
     selected_index = available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
-    selected_chat = st.sidebar.selectbox("💾 Vos discussions :", available_chats, format_func=lambda x: get_chat_title(x), index=selected_index)
-
-    if selected_chat and selected_chat != st.session_state.chat_id:
+    selected_chat = st.sidebar.selectbox(
+        "💾 Discussioni salvate",
+        available_chats,
+        format_func=lambda x: get_chat_title(x),
+        index=selected_index
+    )
+    if selected_chat != st.session_state.chat_id:
         st.session_state.chat_id = selected_chat
         st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
         st.rerun()
 
-# === UI HEADER ===
+# === HEADER ===
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 st.markdown('<h1 class="main-header">🎯 Vision AI Chat</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Décrivez vos images ou discutez librement avec l\'IA</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Descrivi le tue immagini o chatta liberamente con l\'IA</p>', unsafe_allow_html=True)
 
-# === AFFICHAGE CHAT ===
-for message in st.session_state.chat_history:
-    if message["role"] == "user":
-        st.markdown(f"""
-        <div class="message-user">
-            <div class="bubble user-bubble">{message['content']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        if "image" in message and message["image"] is not None:
-            st.image(message["image"], caption="Image uploadée", width=300)
+# === MOSTRA CHAT ===
+for msg in st.session_state.chat_history:
+    if msg["role"] == "user":
+        st.markdown(f'<div class="message-user"><div class="bubble user-bubble">{msg["content"]}</div></div>', unsafe_allow_html=True)
+        if msg.get("image"):
+            st.image(msg["image"], caption="Immagine caricata", width=300)
     else:
-        st.markdown(f"""
-        <div class="message-ai">
-            <div class="bubble ai-bubble"><b>🤖 Vision AI:</b> {message['content']}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="message-ai"><div class="bubble ai-bubble"><b>🤖 Vision AI:</b> {msg["content"]}</div></div>', unsafe_allow_html=True)
 
-# === FORMULAIRE ===
+# === FORM ===
 with st.form("chat_form", clear_on_submit=True):
     col1, col2 = st.columns([2, 1])
     with col1:
-        uploaded_file = st.file_uploader("📤 Uploadez une image (optionnel)", type=["jpg", "jpeg", "png"])
+        uploaded_file = st.file_uploader("📤 Carica immagine (opzionale)", type=["jpg","jpeg","png"])
     with col2:
-        submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
-    user_message = st.text_input("💬 Votre message (optionnel)")
+        submit = st.form_submit_button("🚀 Invia")
+    user_message = st.text_input("💬 Messaggio (opzionale)")
 
-# === TRAITEMENT ===
+# === TRATTAMENTO ===
 if submit:
-    # Construire l'historique pour Qwen
     history_for_qwen = []
     for i, msg in enumerate(st.session_state.chat_history):
-        if msg["role"] == "user" and i + 1 < len(st.session_state.chat_history):
-            next_msg = st.session_state.chat_history[i + 1]
-            if next_msg["role"] == "assistant":
+        if msg["role"]=="user" and i+1 < len(st.session_state.chat_history):
+            next_msg = st.session_state.chat_history[i+1]
+            if next_msg["role"]=="assistant":
                 history_for_qwen.append((msg["content"], next_msg["content"]))
 
-    if uploaded_file is not None:
+    # "thinking..." indicator
+    placeholder = st.empty()
+    placeholder.markdown('<div class="bubble ai-bubble"><b>🤖 Vision AI sta pensando...</b></div>', unsafe_allow_html=True)
+    st.session_state.chat_history.append({"role":"user", "content": user_message.strip(), "image": None})
+
+    # Genera caption se c'è immagine
+    if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        user_text = f"Description de l'image: '{caption}'"
+        user_text = f"Descrizione immagine: '{caption}'"
         if user_message.strip():
-            user_text += f" L'utilisateur demande: '{user_message.strip()}'"
+            user_text += f" Domanda utente: '{user_message.strip()}'"
+    else:
+        user_text = user_message.strip()
 
+    # Chiamata Qwen
+    try:
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
             history=history_for_qwen,
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
+    except Exception as e:
+        qwen_response = f"⚠️ Errore nel modello: {e}"
 
-        st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
-        st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
-
-    elif user_message.strip():
-        qwen_response = st.session_state.qwen_client.predict(
-            query=user_message.strip(),
-            history=history_for_qwen,
-            system=SYSTEM_PROMPT,
-            api_name="/model_chat"
-        )
-
-        st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
-        st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
-
+    # Aggiorna chat
+    st.session_state.chat_history.append({"role":"assistant","content": qwen_response})
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-    st.rerun()
+    placeholder.empty()
+    st.experimental_rerun()
 
 # === RESET ===
 if st.session_state.chat_history:
     st.markdown("---")
-    col1, col2, col3 = st.columns([1, 1, 1])
+    col1, col2, col3 = st.columns([1,1,1])
     with col2:
-        if st.button("🗑️ Vider la discussion", use_container_width=True):
+        if st.button("🗑️ Cancella chat"):
             st.session_state.chat_history = []
             save_chat_history([], st.session_state.chat_id)
             st.rerun()
