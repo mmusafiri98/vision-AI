@@ -74,7 +74,7 @@ st.markdown("""
     .message-user, .message-ai { display: flex; margin: 15px 0; }
     .message-user { justify-content: flex-end; }
     .message-ai { justify-content: flex-start; }
-    .bubble { border-radius: 16px; padding: 12px 16px; max-width: 85%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; }
+    .bubble { border-radius: 16px; padding: 12px 16px; max-width: 70%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; }
     .user-bubble { background: #4299e1; color: white; }
     .ai-bubble { background: white; border: 1px solid #e2e8f0; color: #2d3748; }
     .uploaded-image { max-width: 300px; border-radius: 12px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -155,13 +155,11 @@ for message in st.session_state.chat_history:
         if "image" in message and message["image"] is not None:
             st.image(message["image"], caption="Image uploadée", width=300)
     else:
-        # 👉 Render la réponse AI comme du Markdown (supporte code, titres, etc.)
         st.markdown(f"""
-        <div class="message-ai bubble ai-bubble">
-        <b>🤖 Vision AI:</b><br>
+        <div class="message-ai">
+            <div class="bubble ai-bubble"><b>🤖 Vision AI:</b><br>{message['content']}</div>
         </div>
         """, unsafe_allow_html=True)
-        st.markdown(message["content"], unsafe_allow_html=False)
 
 # === FORMULAIRE ===
 with st.form("chat_form", clear_on_submit=True):
