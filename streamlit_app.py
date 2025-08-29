@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# === PATH PER LE CHAT MULTIPLE ===
+# === PATH POUR LES CHATS MULTIPLES ===
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
 
@@ -45,6 +45,13 @@ def load_chat_history(chat_id):
 def list_chats():
     files = [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
     return sorted(files)
+
+def get_chat_title(chat_id):
+    history = load_chat_history(chat_id)
+    for msg in history:
+        if msg["role"] == "user" and msg["content"].strip():
+            return msg["content"][:40] + "..." if len(msg["content"]) > 40 else msg["content"]
+    return "Nouvelle discussion"
 
 # === CSS ===
 st.markdown("""
@@ -110,12 +117,16 @@ if st.sidebar.button("➕ Nouvelle chat"):
     st.rerun()
 
 available_chats = list_chats()
-selected_chat = st.sidebar.selectbox("💾 Vos discussions sauvegardées :", available_chats, index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0)
+chat_titles = [get_chat_title(cid) for cid in available_chats]
 
-if selected_chat and selected_chat != st.session_state.chat_id:
-    st.session_state.chat_id = selected_chat
-    st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
-    st.rerun()
+if available_chats:
+    selected_index = available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
+    selected_chat = st.sidebar.selectbox("💾 Vos discussions :", available_chats, format_func=lambda x: get_chat_title(x), index=selected_index)
+
+    if selected_chat and selected_chat != st.session_state.chat_id:
+        st.session_state.chat_id = selected_chat
+        st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
+        st.rerun()
 
 # === UI HEADER ===
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
@@ -150,32 +161,42 @@ with st.form("chat_form", clear_on_submit=True):
 
 # === TRAITEMENT ===
 if submit:
+    # Construire l'historique pour Qwen
+    history_for_qwen = []
+    for i, msg in enumerate(st.session_state.chat_history):
+        if msg["role"] == "user" and i + 1 < len(st.session_state.chat_history):
+            next_msg = st.session_state.chat_history[i + 1]
+            if next_msg["role"] == "assistant":
+                history_for_qwen.append((msg["content"], next_msg["content"]))
+
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
         user_text = f"Description de l'image: '{caption}'"
         if user_message.strip():
             user_text += f" L'utilisateur demande: '{user_message.strip()}'"
+
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
-            history=[],
+            history=history_for_qwen,
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
+
         st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     elif user_message.strip():
         qwen_response = st.session_state.qwen_client.predict(
             query=user_message.strip(),
-            history=[],
+            history=history_for_qwen,
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
+
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
-    # Sauvegarde persistente
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
     st.rerun()
 
