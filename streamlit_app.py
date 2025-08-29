@@ -33,8 +33,20 @@ Always answer naturally as Vision AI.
 # === UTILS ===
 def save_chat_history(history, chat_id):
     file_path = os.path.join(CHAT_DIR, f"{chat_id}.json")
+    # Nettoyer l'historique pour la sérialisation JSON
+    serializable_history = []
+    for msg in history:
+        clean_msg = {
+            "role": msg["role"],
+            "content": msg["content"]
+        }
+        # Ne pas sauvegarder les objets Image, juste indiquer qu'il y en avait une
+        if msg.get("image") is not None:
+            clean_msg["had_image"] = True
+        serializable_history.append(clean_msg)
+    
     with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+        json.dump(serializable_history, f, ensure_ascii=False, indent=2)
 
 def load_chat_history(chat_id):
     file_path = os.path.join(CHAT_DIR, f"{chat_id}.json")
@@ -126,30 +138,15 @@ if "processor" not in st.session_state or "model" not in st.session_state:
         st.session_state.processor = processor
         st.session_state.model = model
 
-# Tentative de connexion au client Gradio avec gestion d'erreur
+# Tentative de connexion au client Qwen2-72B-Instruct
 if "chat_client" not in st.session_state:
     st.session_state.chat_client = None
     try:
-        # Essai avec différents espaces Hugging Face populaires
-        spaces_to_try = [
-            "microsoft/DialoGPT-medium",
-            "huggingface/CodeBERTa-small-v1",
-            "microsoft/GODEL-v1_1-base-seq2seq"
-        ]
-        
-        for space in spaces_to_try:
-            try:
-                st.session_state.chat_client = Client(space)
-                st.session_state.space_name = space
-                break
-            except:
-                continue
-                
-        if st.session_state.chat_client is None:
-            st.warning("⚠️ Impossible de se connecter aux modèles externes. Mode de réponse locale activé.")
-            
+        st.session_state.chat_client = Client("Qwen/Qwen2-72B-Instruct")
+        st.session_state.space_name = "Qwen/Qwen2-72B-Instruct"
+        st.session_state.api_name = "/model_chat"
     except Exception as e:
-        st.warning("⚠️ Connexion aux modèles externes échouée. Mode de réponse locale activé.")
+        st.warning("⚠️ Impossible de se connecter à Qwen2-72B-Instruct. Mode de réponse locale activé.")
         st.session_state.chat_client = None
 
 # === SIDEBAR ===
@@ -178,7 +175,7 @@ if available_chats:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔗 Statut")
 if st.session_state.chat_client is not None:
-    st.sidebar.success(f"✅ Connecté à {st.session_state.space_name}")
+    st.sidebar.success(f"✅ Connecté à Qwen2-72B-Instruct")
 else:
     st.sidebar.info("ℹ️ Mode local activé")
 
@@ -191,8 +188,11 @@ st.markdown('<p class="subtitle">Décrivez vos images ou discutez librement avec
 for i, msg in enumerate(st.session_state.chat_history):
     if msg["role"] == "user":
         st.markdown(f'<div class="message-user"><div class="bubble user-bubble">{msg["content"]}</div></div>', unsafe_allow_html=True)
-        if msg.get("image"):
+        # Afficher l'image si elle existe dans la session courante
+        if msg.get("image") is not None:
             st.image(msg["image"], width=300, caption="Image uploadée")
+        elif msg.get("had_image"):
+            st.markdown('<p style="text-align: right; color: #718096; font-size: 0.8rem; font-style: italic;">📷 Image était attachée</p>', unsafe_allow_html=True)
     else:
         st.markdown(f'<div class="message-ai"><div class="bubble ai-bubble"><b>🤖 Vision AI:</b> {msg["content"]}</div></div>', unsafe_allow_html=True)
 
@@ -240,24 +240,33 @@ if submit and (uploaded_file or user_message.strip()):
         # Génération de la réponse
         try:
             if st.session_state.chat_client is not None:
-                # Tentative avec le client Gradio
+                # Utilisation de Qwen2-72B-Instruct
                 try:
-                    # Construction de l'historique pour le modèle
-                    history_context = ""
-                    for msg in st.session_state.chat_history[-6:]:  # Derniers 6 messages pour le contexte
+                    # Construction de l'historique pour Qwen (format requis: list of tuples)
+                    history_for_qwen = []
+                    temp_user = None
+                    
+                    for msg in st.session_state.chat_history[-10:]:  # Derniers 10 messages
                         if msg["role"] == "user":
-                            history_context += f"Utilisateur: {msg['content']}\n"
-                        else:
-                            history_context += f"Assistant: {msg['content']}\n"
+                            temp_user = msg["content"]
+                        elif msg["role"] == "assistant" and temp_user is not None:
+                            history_for_qwen.append((temp_user, msg["content"]))
+                            temp_user = None
                     
-                    full_prompt = f"{SYSTEM_PROMPT}\n\nHistorique:\n{history_context}\n\nNouveau message: {user_text}"
+                    # Appel au modèle Qwen2-72B-Instruct avec la bonne API
+                    ai_response = st.session_state.chat_client.predict(
+                        query=user_text,
+                        history=history_for_qwen,
+                        system=SYSTEM_PROMPT,
+                        api_name=st.session_state.api_name
+                    )
                     
-                    # Appel au modèle (méthode générique)
-                    ai_response = st.session_state.chat_client.predict(full_prompt)
+                    # Qwen retourne parfois une tuple, on prend le texte
                     if isinstance(ai_response, (list, tuple)):
                         ai_response = ai_response[0] if ai_response else "Réponse vide du modèle"
                         
                 except Exception as e:
+                    st.error(f"Erreur Qwen: {e}")
                     # Fallback en cas d'erreur
                     ai_response = generate_fallback_response(user_text, st.session_state.chat_history)
             else:
@@ -268,11 +277,16 @@ if submit and (uploaded_file or user_message.strip()):
             ai_response = f"Une erreur s'est produite lors de la génération de la réponse. Je peux quand même vous aider ! Que souhaitez-vous savoir ?"
 
         # Ajout des messages à l'historique
-        st.session_state.chat_history.append({
+        user_msg = {
             "role": "user", 
-            "content": user_message or "[Image uploadée]", 
-            "image": user_image
-        })
+            "content": user_message or "[Image uploadée]"
+        }
+        # Stocker l'image seulement en session (pas dans le fichier JSON)
+        if user_image is not None:
+            user_msg["image"] = user_image
+            user_msg["had_image"] = True
+            
+        st.session_state.chat_history.append(user_msg)
         st.session_state.chat_history.append({
             "role": "assistant", 
             "content": ai_response
@@ -307,8 +321,5 @@ st.markdown(
     """, 
     unsafe_allow_html=True
 )
-
-
-
 
 
