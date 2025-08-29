@@ -4,15 +4,30 @@ from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import torch
 from gradio_client import Client
+import json
+import os
 
-# --- CONFIG ---
+# === CONFIG ===
 st.set_page_config(
     page_title="Vision AI Chat",
     page_icon="🎯",
     layout="wide"
 )
 
-# --- CSS ---
+CHAT_FILE = "chat_history.json"
+
+# === UTILS ===
+def save_chat_history(history):
+    with open(CHAT_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+def load_chat_history():
+    if os.path.exists(CHAT_FILE):
+        with open(CHAT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+# === CSS ===
 st.markdown("""
 <style>
     body, .stApp { font-family: 'Inter', sans-serif; background: #f9fafb; }
@@ -34,7 +49,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CHARGEMENT BLIP ---
+# === CHARGEMENT BLIP ===
 @st.cache_resource
 def load_model():
     processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
@@ -51,9 +66,9 @@ def generate_caption(image, processor, model):
     caption = processor.decode(out[0], skip_special_tokens=True)
     return caption
 
-# --- INIT SESSION STATE ---
+# === INIT SESSION STATE ===
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+    st.session_state.chat_history = load_chat_history()
 
 if "processor" not in st.session_state or "model" not in st.session_state:
     with st.spinner("🤖 Chargement du modèle BLIP..."):
@@ -61,16 +76,15 @@ if "processor" not in st.session_state or "model" not in st.session_state:
         st.session_state.processor = processor
         st.session_state.model = model
 
-# --- INIT GRADIO CLIENT Qwen2-72B ---
 if "qwen_client" not in st.session_state:
     st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
 
-# --- UI HEADER ---
+# === UI HEADER ===
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 st.markdown('<h1 class="main-header">🎯 Vision AI Chat</h1>', unsafe_allow_html=True)
 st.markdown('<p class="subtitle">Décrivez vos images ou discutez librement avec l\'IA</p>', unsafe_allow_html=True)
 
-# --- AFFICHAGE CHAT ---
+# === AFFICHAGE CHAT ===
 for message in st.session_state.chat_history:
     if message["role"] == "user":
         st.markdown(f"""
@@ -78,7 +92,7 @@ for message in st.session_state.chat_history:
             <div class="bubble user-bubble">{message['content']}</div>
         </div>
         """, unsafe_allow_html=True)
-        if "image" in message:
+        if "image" in message and message["image"] is not None:
             st.image(message["image"], caption="Image uploadée", width=300)
     else:
         st.markdown(f"""
@@ -87,7 +101,7 @@ for message in st.session_state.chat_history:
         </div>
         """, unsafe_allow_html=True)
 
-# --- FORMULAIRE ---
+# === FORMULAIRE ===
 with st.form("chat_form", clear_on_submit=True):
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -96,9 +110,8 @@ with st.form("chat_form", clear_on_submit=True):
         submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
     user_message = st.text_input("💬 Votre message (optionnel)")
 
-# --- TRAITEMENT ---
+# === TRAITEMENT ===
 if submit:
-    # Cas 1 : Image fournie
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
@@ -111,10 +124,9 @@ if submit:
             system="You are a helpful assistant.",
             api_name="/model_chat"
         )
-        st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": uploaded_file})
+        st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
-    # Cas 2 : Aucun upload, seulement texte
     elif user_message.strip():
         qwen_response = st.session_state.qwen_client.predict(
             query=user_message.strip(),
@@ -125,15 +137,18 @@ if submit:
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
+    # Sauvegarde persistente
+    save_chat_history(st.session_state.chat_history)
     st.rerun()
 
-# --- RESET ---
+# === RESET ===
 if st.session_state.chat_history:
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         if st.button("🗑️ Vider la discussion", use_container_width=True):
             st.session_state.chat_history = []
+            save_chat_history([])  # reset aussi le fichier
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
