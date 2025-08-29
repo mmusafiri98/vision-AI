@@ -7,7 +7,6 @@ from gradio_client import Client
 import json
 import os
 import uuid
-import time
 
 # === CONFIG ===
 st.set_page_config(
@@ -54,14 +53,6 @@ def get_chat_title(chat_id):
             return msg["content"][:40] + "..." if len(msg["content"]) > 40 else msg["content"]
     return "Nouvelle discussion"
 
-def typing_effect(container, text, delay=0.02):
-    """Effetto dattilografia in un placeholder Streamlit"""
-    displayed_text = ""
-    for char in text:
-        displayed_text += char
-        container.markdown(displayed_text)
-        time.sleep(delay)
-
 # === CSS ===
 st.markdown("""
 <style>
@@ -79,8 +70,6 @@ st.markdown("""
     .form-container { background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 20px; }
     .stButton button { background: #4299e1; color: white; border-radius: 8px; border: none; padding: 8px 20px; font-weight: 600; }
     .stButton button:hover { background: #3182ce; }
-    .thinking { font-style: italic; color: #718096; animation: blink 1s infinite; }
-    @keyframes blink { 50% { opacity: 0.5; } }
     .stApp > footer {visibility: hidden;}
     .stApp > header {visibility: hidden;}
 </style>
@@ -157,10 +146,9 @@ for message in st.session_state.chat_history:
     else:
         st.markdown(f"""
         <div class="message-ai">
-            <div class="bubble ai-bubble"><b>🤖 Vision AI:</b><br></div>
+            <div class="bubble ai-bubble"><b>🤖 Vision AI:</b> {message['content']}</div>
         </div>
         """, unsafe_allow_html=True)
-        st.markdown(message["content"], unsafe_allow_html=False)
 
 # === FORMULAIRE ===
 with st.form("chat_form", clear_on_submit=True):
@@ -173,15 +161,13 @@ with st.form("chat_form", clear_on_submit=True):
 
 # === TRAITEMENT ===
 if submit:
+    # Construire l'historique pour Qwen
     history_for_qwen = []
     for i, msg in enumerate(st.session_state.chat_history):
         if msg["role"] == "user" and i + 1 < len(st.session_state.chat_history):
             next_msg = st.session_state.chat_history[i + 1]
             if next_msg["role"] == "assistant":
                 history_for_qwen.append((msg["content"], next_msg["content"]))
-
-    thinking_placeholder = st.empty()
-    thinking_placeholder.markdown("<div class='thinking'>🤖 Vision AI réfléchit...</div>", unsafe_allow_html=True)
 
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
@@ -196,6 +182,7 @@ if submit:
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
+
         st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
@@ -206,19 +193,11 @@ if submit:
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
+
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-
-    thinking_placeholder.empty()  # rimuovi "thinking..."
-
-    # Mostrare l'ultima risposta con animazione dattilografia
-    if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "assistant":
-        last_msg = st.session_state.chat_history[-1]["content"]
-        placeholder = st.empty()
-        typing_effect(placeholder, last_msg)
-
     st.rerun()
 
 # === RESET ===
@@ -232,6 +211,7 @@ if st.session_state.chat_history:
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
