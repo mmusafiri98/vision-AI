@@ -6,6 +6,7 @@ import torch
 from gradio_client import Client
 import json
 import os
+import uuid
 
 # === CONFIG ===
 st.set_page_config(
@@ -14,7 +15,9 @@ st.set_page_config(
     layout="wide"
 )
 
-CHAT_FILE = "chat_history.json"
+# === PATH PER LE CHAT MULTIPLE ===
+CHAT_DIR = "chats"
+os.makedirs(CHAT_DIR, exist_ok=True)
 
 # === SYSTEM PROMPT INVISIBLE ===
 SYSTEM_PROMPT = """
@@ -27,15 +30,21 @@ Always answer naturally as Vision AI.
 """
 
 # === UTILS ===
-def save_chat_history(history):
-    with open(CHAT_FILE, "w", encoding="utf-8") as f:
+def save_chat_history(history, chat_id):
+    file_path = os.path.join(CHAT_DIR, f"{chat_id}.json")
+    with open(file_path, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
-def load_chat_history():
-    if os.path.exists(CHAT_FILE):
-        with open(CHAT_FILE, "r", encoding="utf-8") as f:
+def load_chat_history(chat_id):
+    file_path = os.path.join(CHAT_DIR, f"{chat_id}.json")
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
     return []
+
+def list_chats():
+    files = [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
+    return sorted(files)
 
 # === CSS ===
 st.markdown("""
@@ -77,8 +86,10 @@ def generate_caption(image, processor, model):
     return caption
 
 # === INIT SESSION STATE ===
+if "chat_id" not in st.session_state:
+    st.session_state.chat_id = str(uuid.uuid4())
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = load_chat_history()
+    st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
 
 if "processor" not in st.session_state or "model" not in st.session_state:
     with st.spinner("🤖 Chargement du modèle BLIP..."):
@@ -88,6 +99,23 @@ if "processor" not in st.session_state or "model" not in st.session_state:
 
 if "qwen_client" not in st.session_state:
     st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
+
+# === SIDEBAR ===
+st.sidebar.title("📂 Gestion des chats")
+
+if st.sidebar.button("➕ Nouvelle chat"):
+    st.session_state.chat_id = str(uuid.uuid4())
+    st.session_state.chat_history = []
+    save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+    st.rerun()
+
+available_chats = list_chats()
+selected_chat = st.sidebar.selectbox("💾 Vos discussions sauvegardées :", available_chats, index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0)
+
+if selected_chat and selected_chat != st.session_state.chat_id:
+    st.session_state.chat_id = selected_chat
+    st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
+    st.rerun()
 
 # === UI HEADER ===
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
@@ -148,7 +176,7 @@ if submit:
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     # Sauvegarde persistente
-    save_chat_history(st.session_state.chat_history)
+    save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
     st.rerun()
 
 # === RESET ===
@@ -158,7 +186,7 @@ if st.session_state.chat_history:
     with col2:
         if st.button("🗑️ Vider la discussion", use_container_width=True):
             st.session_state.chat_history = []
-            save_chat_history([])  # reset aussi le fichier
+            save_chat_history([], st.session_state.chat_id)
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
