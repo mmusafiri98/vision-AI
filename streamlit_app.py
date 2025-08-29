@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# === PATH POUR LES CHATS MULTIPLES ===
+# === PATH PER LE CHAT MULTIPLE ===
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
 
@@ -46,12 +46,23 @@ def list_chats():
     files = [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
     return sorted(files)
 
-def get_chat_title(chat_id):
-    history = load_chat_history(chat_id)
-    for msg in history:
-        if msg["role"] == "user" and msg["content"].strip():
-            return msg["content"][:40] + "..." if len(msg["content"]) > 40 else msg["content"]
-    return "Nouvelle discussion"
+def clean_response(raw_output):
+    """Nettoyage et structuration de la sortie du modèle"""
+    if isinstance(raw_output, (list, tuple)):
+        raw_output = raw_output[0] if raw_output else ""
+
+    text = str(raw_output)
+
+    # enlever system prompt éventuel
+    if "You are Vision AI." in text:
+        text = text.split("You are Vision AI.")[0]
+
+    # nettoyage des brackets et caractères parasites
+    text = text.replace("[[", "").replace("]]", "")
+    text = text.replace("[", "").replace("]", "")
+    text = text.replace("',", "").replace("'", "")
+
+    return text.strip()
 
 # === CSS ===
 st.markdown("""
@@ -63,7 +74,7 @@ st.markdown("""
     .message-user, .message-ai { display: flex; margin: 15px 0; }
     .message-user { justify-content: flex-end; }
     .message-ai { justify-content: flex-start; }
-    .bubble { border-radius: 16px; padding: 12px 16px; max-width: 70%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; }
+    .bubble { border-radius: 16px; padding: 12px 16px; max-width: 85%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; }
     .user-bubble { background: #4299e1; color: white; }
     .ai-bubble { background: white; border: 1px solid #e2e8f0; color: #2d3748; }
     .uploaded-image { max-width: 300px; border-radius: 12px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -117,12 +128,12 @@ if st.sidebar.button("➕ Nouvelle chat"):
     st.rerun()
 
 available_chats = list_chats()
-chat_titles = [get_chat_title(cid) for cid in available_chats]
-
 if available_chats:
-    selected_index = available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
-    selected_chat = st.sidebar.selectbox("💾 Vos discussions :", available_chats, format_func=lambda x: get_chat_title(x), index=selected_index)
-
+    selected_chat = st.sidebar.selectbox(
+        "💾 Vos discussions sauvegardées :",
+        available_chats,
+        index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
+    )
     if selected_chat and selected_chat != st.session_state.chat_id:
         st.session_state.chat_id = selected_chat
         st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
@@ -144,11 +155,13 @@ for message in st.session_state.chat_history:
         if "image" in message and message["image"] is not None:
             st.image(message["image"], caption="Image uploadée", width=300)
     else:
+        # 👉 Render la réponse AI comme du Markdown (supporte code, titres, etc.)
         st.markdown(f"""
-        <div class="message-ai">
-            <div class="bubble ai-bubble"><b>🤖 Vision AI:</b> {message['content']}</div>
+        <div class="message-ai bubble ai-bubble">
+        <b>🤖 Vision AI:</b><br>
         </div>
         """, unsafe_allow_html=True)
+        st.markdown(message["content"], unsafe_allow_html=False)
 
 # === FORMULAIRE ===
 with st.form("chat_form", clear_on_submit=True):
@@ -161,39 +174,30 @@ with st.form("chat_form", clear_on_submit=True):
 
 # === TRAITEMENT ===
 if submit:
-    # Construire l'historique pour Qwen
-    history_for_qwen = []
-    for i, msg in enumerate(st.session_state.chat_history):
-        if msg["role"] == "user" and i + 1 < len(st.session_state.chat_history):
-            next_msg = st.session_state.chat_history[i + 1]
-            if next_msg["role"] == "assistant":
-                history_for_qwen.append((msg["content"], next_msg["content"]))
-
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
         user_text = f"Description de l'image: '{caption}'"
         if user_message.strip():
             user_text += f" L'utilisateur demande: '{user_message.strip()}'"
-
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
-            history=history_for_qwen,
+            history=[],
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
-
+        qwen_response = clean_response(qwen_response)
         st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     elif user_message.strip():
         qwen_response = st.session_state.qwen_client.predict(
             query=user_message.strip(),
-            history=history_for_qwen,
+            history=[],
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
-
+        qwen_response = clean_response(qwen_response)
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
