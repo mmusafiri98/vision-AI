@@ -7,6 +7,7 @@ from gradio_client import Client
 import json
 import os
 import uuid
+import time
 
 # === CONFIG ===
 st.set_page_config(
@@ -15,7 +16,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# === PATH PER CHAT MULTIPLE ===
+# === PATH PER LE CHAT MULTIPLE ===
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
 
@@ -43,7 +44,8 @@ def load_chat_history(chat_id):
     return []
 
 def list_chats():
-    return sorted([f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")])
+    files = [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
+    return sorted(files)
 
 def get_chat_title(chat_id):
     history = load_chat_history(chat_id)
@@ -74,9 +76,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# === CARICAMENTO MODELLO BLIP ===
+# === BLIP MODEL ===
 @st.cache_resource
-def load_model():
+def load_blip_model():
     processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
     model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
     return processor, model
@@ -90,113 +92,117 @@ def generate_caption(image, processor, model):
         out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
     return processor.decode(out[0], skip_special_tokens=True)
 
-# === INIT SESSION STATE ===
+# === SESSION STATE ===
 if "chat_id" not in st.session_state:
     st.session_state.chat_id = str(uuid.uuid4())
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
 
 if "processor" not in st.session_state or "model" not in st.session_state:
-    with st.spinner("🤖 Caricamento modello BLIP..."):
-        processor, model = load_model()
-        st.session_state.processor = processor
-        st.session_state.model = model
+    with st.spinner("🤖 Chargement du modèle BLIP..."):
+        st.session_state.processor, st.session_state.model = load_blip_model()
 
 if "qwen_client" not in st.session_state:
-    st.session_state.qwen_client = Client("Qwen/Qwen1.5-14B-Chat")  # Aggiornato al modello corretto
+    st.session_state.qwen_client = Client("Qwen/Qwen1.5-14B-Chat")
+    # Controlla l'endpoint corretto
+    st.session_state.fn_index = 0  # Usa l'indice dell'endpoint principale
 
 # === SIDEBAR ===
-st.sidebar.title("📂 Gestione Chat")
-
-if st.sidebar.button("➕ Nuova chat"):
+st.sidebar.title("📂 Gestion des chats")
+if st.sidebar.button("➕ Nouvelle chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+    st.experimental_rerun()
 
 available_chats = list_chats()
 if available_chats:
     selected_index = available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
-    selected_chat = st.sidebar.selectbox("💾 Chat salvate:", available_chats, format_func=lambda x: get_chat_title(x), index=selected_index)
+    selected_chat = st.sidebar.selectbox(
+        "💾 Vos discussions :",
+        available_chats,
+        format_func=get_chat_title,
+        index=selected_index
+    )
     if selected_chat != st.session_state.chat_id:
         st.session_state.chat_id = selected_chat
         st.session_state.chat_history = load_chat_history(selected_chat)
+        st.experimental_rerun()
 
-# === HEADER UI ===
+# === HEADER ===
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 st.markdown('<h1 class="main-header">🎯 Vision AI Chat</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Descrivi le tue immagini o chatta liberamente con l\'IA</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Décrivez vos images ou discutez librement avec l\'IA</p>', unsafe_allow_html=True)
 
-# === VISUALIZZAZIONE CHAT ===
-for message in st.session_state.chat_history:
-    if message["role"]=="user":
-        st.markdown(f'<div class="message-user"><div class="bubble user-bubble">{message["content"]}</div></div>', unsafe_allow_html=True)
-        if "image" in message and message["image"]:
-            st.image(message["image"], caption="Immagine caricata", width=300)
+# === DISPLAY CHAT ===
+for msg in st.session_state.chat_history:
+    if msg["role"] == "user":
+        st.markdown(f'<div class="message-user"><div class="bubble user-bubble">{msg["content"]}</div></div>', unsafe_allow_html=True)
+        if msg.get("image"):
+            st.image(msg["image"], width=300)
     else:
-        st.markdown(f'<div class="message-ai"><div class="bubble ai-bubble"><b>🤖 Vision AI:</b> {message["content"]}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="message-ai"><div class="bubble ai-bubble"><b>🤖 Vision AI:</b> {msg["content"]}</div></div>', unsafe_allow_html=True)
 
-# === FORM CHAT ===
+# === CHAT FORM ===
 with st.form("chat_form", clear_on_submit=True):
     col1, col2 = st.columns([2,1])
     with col1:
-        uploaded_file = st.file_uploader("📤 Carica un'immagine (opzionale)", type=["jpg","jpeg","png"])
+        uploaded_file = st.file_uploader("📤 Uploadez une image (optionnel)", type=["jpg","jpeg","png"])
     with col2:
-        submit = st.form_submit_button("🚀 Invia")
-    user_message = st.text_input("💬 Il tuo messaggio (opzionale)")
+        submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
+    user_message = st.text_input("💬 Votre message (optionnel)")
 
-# === TRATTAMENTO ===
+# === PROCESS CHAT ===
 if submit:
-    # Costruzione history per Qwen
-    history_for_qwen = []
-    for i,msg in enumerate(st.session_state.chat_history):
-        if msg["role"]=="user" and i+1 < len(st.session_state.chat_history):
-            next_msg = st.session_state.chat_history[i+1]
-            if next_msg["role"]=="assistant":
-                history_for_qwen.append((msg["content"], next_msg["content"]))
-
-    # Placeholder "thinking..."
+    # Mostra "Thinking..."
     placeholder = st.empty()
-    placeholder.markdown('<div class="bubble ai-bubble"><b>🤖 Vision AI sta pensando...</b></div>', unsafe_allow_html=True)
+    placeholder.markdown('<div style="color:gray"><b>🤔 Thinking...</b></div>', unsafe_allow_html=True)
 
-    # Aggiunge il messaggio utente
-    if user_message.strip():
-        st.session_state.chat_history.append({"role":"user","content":user_message.strip(),"image":None})
-
-    # Genera caption se immagine
+    # Genera caption se c'è immagine
+    user_text = ""
     if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        user_text = f"Descrizione immagine: '{caption}'"
-        if user_message.strip():
-            user_text += f" Domanda utente: '{user_message.strip()}'"
-    else:
-        user_text = user_message.strip()
+        user_text += f"Description de l'image: '{caption}' "
 
-    # Chiamata modello Qwen
+    if user_message.strip():
+        user_text += user_message.strip()
+
+    # Costruisci la storia per Qwen
+    history_for_qwen = [(msg["content"], st.session_state.chat_history[i+1]["content"])
+                        for i, msg in enumerate(st.session_state.chat_history)
+                        if msg["role"]=="user" and i+1 < len(st.session_state.chat_history) and st.session_state.chat_history[i+1]["role"]=="assistant"]
+
+    # Chiamata al modello con fn_index
     try:
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
             history=history_for_qwen,
-            system=SYSTEM_PROMPT
+            system=SYSTEM_PROMPT,
+            fn_index=st.session_state.fn_index
         )
     except Exception as e:
         qwen_response = f"⚠️ Errore modello: {e}"
 
-    # Aggiunge risposta
-    st.session_state.chat_history.append({"role":"assistant","content":qwen_response})
+    # Aggiungi al chat
+    st.session_state.chat_history.append({"role":"user", "content": user_text, "image": None})
+    st.session_state.chat_history.append({"role":"assistant", "content": qwen_response})
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-    placeholder.empty()  # rimuove thinking
+    placeholder.empty()
+    st.experimental_rerun()
 
 # === RESET CHAT ===
 if st.session_state.chat_history:
     st.markdown("---")
-    col1,col2,col3 = st.columns([1,1,1])
+    col1, col2, col3 = st.columns([1,1,1])
     with col2:
-        if st.button("🗑️ Cancella chat"):
+        if st.button("🗑️ Vider la discussion", use_container_width=True):
             st.session_state.chat_history = []
             save_chat_history([], st.session_state.chat_id)
+            st.experimental_rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
