@@ -56,22 +56,22 @@ def get_chat_title(chat_id):
 # === CSS ===
 st.markdown("""
 <style>
-body, .stApp { font-family: 'Inter', sans-serif; background: #f9fafb; }
-.main-header { text-align: center; font-size: 2.5rem; font-weight: 700; color: #2d3748; margin-bottom: 0.5rem; }
-.subtitle { text-align: center; font-size: 1.1rem; color: #718096; margin-bottom: 2rem; }
-.chat-container { max-width: 900px; margin: auto; padding: 20px; }
-.message-user, .message-ai { display: flex; margin: 15px 0; }
-.message-user { justify-content: flex-end; }
-.message-ai { justify-content: flex-start; }
-.bubble { border-radius: 16px; padding: 12px 16px; max-width: 70%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; }
-.user-bubble { background: #4299e1; color: white; }
-.ai-bubble { background: white; border: 1px solid #e2e8f0; color: #2d3748; }
-.uploaded-image { max-width: 300px; border-radius: 12px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-.form-container { background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 20px; }
-.stButton button { background: #4299e1; color: white; border-radius: 8px; border: none; padding: 8px 20px; font-weight: 600; }
-.stButton button:hover { background: #3182ce; }
-.stApp > footer {visibility: hidden;}
-.stApp > header {visibility: hidden;}
+    body, .stApp { font-family: 'Inter', sans-serif; background: #f9fafb; }
+    .main-header { text-align: center; font-size: 2.5rem; font-weight: 700; color: #2d3748; margin-bottom: 0.5rem; }
+    .subtitle { text-align: center; font-size: 1.1rem; color: #718096; margin-bottom: 2rem; }
+    .chat-container { max-width: 900px; margin: auto; padding: 20px; }
+    .message-user, .message-ai { display: flex; margin: 15px 0; }
+    .message-user { justify-content: flex-end; }
+    .message-ai { justify-content: flex-start; }
+    .bubble { border-radius: 16px; padding: 12px 16px; max-width: 70%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; }
+    .user-bubble { background: #4299e1; color: white; }
+    .ai-bubble { background: white; border: 1px solid #e2e8f0; color: #2d3748; }
+    .uploaded-image { max-width: 300px; border-radius: 12px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .form-container { background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 20px; }
+    .stButton button { background: #4299e1; color: white; border-radius: 8px; border: none; padding: 8px 20px; font-weight: 600; }
+    .stButton button:hover { background: #3182ce; }
+    .stApp > footer {visibility: hidden;}
+    .stApp > header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -105,7 +105,7 @@ if "processor" not in st.session_state or "model" not in st.session_state:
         st.session_state.model = model
 
 if "qwen_client" not in st.session_state:
-    st.session_state.qwen_client = Client("Qwen/Qwen1.5-14B-Chat")  # <- Modèle mis à jour
+    st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
 
 # === SIDEBAR ===
 st.sidebar.title("📂 Gestion des chats")
@@ -117,9 +117,12 @@ if st.sidebar.button("➕ Nouvelle chat"):
     st.rerun()
 
 available_chats = list_chats()
+chat_titles = [get_chat_title(cid) for cid in available_chats]
+
 if available_chats:
     selected_index = available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
     selected_chat = st.sidebar.selectbox("💾 Vos discussions :", available_chats, format_func=lambda x: get_chat_title(x), index=selected_index)
+
     if selected_chat and selected_chat != st.session_state.chat_id:
         st.session_state.chat_id = selected_chat
         st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
@@ -158,6 +161,7 @@ with st.form("chat_form", clear_on_submit=True):
 
 # === TRAITEMENT ===
 if submit:
+    # Construire l'historique pour Qwen
     history_for_qwen = []
     for i, msg in enumerate(st.session_state.chat_history):
         if msg["role"] == "user" and i + 1 < len(st.session_state.chat_history):
@@ -165,33 +169,34 @@ if submit:
             if next_msg["role"] == "assistant":
                 history_for_qwen.append((msg["content"], next_msg["content"]))
 
-    try:
-        if uploaded_file is not None:
-            image = Image.open(uploaded_file).convert("RGB")
-            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            user_text = f"Description de l'image: '{caption}'"
-            if user_message.strip():
-                user_text += f" L'utilisateur demande: '{user_message.strip()}'"
-        else:
-            user_text = user_message.strip()
-
-        # Indicator "Thinking..."
-        placeholder = st.empty()
-        placeholder.markdown("💭 **Vision AI réfléchit...**")
+    if uploaded_file is not None:
+        image = Image.open(uploaded_file).convert("RGB")
+        caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+        user_text = f"Description de l'image: '{caption}'"
+        if user_message.strip():
+            user_text += f" L'utilisateur demande: '{user_message.strip()}'"
 
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
             history=history_for_qwen,
             system=SYSTEM_PROMPT,
-            api_name="/predict"
+            api_name="/model_chat"
         )
-        placeholder.empty()
 
-    except Exception as e:
-        qwen_response = f"⚠️ Erreur: impossible de récupérer la réponse du modèle ({str(e)})"
+        st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
+        st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
-    st.session_state.chat_history.append({"role": "user", "content": user_message.strip(), "image": None})
-    st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
+    elif user_message.strip():
+        qwen_response = st.session_state.qwen_client.predict(
+            query=user_message.strip(),
+            history=history_for_qwen,
+            system=SYSTEM_PROMPT,
+            api_name="/model_chat"
+        )
+
+        st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
+        st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
+
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
     st.rerun()
 
@@ -206,6 +211,7 @@ if st.session_state.chat_history:
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
