@@ -16,6 +16,14 @@ st.set_page_config(
 
 CHAT_FILE = "chat_history.json"
 
+# === SYSTEM PROMPT PERSONNALISÉ ===
+SYSTEM_PROMPT = """
+You are Vision AI, an intelligent assistant created by Pepe Musafiri.
+Your role is to assist users by describing images they upload with precision,
+and by answering any other questions they may ask, in a clear and helpful way.
+Always be polite, helpful, and knowledgeable.
+"""
+
 # === UTILS ===
 def save_chat_history(history):
     with open(CHAT_FILE, "w", encoding="utf-8") as f:
@@ -121,7 +129,7 @@ if submit:
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
             history=[],
-            system="You are a helpful assistant.",
+            system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
         st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
@@ -131,7 +139,7 @@ if submit:
         qwen_response = st.session_state.qwen_client.predict(
             query=user_message.strip(),
             history=[],
-            system="i am vision ai create by pepe musafiri is great software programmer.",
+            system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
@@ -152,4 +160,3 @@ if st.session_state.chat_history:
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
-
