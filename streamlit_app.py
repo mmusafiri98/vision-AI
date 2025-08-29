@@ -119,7 +119,7 @@ if submit:
         qwen_response = st.session_state.qwen_client.predict(
             query=user_message.strip(),
             history=[],
-            system="You are a helpful assistant.",
+            system="i am vision ai create by pepe musafiri is great software programmer.",
             api_name="/model_chat"
         )
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
