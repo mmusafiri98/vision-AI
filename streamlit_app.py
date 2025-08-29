@@ -7,6 +7,7 @@ from gradio_client import Client
 import json
 import os
 import uuid
+import time
 
 # === CONFIG ===
 st.set_page_config(
@@ -53,6 +54,14 @@ def get_chat_title(chat_id):
             return msg["content"][:40] + "..." if len(msg["content"]) > 40 else msg["content"]
     return "Nouvelle discussion"
 
+# Effetto dattilografia
+def typing_effect(placeholder, text, speed=0.02):
+    displayed_text = ""
+    for char in text:
+        displayed_text += char
+        placeholder.markdown(displayed_text, unsafe_allow_html=False)
+        time.sleep(speed)
+
 # === CSS ===
 st.markdown("""
 <style>
@@ -63,7 +72,7 @@ st.markdown("""
     .message-user, .message-ai { display: flex; margin: 15px 0; }
     .message-user { justify-content: flex-end; }
     .message-ai { justify-content: flex-start; }
-    .bubble { border-radius: 16px; padding: 12px 16px; max-width: 70%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; }
+    .bubble { border-radius: 16px; padding: 12px 16px; max-width: 70%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.95rem; white-space: pre-wrap; }
     .user-bubble { background: #4299e1; color: white; }
     .ai-bubble { background: white; border: 1px solid #e2e8f0; color: #2d3748; }
     .uploaded-image { max-width: 300px; border-radius: 12px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -117,12 +126,14 @@ if st.sidebar.button("➕ Nouvelle chat"):
     st.rerun()
 
 available_chats = list_chats()
-chat_titles = [get_chat_title(cid) for cid in available_chats]
-
 if available_chats:
     selected_index = available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
-    selected_chat = st.sidebar.selectbox("💾 Vos discussions :", available_chats, format_func=lambda x: get_chat_title(x), index=selected_index)
-
+    selected_chat = st.sidebar.selectbox(
+        "💾 Vos discussions :",
+        available_chats,
+        format_func=lambda x: get_chat_title(x),
+        index=selected_index
+    )
     if selected_chat and selected_chat != st.session_state.chat_id:
         st.session_state.chat_id = selected_chat
         st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
@@ -143,12 +154,16 @@ for message in st.session_state.chat_history:
         """, unsafe_allow_html=True)
         if "image" in message and message["image"] is not None:
             st.image(message["image"], caption="Image uploadée", width=300)
-    else:
-        st.markdown(f"""
-        <div class="message-ai">
-            <div class="bubble ai-bubble"><b>🤖 Vision AI:</b> {message['content']}</div>
-        </div>
-        """, unsafe_allow_html=True)
+    elif message["role"] == "assistant":
+        bubble = st.empty()
+        with bubble.container():
+            st.markdown("""
+            <div class="message-ai">
+                <div class="bubble ai-bubble"><b>🤖 Vision AI:</b><br></div>
+            </div>
+            """, unsafe_allow_html=True)
+            placeholder = st.empty()
+            typing_effect(placeholder, message["content"])
 
 # === FORMULAIRE ===
 with st.form("chat_form", clear_on_submit=True):
@@ -161,7 +176,6 @@ with st.form("chat_form", clear_on_submit=True):
 
 # === TRAITEMENT ===
 if submit:
-    # Construire l'historique pour Qwen
     history_for_qwen = []
     for i, msg in enumerate(st.session_state.chat_history):
         if msg["role"] == "user" and i + 1 < len(st.session_state.chat_history):
@@ -169,33 +183,34 @@ if submit:
             if next_msg["role"] == "assistant":
                 history_for_qwen.append((msg["content"], next_msg["content"]))
 
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file).convert("RGB")
-        caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        user_text = f"Description de l'image: '{caption}'"
-        if user_message.strip():
-            user_text += f" L'utilisateur demande: '{user_message.strip()}'"
+    with st.spinner("✍️ Thinking..."):
+        if uploaded_file is not None:
+            image = Image.open(uploaded_file).convert("RGB")
+            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+            user_text = f"Description de l'image: '{caption}'"
+            if user_message.strip():
+                user_text += f" L'utilisateur demande: '{user_message.strip()}'"
 
-        qwen_response = st.session_state.qwen_client.predict(
-            query=user_text,
-            history=history_for_qwen,
-            system=SYSTEM_PROMPT,
-            api_name="/model_chat"
-        )
+            qwen_response = st.session_state.qwen_client.predict(
+                query=user_text,
+                history=history_for_qwen,
+                system=SYSTEM_PROMPT,
+                api_name="/model_chat"
+            )
 
-        st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
-        st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
+            st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
+            st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
-    elif user_message.strip():
-        qwen_response = st.session_state.qwen_client.predict(
-            query=user_message.strip(),
-            history=history_for_qwen,
-            system=SYSTEM_PROMPT,
-            api_name="/model_chat"
-        )
+        elif user_message.strip():
+            qwen_response = st.session_state.qwen_client.predict(
+                query=user_message.strip(),
+                history=history_for_qwen,
+                system=SYSTEM_PROMPT,
+                api_name="/model_chat"
+            )
 
-        st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
-        st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
+            st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
+            st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
     st.rerun()
@@ -211,4 +226,5 @@ if st.session_state.chat_history:
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
