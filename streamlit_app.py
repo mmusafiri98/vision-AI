@@ -3,7 +3,6 @@ import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import torch
-from io import BytesIO
 from gradio_client import Client
 
 # --- CONFIG ---
@@ -16,10 +15,7 @@ st.set_page_config(
 # --- CSS ---
 st.markdown("""
 <style>
-    body, .stApp {
-        font-family: 'Inter', sans-serif;
-        background: #f9fafb;
-    }
+    body, .stApp { font-family: 'Inter', sans-serif; background: #f9fafb; }
     .main-header { text-align: center; font-size: 2.5rem; font-weight: 700; color: #2d3748; margin-bottom: 0.5rem; }
     .subtitle { text-align: center; font-size: 1.1rem; color: #718096; margin-bottom: 2rem; }
     .chat-container { max-width: 900px; margin: auto; padding: 20px; }
@@ -72,7 +68,7 @@ if "qwen_client" not in st.session_state:
 # --- UI HEADER ---
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 st.markdown('<h1 class="main-header">🎯 Vision AI Chat</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Décrivez vos images &amp; discutez avec l\'IA</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Décrivez vos images ou discutez librement avec l\'IA</p>', unsafe_allow_html=True)
 
 # --- AFFICHAGE CHAT ---
 for message in st.session_state.chat_history:
@@ -95,30 +91,30 @@ for message in st.session_state.chat_history:
 with st.form("chat_form", clear_on_submit=True):
     col1, col2 = st.columns([2, 1])
     with col1:
-        uploaded_file = st.file_uploader("📤 Uploadez une image", type=["jpg", "jpeg", "png"])
+        uploaded_file = st.file_uploader("📤 Uploadez une image (optionnel)", type=["jpg", "jpeg", "png"])
     with col2:
         submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
     user_message = st.text_input("💬 Votre message (optionnel)")
 
 # --- TRAITEMENT ---
 if submit:
+    # Cas 1 : Image fournie
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
         user_text = f"Description de l'image: '{caption}'"
         if user_message.strip():
             user_text += f" L'utilisateur demande: '{user_message.strip()}'"
-        # Appel Qwen2-72B
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
             history=[],
             system="You are a helpful assistant.",
             api_name="/model_chat"
         )
-        # Ajouter au chat
-        st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}"})
+        st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": uploaded_file})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
+    # Cas 2 : Aucun upload, seulement texte
     elif user_message.strip():
         qwen_response = st.session_state.qwen_client.predict(
             query=user_message.strip(),
@@ -128,7 +124,7 @@ if submit:
         )
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
-    
+
     st.rerun()
 
 # --- RESET ---
@@ -141,5 +137,4 @@ if st.session_state.chat_history:
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
-
 
