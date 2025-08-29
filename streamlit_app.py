@@ -79,18 +79,39 @@ st.markdown("""
 # === BLIP MODEL ===
 @st.cache_resource
 def load_blip_model():
-    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-    return processor, model
+    try:
+        processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+        model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+        return processor, model
+    except Exception as e:
+        st.error(f"Erreur lors du chargement du modèle BLIP: {e}")
+        return None, None
 
 def generate_caption(image, processor, model):
-    inputs = processor(image, return_tensors="pt")
-    if torch.cuda.is_available():
-        inputs = inputs.to("cuda")
-        model = model.to("cuda")
-    with torch.no_grad():
-        out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
-    return processor.decode(out[0], skip_special_tokens=True)
+    if processor is None or model is None:
+        return "Impossible de générer une description de l'image"
+    try:
+        inputs = processor(image, return_tensors="pt")
+        if torch.cuda.is_available():
+            inputs = inputs.to("cuda")
+            model = model.to("cuda")
+        with torch.no_grad():
+            out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
+        return processor.decode(out[0], skip_special_tokens=True)
+    except Exception as e:
+        return f"Erreur lors de la génération de la description: {e}"
+
+# === FALLBACK RESPONSE ===
+def generate_fallback_response(user_text, chat_history):
+    """Génère une réponse simple sans modèle externe"""
+    if "image" in user_text.lower() or "description" in user_text.lower():
+        return "J'ai analysé votre image. Comment puis-je vous aider davantage avec cette image ?"
+    elif "bonjour" in user_text.lower() or "salut" in user_text.lower():
+        return "Bonjour ! Je suis Vision AI, votre assistant pour analyser les images et répondre à vos questions. Comment puis-je vous aider aujourd'hui ?"
+    elif "merci" in user_text.lower():
+        return "De rien ! N'hésitez pas si vous avez d'autres questions ou images à analyser."
+    else:
+        return f"J'ai reçu votre message : '{user_text}'. Je suis spécialisé dans l'analyse d'images. N'hésitez pas à uploader une image pour que je puisse vous aider !"
 
 # === SESSION STATE ===
 if "chat_id" not in st.session_state:
@@ -98,14 +119,38 @@ if "chat_id" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
 
+# Chargement du modèle BLIP avec gestion d'erreur
 if "processor" not in st.session_state or "model" not in st.session_state:
     with st.spinner("🤖 Chargement du modèle BLIP..."):
-        st.session_state.processor, st.session_state.model = load_blip_model()
+        processor, model = load_blip_model()
+        st.session_state.processor = processor
+        st.session_state.model = model
 
-if "qwen_client" not in st.session_state:
-    st.session_state.qwen_client = Client("Qwen/Qwen1.5-14B-Chat")
-    # Controlla l'endpoint corretto
-    st.session_state.fn_index = 0  # Usa l'indice dell'endpoint principale
+# Tentative de connexion au client Gradio avec gestion d'erreur
+if "chat_client" not in st.session_state:
+    st.session_state.chat_client = None
+    try:
+        # Essai avec différents espaces Hugging Face populaires
+        spaces_to_try = [
+            "microsoft/DialoGPT-medium",
+            "huggingface/CodeBERTa-small-v1",
+            "microsoft/GODEL-v1_1-base-seq2seq"
+        ]
+        
+        for space in spaces_to_try:
+            try:
+                st.session_state.chat_client = Client(space)
+                st.session_state.space_name = space
+                break
+            except:
+                continue
+                
+        if st.session_state.chat_client is None:
+            st.warning("⚠️ Impossible de se connecter aux modèles externes. Mode de réponse locale activé.")
+            
+    except Exception as e:
+        st.warning("⚠️ Connexion aux modèles externes échouée. Mode de réponse locale activé.")
+        st.session_state.chat_client = None
 
 # === SIDEBAR ===
 st.sidebar.title("📂 Gestion des chats")
@@ -113,7 +158,7 @@ if st.sidebar.button("➕ Nouvelle chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-    st.experimental_rerun()
+    st.rerun()
 
 available_chats = list_chats()
 if available_chats:
@@ -127,7 +172,15 @@ if available_chats:
     if selected_chat != st.session_state.chat_id:
         st.session_state.chat_id = selected_chat
         st.session_state.chat_history = load_chat_history(selected_chat)
-        st.experimental_rerun()
+        st.rerun()
+
+# Affichage du statut de connexion dans la sidebar
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🔗 Statut")
+if st.session_state.chat_client is not None:
+    st.sidebar.success(f"✅ Connecté à {st.session_state.space_name}")
+else:
+    st.sidebar.info("ℹ️ Mode local activé")
 
 # === HEADER ===
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
@@ -135,61 +188,101 @@ st.markdown('<h1 class="main-header">🎯 Vision AI Chat</h1>', unsafe_allow_htm
 st.markdown('<p class="subtitle">Décrivez vos images ou discutez librement avec l\'IA</p>', unsafe_allow_html=True)
 
 # === DISPLAY CHAT ===
-for msg in st.session_state.chat_history:
+for i, msg in enumerate(st.session_state.chat_history):
     if msg["role"] == "user":
         st.markdown(f'<div class="message-user"><div class="bubble user-bubble">{msg["content"]}</div></div>', unsafe_allow_html=True)
         if msg.get("image"):
-            st.image(msg["image"], width=300)
+            st.image(msg["image"], width=300, caption="Image uploadée")
     else:
         st.markdown(f'<div class="message-ai"><div class="bubble ai-bubble"><b>🤖 Vision AI:</b> {msg["content"]}</div></div>', unsafe_allow_html=True)
 
 # === CHAT FORM ===
 with st.form("chat_form", clear_on_submit=True):
-    col1, col2 = st.columns([2,1])
+    col1, col2 = st.columns([3,1])
     with col1:
         uploaded_file = st.file_uploader("📤 Uploadez une image (optionnel)", type=["jpg","jpeg","png"])
+        user_message = st.text_input("💬 Votre message", placeholder="Tapez votre message ici...")
     with col2:
+        st.write("")  # Espacement
+        st.write("")  # Espacement
         submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
-    user_message = st.text_input("💬 Votre message (optionnel)")
 
 # === PROCESS CHAT ===
-if submit:
-    # Mostra "Thinking..."
-    placeholder = st.empty()
-    placeholder.markdown('<div style="color:gray"><b>🤔 Thinking...</b></div>', unsafe_allow_html=True)
+if submit and (uploaded_file or user_message.strip()):
+    # Affichage du message "Thinking..."
+    with st.spinner("🤔 Réflexion en cours..."):
+        
+        # Construction du message utilisateur
+        user_text = ""
+        user_image = None
+        
+        # Traitement de l'image si présente
+        if uploaded_file:
+            try:
+                image = Image.open(uploaded_file).convert("RGB")
+                user_image = image
+                
+                # Génération de la description avec BLIP
+                if st.session_state.processor and st.session_state.model:
+                    caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+                    user_text += f"[Description de l'image: {caption}] "
+                else:
+                    user_text += "[Image uploadée - description non disponible] "
+                    
+            except Exception as e:
+                st.error(f"Erreur lors du traitement de l'image: {e}")
+                user_text += "[Erreur lors du traitement de l'image] "
 
-    # Genera caption se c'è immagine
-    user_text = ""
-    if uploaded_file:
-        image = Image.open(uploaded_file).convert("RGB")
-        caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        user_text += f"Description de l'image: '{caption}' "
+        # Ajout du message texte
+        if user_message.strip():
+            user_text += user_message.strip()
 
-    if user_message.strip():
-        user_text += user_message.strip()
+        # Génération de la réponse
+        try:
+            if st.session_state.chat_client is not None:
+                # Tentative avec le client Gradio
+                try:
+                    # Construction de l'historique pour le modèle
+                    history_context = ""
+                    for msg in st.session_state.chat_history[-6:]:  # Derniers 6 messages pour le contexte
+                        if msg["role"] == "user":
+                            history_context += f"Utilisateur: {msg['content']}\n"
+                        else:
+                            history_context += f"Assistant: {msg['content']}\n"
+                    
+                    full_prompt = f"{SYSTEM_PROMPT}\n\nHistorique:\n{history_context}\n\nNouveau message: {user_text}"
+                    
+                    # Appel au modèle (méthode générique)
+                    ai_response = st.session_state.chat_client.predict(full_prompt)
+                    if isinstance(ai_response, (list, tuple)):
+                        ai_response = ai_response[0] if ai_response else "Réponse vide du modèle"
+                        
+                except Exception as e:
+                    # Fallback en cas d'erreur
+                    ai_response = generate_fallback_response(user_text, st.session_state.chat_history)
+            else:
+                # Mode fallback local
+                ai_response = generate_fallback_response(user_text, st.session_state.chat_history)
+                
+        except Exception as e:
+            ai_response = f"Une erreur s'est produite lors de la génération de la réponse. Je peux quand même vous aider ! Que souhaitez-vous savoir ?"
 
-    # Costruisci la storia per Qwen
-    history_for_qwen = [(msg["content"], st.session_state.chat_history[i+1]["content"])
-                        for i, msg in enumerate(st.session_state.chat_history)
-                        if msg["role"]=="user" and i+1 < len(st.session_state.chat_history) and st.session_state.chat_history[i+1]["role"]=="assistant"]
-
-    # Chiamata al modello con fn_index
-    try:
-        qwen_response = st.session_state.qwen_client.predict(
-            query=user_text,
-            history=history_for_qwen,
-            system=SYSTEM_PROMPT,
-            fn_index=st.session_state.fn_index
-        )
-    except Exception as e:
-        qwen_response = f"⚠️ Errore modello: {e}"
-
-    # Aggiungi al chat
-    st.session_state.chat_history.append({"role":"user", "content": user_text, "image": None})
-    st.session_state.chat_history.append({"role":"assistant", "content": qwen_response})
-    save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-    placeholder.empty()
-    st.experimental_rerun()
+        # Ajout des messages à l'historique
+        st.session_state.chat_history.append({
+            "role": "user", 
+            "content": user_message or "[Image uploadée]", 
+            "image": user_image
+        })
+        st.session_state.chat_history.append({
+            "role": "assistant", 
+            "content": ai_response
+        })
+        
+        # Sauvegarde de l'historique
+        save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+        
+    # Actualisation de la page
+    st.rerun()
 
 # === RESET CHAT ===
 if st.session_state.chat_history:
@@ -199,9 +292,21 @@ if st.session_state.chat_history:
         if st.button("🗑️ Vider la discussion", use_container_width=True):
             st.session_state.chat_history = []
             save_chat_history([], st.session_state.chat_id)
-            st.experimental_rerun()
+            st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
+# === INFO FOOTER ===
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center; color: #718096; font-size: 0.8rem; margin-top: 2rem;'>
+        🎯 Vision AI Chat - Développé par Pepe Musafiri<br>
+        Analyseur d'images avec IA conversationnelle
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
 
 
 
