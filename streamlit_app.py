@@ -46,6 +46,28 @@ def list_chats():
     files = [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
     return sorted(files)
 
+# === NOUVELLE FONCTION: FORMATAGE HISTORIQUE POUR LE MODÈLE ===
+def format_history_for_model(chat_history, limit=10):
+    """
+    Formate l'historique de conversation pour le modèle Qwen
+    Garde les derniers 'limit' échanges pour maintenir le contexte
+    """
+    formatted_history = []
+    
+    # Prendre les derniers échanges (limiter pour éviter des contextes trop longs)
+    recent_history = chat_history[-limit*2:] if len(chat_history) > limit*2 else chat_history
+    
+    for message in recent_history:
+        if message["role"] == "user":
+            content = message["content"]
+            # Si c'est juste "Image envoyée", on ne l'ajoute pas à l'historique textuel
+            if content.strip() and content != "Image envoyée 📸":
+                formatted_history.append(["user", content])
+        elif message["role"] == "assistant":
+            formatted_history.append(["assistant", message["content"]])
+    
+    return formatted_history
+
 # === CSS ===
 st.markdown("""
 <style>
@@ -151,6 +173,9 @@ with st.form("chat_form", clear_on_submit=True):
 
 # === TRAITEMENT ===
 if submit:
+    # 🔹 FORMATAGE DE L'HISTORIQUE POUR LE MODÈLE
+    conversation_history = format_history_for_model(st.session_state.chat_history)
+    
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
@@ -159,9 +184,10 @@ if submit:
         if user_message.strip():
             user_text += f" L'utilisateur demande: '{user_message.strip()}'"
 
+        # 🔹 PASSAGE DE L'HISTORIQUE AU MODÈLE
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
-            history=[],
+            history=conversation_history,  # 🔥 AJOUT DE L'HISTORIQUE
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
@@ -179,9 +205,10 @@ if submit:
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     elif user_message.strip():
+        # 🔹 PASSAGE DE L'HISTORIQUE AU MODÈLE POUR LES MESSAGES TEXTE
         qwen_response = st.session_state.qwen_client.predict(
             query=user_message.strip(),
-            history=[],
+            history=conversation_history,  # 🔥 AJOUT DE L'HISTORIQUE
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
@@ -203,6 +230,5 @@ if st.session_state.chat_history:
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
-
 
 
