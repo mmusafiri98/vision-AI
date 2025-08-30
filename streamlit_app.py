@@ -67,11 +67,16 @@ def format_history_for_model(chat_history, limit=5):
             user_content = recent_history[i]["content"]
             ai_content = recent_history[i + 1]["content"]
             
-            # Ignorer les échanges vides ou juste "Image envoyée"
-            if (user_content.strip() and 
-                user_content != "Image envoyée 📸" and 
-                ai_content.strip()):
-                formatted_history.append([user_content, ai_content])
+            # Vérification et nettoyage des contenus
+            if isinstance(user_content, str) and isinstance(ai_content, str):
+                user_content = user_content.strip()
+                ai_content = ai_content.strip()
+                
+                # Ignorer les échanges vides ou juste "Image envoyée"
+                if (user_content and 
+                    user_content != "Image envoyée 📸" and 
+                    ai_content):
+                    formatted_history.append([user_content, ai_content])
             
             i += 2
         else:
