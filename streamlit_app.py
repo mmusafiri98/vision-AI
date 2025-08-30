@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# === PATH PER LE CHAT MULTIPLE ===
+# === PATH POUR LES CHAT MULTIPLES ===
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
 
@@ -131,7 +131,7 @@ for message in st.session_state.chat_history:
         </div>
         """, unsafe_allow_html=True)
         if "image" in message and message["image"] is not None:
-            st.image(message["image"], caption="Image uploadée", width=300)
+            st.image(message["image"], caption="📤 Image envoyée", width=300)
     else:
         st.markdown(f"""
         <div class="message-ai">
@@ -162,7 +162,12 @@ if submit:
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
-        st.session_state.chat_history.append({"role": "user", "content": f"Image envoyée 📸 {user_message.strip()}", "image": None})
+        # L’image est sauvegardée et affichée dans la bulle de l’utilisateur
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": f"{user_message.strip() if user_message.strip() else 'Image envoyée 📸'}",
+            "image": uploaded_file
+        })
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     elif user_message.strip():
@@ -190,4 +195,5 @@ if st.session_state.chat_history:
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
