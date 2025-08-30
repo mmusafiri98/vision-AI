@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# === PATH POUR LES CHAT MULTIPLES ===
+# === PATH PER LE CHAT MULTIPLE ===
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
 
@@ -131,7 +131,8 @@ for message in st.session_state.chat_history:
         </div>
         """, unsafe_allow_html=True)
         if "image" in message and message["image"] is not None:
-            st.image(message["image"], caption="📤 Image envoyée", width=300)
+            if os.path.exists(message["image"]):
+                st.image(message["image"], caption="📤 Image envoyée", width=300)
     else:
         st.markdown(f"""
         <div class="message-ai">
@@ -153,20 +154,27 @@ if submit:
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+
         user_text = f"Description de l'image: '{caption}'"
         if user_message.strip():
             user_text += f" L'utilisateur demande: '{user_message.strip()}'"
+
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
             history=[],
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
-        # L’image est sauvegardée et affichée dans la bulle de l’utilisateur
+
+        # 🔹 Sauvegarde l'image sur disque pour la rendre sérialisable
+        image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
+        image.save(image_path)
+
+        # 🔹 Ajoute l'entrée utilisateur + image
         st.session_state.chat_history.append({
             "role": "user",
             "content": f"{user_message.strip() if user_message.strip() else 'Image envoyée 📸'}",
-            "image": uploaded_file
+            "image": image_path
         })
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
@@ -177,10 +185,10 @@ if submit:
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
-        st.session_state.chat_history.append({"role": "user", "content": user_message.strip()})
+        st.session_state.chat_history.append({"role": "user", "content": user_message.strip(), "image": None})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
-    # Sauvegarde persistente
+    # ✅ Sauvegarde JSON maintenant possible
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
     st.rerun()
 
