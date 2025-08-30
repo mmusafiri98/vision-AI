@@ -9,17 +9,13 @@ import os
 import uuid
 
 # === CONFIG ===
-st.set_page_config(
-    page_title="Vision AI Chat",
-    page_icon="🎯",
-    layout="wide"
-)
+st.set_page_config(page_title="Vision AI Chat", page_icon="🎯", layout="wide")
 
-# === PATH POUR LES CHATS MULTIPLES ===
+# === PATH POUR LES CHATS ===
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
 
-# === SYSTEM PROMPT INVISIBLE ===
+# === SYSTEM PROMPT ===
 SYSTEM_PROMPT = """
 You are Vision AI.
 Your role is to help users by describing uploaded images with precision
@@ -46,21 +42,6 @@ def list_chats():
     files = [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
     return sorted(files)
 
-def build_qwen_history(chat_history):
-    """
-    Transforme l'historique Streamlit en format lisible par Qwen.
-    """
-    qwen_hist = []
-    for msg in chat_history:
-        if msg["role"] == "user":
-            qwen_hist.append([msg["content"], None])
-        elif msg["role"] == "assistant":
-            if qwen_hist and qwen_hist[-1][1] is None:
-                qwen_hist[-1][1] = msg["content"]
-            else:
-                qwen_hist.append(["", msg["content"]])
-    return qwen_hist
-
 # === CSS ===
 st.markdown("""
 <style>
@@ -75,9 +56,6 @@ st.markdown("""
     .user-bubble { background: #4299e1; color: white; }
     .ai-bubble { background: white; border: 1px solid #e2e8f0; color: #2d3748; }
     .uploaded-image { max-width: 300px; border-radius: 12px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .form-container { background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 20px; }
-    .stButton button { background: #4299e1; color: white; border-radius: 8px; border: none; padding: 8px 20px; font-weight: 600; }
-    .stButton button:hover { background: #3182ce; }
     .stApp > footer {visibility: hidden;}
     .stApp > header {visibility: hidden;}
 </style>
@@ -112,12 +90,14 @@ if "processor" not in st.session_state or "model" not in st.session_state:
         st.session_state.processor = processor
         st.session_state.model = model
 
-if "qwen_client" not in st.session_state:
-    st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
+if "qwen_clients" not in st.session_state:
+    st.session_state.qwen_clients = [
+        Client("Qwen/Qwen2-72B-Instruct"),  # priorité
+        Client("Qwen/Qwen2-7B-Instruct")    # fallback
+    ]
 
 # === SIDEBAR ===
 st.sidebar.title("📂 Gestion des chats")
-
 if st.sidebar.button("➕ Nouvelle chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
@@ -125,11 +105,8 @@ if st.sidebar.button("➕ Nouvelle chat"):
     st.rerun()
 
 available_chats = list_chats()
-selected_chat = st.sidebar.selectbox(
-    "💾 Vos discussions sauvegardées :",
-    available_chats,
-    index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
-)
+selected_chat = st.sidebar.selectbox("💾 Vos discussions sauvegardées :", available_chats, 
+    index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0)
 
 if selected_chat and selected_chat != st.session_state.chat_id:
     st.session_state.chat_id = selected_chat
@@ -161,17 +138,26 @@ for message in st.session_state.chat_history:
 
 # === FORMULAIRE ===
 with st.form("chat_form", clear_on_submit=True):
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        uploaded_file = st.file_uploader("📤 Uploadez une image (optionnel)", type=["jpg", "jpeg", "png"])
-    with col2:
-        submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
+    uploaded_file = st.file_uploader("📤 Uploadez une image (optionnel)", type=["jpg", "jpeg", "png"])
     user_message = st.text_input("💬 Votre message (optionnel)")
+    submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
+
+# === FUNCTION: envoi vers Qwen avec fallback ===
+def ask_qwen(query, history):
+    for client in st.session_state.qwen_clients:
+        try:
+            return client.predict(
+                query=query,
+                history=history,
+                system=SYSTEM_PROMPT,
+                api_name="/model_chat"
+            )
+        except Exception as e:
+            continue
+    return "⚠️ Impossible de contacter le modèle Qwen pour le moment."
 
 # === TRAITEMENT ===
 if submit:
-    qwen_history = build_qwen_history(st.session_state.chat_history)
-
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
@@ -180,26 +166,16 @@ if submit:
         if user_message.strip():
             user_text += f" L'utilisateur demande: '{user_message.strip()}'"
 
-        qwen_response = st.session_state.qwen_client.predict(
-            query=user_text,
-            history=qwen_history,
-            system=SYSTEM_PROMPT,
-            api_name="/model_chat"
-        )
+        qwen_response = ask_qwen(user_text, st.session_state.chat_history)
 
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
-        st.session_state.chat_history.append({"role": "user", "content": user_text, "image": image_path})
+        st.session_state.chat_history.append({"role": "user", "content": user_message.strip() or "Image envoyée 📸", "image": image_path})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     elif user_message.strip():
-        qwen_response = st.session_state.qwen_client.predict(
-            query=user_message.strip(),
-            history=qwen_history,
-            system=SYSTEM_PROMPT,
-            api_name="/model_chat"
-        )
+        qwen_response = ask_qwen(user_message.strip(), st.session_state.chat_history)
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip(), "image": None})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
@@ -209,13 +185,12 @@ if submit:
 # === RESET ===
 if st.session_state.chat_history:
     st.markdown("---")
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button("🗑️ Vider la discussion", use_container_width=True):
-            st.session_state.chat_history = []
-            save_chat_history([], st.session_state.chat_id)
-            st.rerun()
+    if st.button("🗑️ Vider la discussion", use_container_width=True):
+        st.session_state.chat_history = []
+        save_chat_history([], st.session_state.chat_id)
+        st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
