@@ -9,13 +9,17 @@ import os
 import uuid
 
 # === CONFIG ===
-st.set_page_config(page_title="Vision AI Chat", page_icon="🎯", layout="wide")
+st.set_page_config(
+    page_title="Vision AI Chat",
+    page_icon="🎯",
+    layout="wide"
+)
 
-# === PATH POUR LES CHATS ===
+# === PATH PER LE CHAT MULTIPLE ===
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
 
-# === SYSTEM PROMPT ===
+# === SYSTEM PROMPT INVISIBLE ===
 SYSTEM_PROMPT = """
 You are Vision AI.
 Your role is to help users by describing uploaded images with precision
@@ -56,6 +60,9 @@ st.markdown("""
     .user-bubble { background: #4299e1; color: white; }
     .ai-bubble { background: white; border: 1px solid #e2e8f0; color: #2d3748; }
     .uploaded-image { max-width: 300px; border-radius: 12px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .form-container { background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 20px; }
+    .stButton button { background: #4299e1; color: white; border-radius: 8px; border: none; padding: 8px 20px; font-weight: 600; }
+    .stButton button:hover { background: #3182ce; }
     .stApp > footer {visibility: hidden;}
     .stApp > header {visibility: hidden;}
 </style>
@@ -90,14 +97,12 @@ if "processor" not in st.session_state or "model" not in st.session_state:
         st.session_state.processor = processor
         st.session_state.model = model
 
-if "qwen_clients" not in st.session_state:
-    st.session_state.qwen_clients = [
-        Client("Qwen/Qwen2-72B-Instruct"),  # priorité
-        Client("Qwen/Qwen2-7B-Instruct")    # fallback
-    ]
+if "qwen_client" not in st.session_state:
+    st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
 
 # === SIDEBAR ===
 st.sidebar.title("📂 Gestion des chats")
+
 if st.sidebar.button("➕ Nouvelle chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
@@ -105,8 +110,7 @@ if st.sidebar.button("➕ Nouvelle chat"):
     st.rerun()
 
 available_chats = list_chats()
-selected_chat = st.sidebar.selectbox("💾 Vos discussions sauvegardées :", available_chats, 
-    index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0)
+selected_chat = st.sidebar.selectbox("💾 Vos discussions sauvegardées :", available_chats, index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0)
 
 if selected_chat and selected_chat != st.session_state.chat_id:
     st.session_state.chat_id = selected_chat
@@ -138,23 +142,12 @@ for message in st.session_state.chat_history:
 
 # === FORMULAIRE ===
 with st.form("chat_form", clear_on_submit=True):
-    uploaded_file = st.file_uploader("📤 Uploadez une image (optionnel)", type=["jpg", "jpeg", "png"])
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        uploaded_file = st.file_uploader("📤 Uploadez une image (optionnel)", type=["jpg", "jpeg", "png"])
+    with col2:
+        submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
     user_message = st.text_input("💬 Votre message (optionnel)")
-    submit = st.form_submit_button("🚀 Envoyer", use_container_width=True)
-
-# === FUNCTION: envoi vers Qwen avec fallback ===
-def ask_qwen(query, history):
-    for client in st.session_state.qwen_clients:
-        try:
-            return client.predict(
-                query=query,
-                history=history,
-                system=SYSTEM_PROMPT,
-                api_name="/model_chat"
-            )
-        except Exception as e:
-            continue
-    return "⚠️ Impossible de contacter le modèle Qwen pour le moment."
 
 # === TRAITEMENT ===
 if submit:
@@ -166,29 +159,48 @@ if submit:
         if user_message.strip():
             user_text += f" L'utilisateur demande: '{user_message.strip()}'"
 
-        qwen_response = ask_qwen(user_text, st.session_state.chat_history)
+        qwen_response = st.session_state.qwen_client.predict(
+            query=user_text,
+            history=[],
+            system=SYSTEM_PROMPT,
+            api_name="/model_chat"
+        )
 
+        # 🔹 Sauvegarde l'image sur disque pour la rendre sérialisable
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
-        st.session_state.chat_history.append({"role": "user", "content": user_message.strip() or "Image envoyée 📸", "image": image_path})
+        # 🔹 Ajoute l'entrée utilisateur + image
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": f"{user_message.strip() if user_message.strip() else 'Image envoyée 📸'}",
+            "image": image_path
+        })
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     elif user_message.strip():
-        qwen_response = ask_qwen(user_message.strip(), st.session_state.chat_history)
+        qwen_response = st.session_state.qwen_client.predict(
+            query=user_message.strip(),
+            history=[],
+            system=SYSTEM_PROMPT,
+            api_name="/model_chat"
+        )
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip(), "image": None})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
+    # ✅ Sauvegarde JSON maintenant possible
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
     st.rerun()
 
 # === RESET ===
 if st.session_state.chat_history:
     st.markdown("---")
-    if st.button("🗑️ Vider la discussion", use_container_width=True):
-        st.session_state.chat_history = []
-        save_chat_history([], st.session_state.chat_id)
-        st.rerun()
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("🗑️ Vider la discussion", use_container_width=True):
+            st.session_state.chat_history = []
+            save_chat_history([], st.session_state.chat_id)
+            st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
 
