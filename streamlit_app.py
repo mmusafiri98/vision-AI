@@ -47,24 +47,35 @@ def list_chats():
     return sorted(files)
 
 # === NOUVELLE FONCTION: FORMATAGE HISTORIQUE POUR LE MODÈLE ===
-def format_history_for_model(chat_history, limit=10):
+def format_history_for_model(chat_history, limit=5):
     """
     Formate l'historique de conversation pour le modèle Qwen
-    Garde les derniers 'limit' échanges pour maintenir le contexte
+    Garde les derniers 'limit' échanges complets pour maintenir le contexte
+    Format: [["user_message", "ai_response"], ["user_message", "ai_response"]]
     """
     formatted_history = []
     
-    # Prendre les derniers échanges (limiter pour éviter des contextes trop longs)
+    # Prendre les derniers échanges (par paires user/assistant)
     recent_history = chat_history[-limit*2:] if len(chat_history) > limit*2 else chat_history
     
-    for message in recent_history:
-        if message["role"] == "user":
-            content = message["content"]
-            # Si c'est juste "Image envoyée", on ne l'ajoute pas à l'historique textuel
-            if content.strip() and content != "Image envoyée 📸":
-                formatted_history.append(["user", content])
-        elif message["role"] == "assistant":
-            formatted_history.append(["assistant", message["content"]])
+    # Grouper par paires user/assistant
+    i = 0
+    while i < len(recent_history) - 1:
+        if (recent_history[i]["role"] == "user" and 
+            recent_history[i + 1]["role"] == "assistant"):
+            
+            user_content = recent_history[i]["content"]
+            ai_content = recent_history[i + 1]["content"]
+            
+            # Ignorer les échanges vides ou juste "Image envoyée"
+            if (user_content.strip() and 
+                user_content != "Image envoyée 📸" and 
+                ai_content.strip()):
+                formatted_history.append([user_content, ai_content])
+            
+            i += 2
+        else:
+            i += 1
     
     return formatted_history
 
@@ -230,5 +241,3 @@ if st.session_state.chat_history:
             st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
-
-
