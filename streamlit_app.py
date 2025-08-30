@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# === PATH PER LE CHAT MULTIPLE ===
+# === PATH POUR LES CHATS MULTIPLES ===
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
 
@@ -45,6 +45,21 @@ def load_chat_history(chat_id):
 def list_chats():
     files = [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
     return sorted(files)
+
+def build_qwen_history(chat_history):
+    """
+    Transforme l'historique Streamlit en format lisible par Qwen.
+    """
+    qwen_hist = []
+    for msg in chat_history:
+        if msg["role"] == "user":
+            qwen_hist.append([msg["content"], None])
+        elif msg["role"] == "assistant":
+            if qwen_hist and qwen_hist[-1][1] is None:
+                qwen_hist[-1][1] = msg["content"]
+            else:
+                qwen_hist.append(["", msg["content"]])
+    return qwen_hist
 
 # === CSS ===
 st.markdown("""
@@ -110,7 +125,11 @@ if st.sidebar.button("➕ Nouvelle chat"):
     st.rerun()
 
 available_chats = list_chats()
-selected_chat = st.sidebar.selectbox("💾 Vos discussions sauvegardées :", available_chats, index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0)
+selected_chat = st.sidebar.selectbox(
+    "💾 Vos discussions sauvegardées :",
+    available_chats,
+    index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
+)
 
 if selected_chat and selected_chat != st.session_state.chat_id:
     st.session_state.chat_id = selected_chat
@@ -151,6 +170,8 @@ with st.form("chat_form", clear_on_submit=True):
 
 # === TRAITEMENT ===
 if submit:
+    qwen_history = build_qwen_history(st.session_state.chat_history)
+
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
@@ -161,34 +182,27 @@ if submit:
 
         qwen_response = st.session_state.qwen_client.predict(
             query=user_text,
-            history=[],
+            history=qwen_history,
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
 
-        # 🔹 Sauvegarde l'image sur disque pour la rendre sérialisable
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
-        # 🔹 Ajoute l'entrée utilisateur + image
-        st.session_state.chat_history.append({
-            "role": "user",
-            "content": f"{user_message.strip() if user_message.strip() else 'Image envoyée 📸'}",
-            "image": image_path
-        })
+        st.session_state.chat_history.append({"role": "user", "content": user_text, "image": image_path})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
     elif user_message.strip():
         qwen_response = st.session_state.qwen_client.predict(
             query=user_message.strip(),
-            history=[],
+            history=qwen_history,
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
         st.session_state.chat_history.append({"role": "user", "content": user_message.strip(), "image": None})
         st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
 
-    # ✅ Sauvegarde JSON maintenant possible
     save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
     st.rerun()
 
