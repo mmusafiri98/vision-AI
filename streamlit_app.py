@@ -7,8 +7,6 @@ from gradio_client import Client, handle_file
 import json
 import os
 import uuid
-import base64
-from io import BytesIO
 
 # === CONFIG ===
 st.set_page_config(
@@ -91,7 +89,7 @@ if "qwen_edit_client" not in st.session_state:
         st.error(f"Erreur init Qwen Edit: {e}")
         st.session_state.qwen_edit_client = None
 
-# === FONCTION ÉDITION IMAGE ===
+# === FONCTION ÉDITION IMAGE (simplifiée) ===
 def edit_image_with_qwen(image_path, edit_instruction, client):
     try:
         result = client.predict(
@@ -105,36 +103,15 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
             api_name="/infer"
         )
 
-        # ⚠️ Gérer différents formats de sortie
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
 
-        edited_image = None
-        result_path = None
-
-        if isinstance(result, str):
-            if os.path.exists(result):
-                edited_image = Image.open(result)
-                result_path = result
-            else:
-                try:
-                    # peut-être base64
-                    image_data = base64.b64decode(result)
-                    edited_image = Image.open(BytesIO(image_data))
-                except:
-                    return None, f"❌ Sortie inattendue string: {result[:50]}..."
-        elif hasattr(result, "path") and os.path.exists(result.path):
-            edited_image = Image.open(result.path)
-            result_path = result.path
-        elif isinstance(result, Image.Image):
-            edited_image = result
-        
-        if edited_image is None:
-            return None, f"❌ Impossible de traiter le résultat: {type(result)}"
-
-        edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
-        edited_image.save(edited_image_path)
-        return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
+        if isinstance(result, str) and os.path.exists(result):
+            edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
+            Image.open(result).save(edited_image_path)
+            return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
+        else:
+            return None, f"❌ Résultat inattendu: {result}"
 
     except Exception as e:
         return None, f"Erreur édition: {e}"
@@ -160,21 +137,6 @@ st.sidebar.title("🎛️ Mode")
 mode = st.sidebar.radio("Choisir:", ["📝 Description", "✏️ Édition"],
                         index=0 if st.session_state.mode == "describe" else 1)
 st.session_state.mode = "describe" if "Description" in mode else "edit"
-
-# === DEBUG API QWEN EDIT ===
-st.sidebar.markdown("---")
-st.sidebar.title("🔍 Debug Qwen Edit")
-
-if st.session_state.qwen_edit_client:
-    if st.sidebar.button("Afficher les endpoints disponibles"):
-        try:
-            with st.spinner("Récupération des endpoints..."):
-                api_info = st.session_state.qwen_edit_client.view_api()
-                st.sidebar.code(str(api_info))
-        except Exception as e:
-            st.sidebar.error(f"Erreur debug: {e}")
-else:
-    st.sidebar.warning("⚠️ Client Qwen Edit non disponible")
 
 # === AFFICHAGE CHAT ===
 st.markdown("<h1 style='text-align:center'>🎯 Vision AI Chat</h1>", unsafe_allow_html=True)
@@ -250,4 +212,3 @@ if st.session_state.chat_history:
         st.session_state.chat_history = []
         save_chat_history([], st.session_state.chat_id)
         st.rerun()
-
