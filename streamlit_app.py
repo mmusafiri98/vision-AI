@@ -193,5 +193,56 @@ if submit:
                 api_name="/model_chat"
             )
             st.session_state.chat_history.append({"role": "user", "content": user_message or "Image envoyée", "image": image_path})
-            st.session_state.chat_history.append({"role": "
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+            save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+            st.markdown(f"**🤖 Vision AI:** {response}")
+
+        else:
+            if not user_message:
+                st.error("⚠️ Spécifiez une instruction d'édition")
+                st.stop()
+
+            edited_path, msg = edit_image_with_qwen(image_path, user_message, st.session_state.qwen_edit_client)
+
+            if edited_path:
+                edited_caption = generate_caption(Image.open(edited_path), st.session_state.processor, st.session_state.model)
+                response = st.session_state.qwen_client.predict(
+                    query=f"Image éditée: {user_message}. Résultat: {edited_caption}",
+                    system=SYSTEM_PROMPT,
+                    api_name="/model_chat"
+                )
+
+                st.session_state.chat_history.append({"role": "user", "content": user_message, "image": image_path})
+                st.session_state.chat_history.append({"role": "assistant", "content": response, "edited_image": edited_path})
+                save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+
+                # ⚡ Affichage immédiat de l'image éditée
+                st.markdown(f"**🤖 Vision AI:** {response}")
+                st.image(edited_path, caption="✨ Image éditée", use_column_width=True)
+
+            else:
+                st.error(msg)
+
+    elif user_message:
+        response = st.session_state.qwen_client.predict(
+            query=user_message,
+            system=SYSTEM_PROMPT,
+            api_name="/model_chat"
+        )
+        st.session_state.chat_history.append({"role": "user", "content": user_message})
+        st.session_state.chat_history.append({"role": "assistant", "content": response})
+        save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+        st.markdown(f"**🤖 Vision AI:** {response}")
+
+# === AFFICHAGE DEBUG RESULTAT MODELE ===
+if "last_result" in st.session_state:
+    st.info(f"Résultat brut modèle: {st.session_state['last_result']}")
+
+# === RESET ===
+if st.session_state.chat_history:
+    if st.button("🗑️ Vider la discussion"):
+        st.session_state.chat_history = []
+        save_chat_history([], st.session_state.chat_id)
+        st.experimental_rerun()
+
 
