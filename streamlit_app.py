@@ -98,8 +98,8 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
             api_name="/infer"
         )
 
-        # ⚡ Debug : afficher le résultat brut
-        st.write("Résultat brut modèle:", result)
+        # Stocker le résultat pour debug
+        st.session_state["last_result"] = result
 
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
@@ -133,7 +133,7 @@ if st.sidebar.button("➕ Nouveau chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
     save_chat_history([], st.session_state.chat_id)
-    st.rerun()
+    st.experimental_rerun()
 
 available_chats = list_chats()
 if available_chats:
@@ -142,7 +142,7 @@ if available_chats:
     if selected != st.session_state.chat_id:
         st.session_state.chat_id = selected
         st.session_state.chat_history = load_chat_history(selected)
-        st.rerun()
+        st.experimental_rerun()
 
 st.sidebar.title("🎛️ Mode")
 mode = st.sidebar.radio("Choisir:", ["📝 Description", "✏️ Édition"],
@@ -187,12 +187,16 @@ if submit:
             )
             st.session_state.chat_history.append({"role": "user", "content": user_message or "Image envoyée", "image": image_path})
             st.session_state.chat_history.append({"role": "assistant", "content": response})
+            save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+            st.markdown(f"**🤖 Vision AI:** {response}")
 
         else:
             if not user_message:
                 st.error("⚠️ Spécifiez une instruction d'édition")
                 st.stop()
+
             edited_path, msg = edit_image_with_qwen(image_path, user_message, st.session_state.qwen_edit_client)
+
             if edited_path:
                 edited_caption = generate_caption(Image.open(edited_path), st.session_state.processor, st.session_state.model)
                 response = st.session_state.qwen_client.predict(
@@ -200,8 +204,15 @@ if submit:
                     system=SYSTEM_PROMPT,
                     api_name="/model_chat"
                 )
+
                 st.session_state.chat_history.append({"role": "user", "content": user_message, "image": image_path})
                 st.session_state.chat_history.append({"role": "assistant", "content": response, "edited_image": edited_path})
+                save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+
+                # ⚡ Affichage immédiat de l'image éditée
+                st.markdown(f"**🤖 Vision AI:** {response}")
+                st.image(edited_path, caption="✨ Image éditée", use_column_width=True)
+
             else:
                 st.error(msg)
 
@@ -213,13 +224,16 @@ if submit:
         )
         st.session_state.chat_history.append({"role": "user", "content": user_message})
         st.session_state.chat_history.append({"role": "assistant", "content": response})
+        save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+        st.markdown(f"**🤖 Vision AI:** {response}")
 
-    save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-    st.rerun()
+# === AFFICHAGE DEBUG RESULTAT MODELE ===
+if "last_result" in st.session_state:
+    st.info(f"Résultat brut modèle: {st.session_state['last_result']}")
 
 # === RESET ===
 if st.session_state.chat_history:
     if st.button("🗑️ Vider la discussion"):
         st.session_state.chat_history = []
         save_chat_history([], st.session_state.chat_id)
-        st.rerun()
+        st.experimental_rerun()
