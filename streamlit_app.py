@@ -153,7 +153,6 @@ st.session_state.mode = "describe" if "Description" in mode else "edit"
 # === AFFICHAGE CHAT ===
 st.markdown("<h1 style='text-align:center'>🎯 Vision AI Chat</h1>", unsafe_allow_html=True)
 
-# Utiliser container pour affichage scrollable
 chat_container = st.container()
 with chat_container:
     for msg in st.session_state.chat_history:
@@ -197,24 +196,20 @@ if submit:
         else:
             if not user_message:
                 st.error("⚠️ Spécifiez une instruction d'édition")
-                st.stop()
-
-            edited_path, msg = edit_image_with_qwen(image_path, user_message, st.session_state.qwen_edit_client)
-
-            if edited_path:
-                edited_caption = generate_caption(Image.open(edited_path), st.session_state.processor, st.session_state.model)
-                response = st.session_state.qwen_client.predict(
-                    query=f"Image éditée: {user_message}. Résultat: {edited_caption}",
-                    system=SYSTEM_PROMPT,
-                    api_name="/model_chat"
-                )
-
-                st.session_state.chat_history.append({"role": "user", "content": user_message, "image": image_path})
-                st.session_state.chat_history.append({"role": "assistant", "content": response, "edited_image": edited_path})
-                save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-
             else:
-                st.error(msg)
+                edited_path, msg = edit_image_with_qwen(image_path, user_message, st.session_state.qwen_edit_client)
+                if edited_path:
+                    edited_caption = generate_caption(Image.open(edited_path), st.session_state.processor, st.session_state.model)
+                    response = st.session_state.qwen_client.predict(
+                        query=f"Image éditée: {user_message}. Résultat: {edited_caption}",
+                        system=SYSTEM_PROMPT,
+                        api_name="/model_chat"
+                    )
+                    st.session_state.chat_history.append({"role": "user", "content": user_message, "image": image_path})
+                    st.session_state.chat_history.append({"role": "assistant", "content": response, "edited_image": edited_path})
+                    save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+                else:
+                    st.error(msg)
 
     elif user_message:
         response = st.session_state.qwen_client.predict(
@@ -226,10 +221,7 @@ if submit:
         st.session_state.chat_history.append({"role": "assistant", "content": response})
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
 
-    # Après ajout, rerender pour voir le nouveau message
-    st.experimental_rerun()
-
-# === AFFICHAGE DEBUG RESULTAT MODELE ===
+# === DEBUG OPTIONNEL ===
 if "last_result" in st.session_state:
     st.info(f"Résultat brut modèle: {st.session_state['last_result']}")
 
