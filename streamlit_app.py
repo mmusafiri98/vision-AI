@@ -378,34 +378,61 @@ if submit:
             st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
             
         else:
-            # === MODE ÉDITION CORRIGÉ ===
+            # === MODE ÉDITION AMÉLIORÉ ===
             if not user_message.strip():
                 st.error("⚠️ Veuillez spécifier les instructions d'édition")
                 st.stop()
             
+            # Vérification et tentative de reconnexion si nécessaire
             if st.session_state.qwen_edit_client is None:
-                st.error("❌ Modèle d'édition non disponible")
-                st.stop()
+                st.warning("🔄 Tentative de reconnexion au modèle d'édition...")
+                
+                # Réessayer une fois la connexion
+                edit_models = [
+                    "multimodalart/Florence-2-large-PromptGen-v1.5",
+                    "microsoft/Florence-2-large"
+                ]
+                
+                for model_id in edit_models:
+                    try:
+                        test_client = Client(model_id)
+                        st.session_state.qwen_edit_client = test_client
+                        st.session_state.edit_model_name = model_id
+                        st.success(f"✅ Reconnecté à {model_id}")
+                        break
+                    except:
+                        continue
+                
+                if st.session_state.qwen_edit_client is None:
+                    st.error("❌ Impossible de se connecter à un modèle d'édition")
+                    st.info("💡 Essayez le mode 'Description d'images' à la place")
+                    st.stop()
             
             with st.spinner("✏️ Édition en cours..."):
                 edited_image_path, edit_result = edit_image_with_qwen(
                     image_path, 
                     user_message.strip(), 
-                    st.session_state.qwen_edit_client  # Utiliser le bon client
+                    st.session_state.qwen_edit_client
                 )
             
             if edited_image_path:
-                # Générer une description de l'image éditée
-                edited_image = Image.open(edited_image_path)
-                edited_caption = generate_caption(edited_image, st.session_state.processor, st.session_state.model)
+                # Générer une description de l'image éditée avec gestion d'erreur
+                if st.session_state.processor is not None:
+                    edited_image = Image.open(edited_image_path)
+                    edited_caption = generate_caption(edited_image, st.session_state.processor, st.session_state.model, st.session_state.model_name)
+                else:
+                    edited_caption = "Image éditée - description automatique non disponible"
                 
                 # Réponse de l'IA incluant le processus d'édition
-                qwen_response = st.session_state.qwen_client.predict(
-                    query=f"J'ai édité l'image selon vos instructions: '{user_message.strip()}'. L'image éditée montre: '{edited_caption}'. {edit_result}",
-                    history=conversation_history,
-                    system=SYSTEM_PROMPT,
-                    api_name="/model_chat"
-                )
+                if st.session_state.qwen_client:
+                    qwen_response = st.session_state.qwen_client.predict(
+                        query=f"J'ai édité l'image selon vos instructions: '{user_message.strip()}'. L'image éditée montre: '{edited_caption}'. {edit_result}",
+                        history=conversation_history,
+                        system=SYSTEM_PROMPT,
+                        api_name="/model_chat"
+                    )
+                else:
+                    qwen_response = f"Image éditée selon vos instructions: '{user_message.strip()}'. {edit_result}"
                 
                 st.session_state.chat_history.append({
                     "role": "user",
@@ -420,6 +447,8 @@ if submit:
                 })
             else:
                 st.error(f"❌ Erreur lors de l'édition: {edit_result}")
+                # Proposer une alternative
+                st.info("💡 Vous pouvez essayer le mode 'Description d'images' à la place")
                 
     elif user_message.strip():
         # Message texte seul
