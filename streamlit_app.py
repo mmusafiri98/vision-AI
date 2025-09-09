@@ -55,7 +55,8 @@ def load_blip():
 def generate_caption(image, processor, model):
     inputs = processor(image, return_tensors="pt")
     if torch.cuda.is_available():
-        inputs = inputs.to("cuda"); model = model.to("cuda")
+        inputs = inputs.to("cuda")
+        model = model.to("cuda")
     with torch.no_grad():
         out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
     return processor.decode(out[0], skip_special_tokens=True)
@@ -89,7 +90,7 @@ if "qwen_edit_client" not in st.session_state:
         st.error(f"Erreur init Qwen Edit: {e}")
         st.session_state.qwen_edit_client = None
 
-# === FONCTION ÉDITION IMAGE ===
+# === FONCTION ÉDITION IMAGE CORRIGÉE ===
 def edit_image_with_qwen(image_path, edit_instruction, client):
     try:
         result = client.predict(
@@ -98,15 +99,20 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
             api_name="/infer"
         )
 
-        st.session_state["last_result"] = result
+        st.session_state["last_result"] = result  # debug
 
+        # Si result est une liste, prendre le premier élément
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
 
+        # Si result est un tuple, prendre le premier élément (chemin de l'image)
         if isinstance(result, tuple) and len(result) > 0 and os.path.exists(result[0]):
             edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
-            Image.open(result[0]).save(edited_image_path)
+            img = Image.open(result[0]).convert("RGB")  # conversion WebP → RGB
+            img.save(edited_image_path, format="PNG")
             return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
+
+        # Si result est une URL
         elif isinstance(result, str) and result.startswith("http"):
             response = requests.get(result)
             if response.status_code == 200:
@@ -116,12 +122,17 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
                 return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
             else:
                 return None, f"❌ Impossible de télécharger l'image (code {response.status_code})"
+
+        # Si result est un chemin local
         elif isinstance(result, str) and os.path.exists(result):
             edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
-            Image.open(result).save(edited_image_path)
+            img = Image.open(result).convert("RGB")
+            img.save(edited_image_path, format="PNG")
             return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
+
         else:
             return None, f"❌ Résultat inattendu: {result}"
+
     except Exception as e:
         return None, f"Erreur édition: {e}"
 
@@ -231,5 +242,4 @@ if st.session_state.chat_history:
         st.session_state.chat_history = []
         save_chat_history([], st.session_state.chat_id)
         st.experimental_rerun()
-
 
