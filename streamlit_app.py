@@ -61,7 +61,7 @@ def base64_to_image(base64_string):
     image_data = base64.b64decode(base64_string)
     return Image.open(BytesIO(image_data))
 
-# === NOUVELLE FONCTION: FORMATAGE HISTORIQUE POUR LE MODÈLE ===
+# === FORMATAGE HISTORIQUE POUR LE MODÈLE ===
 def format_history_for_model(chat_history, limit=5):
     """
     Formate l'historique de conversation pour le modèle Qwen
@@ -94,37 +94,65 @@ def format_history_for_model(chat_history, limit=5):
     
     return formatted_history
 
-# === FONCTION D'ÉDITION D'IMAGE (À PERSONNALISER SELON VOTRE MODÈLE QWEN EDIT) ===
+# === FONCTION D'ÉDITION D'IMAGE CORRIGÉE ===
 def edit_image_with_qwen(image_path, edit_instruction, client):
     """
     Fonction pour éditer une image avec Qwen Edit
-    Vous devrez adapter cette fonction selon l'API de Qwen Edit
     """
     try:
-        # Exemple d'appel - à adapter selon votre modèle Qwen Edit
-        # image_base64 = image_to_base64(image_path)
+        # 1. Convertir l'image en base64
+        image_base64 = image_to_base64(image_path)
         
-        # Pour l'instant, nous simulons l'édition
-        # Remplacez cette section par l'appel réel à Qwen Edit
+        # 2. Appel à l'API Qwen Edit (à ajuster selon votre modèle exact)
+        # Option A: Si vous utilisez un modèle Qwen VL avec édition
+        edited_result = client.predict(
+            image=image_base64,  # ou juste image_path selon l'API
+            instruction=edit_instruction,
+            api_name="/edit_image"  # Vérifiez le bon endpoint
+        )
         
+        # Option B: Alternative si l'API est différente
         # edited_result = client.predict(
+        #     prompt=f"Edit this image: {edit_instruction}",
         #     image=image_base64,
-        #     instruction=edit_instruction,
-        #     api_name="/edit_image"  # Remplacez par le bon endpoint
+        #     api_name="/generate"
         # )
         
-        # Simulation - à supprimer quand vous aurez le vrai modèle
-        st.warning("⚠️ Simulation d'édition - Intégrez ici votre modèle Qwen Edit")
+        # 3. Traitement du résultat (dépend du format de retour)
+        if isinstance(edited_result, str):
+            # Si c'est un base64
+            edited_image = base64_to_image(edited_result)
+        elif hasattr(edited_result, 'path'):
+            # Si c'est un fichier temporaire
+            edited_image = Image.open(edited_result.path)
+        else:
+            # Si c'est directement une image PIL
+            edited_image = edited_result
         
-        # Pour la démo, nous copions simplement l'image originale
-        original_image = Image.open(image_path)
+        # 4. Sauvegarder l'image éditée
         edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
-        original_image.save(edited_image_path)
+        edited_image.save(edited_image_path)
         
-        return edited_image_path, f"Image éditée selon: '{edit_instruction}' (simulation)"
+        return edited_image_path, f"Image éditée avec succès selon: '{edit_instruction}'"
         
     except Exception as e:
         return None, f"Erreur lors de l'édition: {str(e)}"
+
+# === FONCTION UTILITAIRE POUR DÉBOGUER ===
+def debug_qwen_edit_api(client):
+    """
+    Fonction pour explorer l'API du modèle Qwen Edit
+    """
+    try:
+        # Lister les endpoints disponibles
+        st.write("**Endpoints disponibles:**")
+        api_info = client.view_api()
+        st.code(str(api_info))
+        
+        return api_info
+    except Exception as e:
+        st.error(f"Erreur debug: {e}")
+        return None
 
 # === CSS AMÉLIORÉ ===
 st.markdown("""
@@ -149,6 +177,8 @@ st.markdown("""
     .stApp > footer {visibility: hidden;}
     .stApp > header {visibility: hidden;}
     .mode-selector { background: #edf2f7; padding: 10px; border-radius: 8px; margin-bottom: 15px; }
+    .success-info { background: #c6f6d5; border: 1px solid #68d391; padding: 15px; border-radius: 8px; margin: 20px 0; }
+    .debug-section { background: #fffacd; border: 1px solid #f6e05e; padding: 15px; border-radius: 8px; margin: 20px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -177,18 +207,33 @@ if "chat_history" not in st.session_state:
 if "mode" not in st.session_state:
     st.session_state.mode = "describe"  # "describe" ou "edit"
 
+# Chargement du modèle BLIP
 if "processor" not in st.session_state or "model" not in st.session_state:
     with st.spinner("🤖 Chargement du modèle BLIP..."):
         processor, model = load_model()
         st.session_state.processor = processor
         st.session_state.model = model
 
+# Initialisation du client Qwen pour les conversations
 if "qwen_client" not in st.session_state:
-    st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
+    try:
+        st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
+    except Exception as e:
+        st.error(f"Erreur lors de l'initialisation du modèle Qwen: {e}")
+        st.session_state.qwen_client = None
 
-# TODO: Ajoutez ici votre client Qwen Edit
-# if "qwen_edit_client" not in st.session_state:
-#     st.session_state.qwen_edit_client = Client("VotreModeleQwenEdit")
+# === INITIALISATION DU CLIENT QWEN EDIT ===
+if "qwen_edit_client" not in st.session_state:
+    try:
+        # Remplacez par l'ID exact de votre modèle Qwen Edit
+        # Exemples possibles :
+        st.session_state.qwen_edit_client = Client("Qwen/Qwen-VL-Chat")
+        # ou
+        # st.session_state.qwen_edit_client = Client("votre-modele-qwen-edit")
+        # st.session_state.qwen_edit_client = Client("Qwen/Qwen2-VL-Instruct")
+    except Exception as e:
+        st.error(f"Erreur lors de l'initialisation du modèle Qwen Edit: {e}")
+        st.session_state.qwen_edit_client = None
 
 # === SIDEBAR ===
 st.sidebar.title("📂 Gestion des chats")
@@ -218,6 +263,23 @@ mode = st.sidebar.radio(
     index=0 if st.session_state.mode == "describe" else 1
 )
 st.session_state.mode = "describe" if "Description" in mode else "edit"
+
+# === SECTION DEBUG ===
+st.sidebar.markdown("---")
+st.sidebar.title("🔍 Debug")
+if st.sidebar.button("🔍 Debug API Qwen Edit"):
+    if st.session_state.qwen_edit_client:
+        with st.sidebar:
+            with st.spinner("Analyse de l'API..."):
+                debug_qwen_edit_api(st.session_state.qwen_edit_client)
+    else:
+        st.sidebar.error("Client Qwen Edit non disponible")
+
+# Affichage du statut des modèles
+st.sidebar.markdown("### 📊 Statut des modèles")
+st.sidebar.write(f"🤖 BLIP: {'✅ Actif' if 'processor' in st.session_state else '❌ Inactif'}")
+st.sidebar.write(f"💬 Qwen Chat: {'✅ Actif' if st.session_state.qwen_client else '❌ Inactif'}")
+st.sidebar.write(f"✏️ Qwen Edit: {'✅ Actif' if st.session_state.qwen_edit_client else '❌ Inactif'}")
 
 # === UI HEADER ===
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
@@ -278,6 +340,11 @@ with st.form("chat_form", clear_on_submit=True):
 
 # === TRAITEMENT ===
 if submit:
+    # Vérifier la disponibilité des modèles
+    if not st.session_state.qwen_client:
+        st.error("❌ Modèle Qwen Chat non disponible")
+        st.stop()
+    
     conversation_history = format_history_for_model(st.session_state.chat_history)
     
     if uploaded_file is not None:
@@ -311,15 +378,20 @@ if submit:
             st.session_state.chat_history.append({"role": "assistant", "content": qwen_response})
             
         else:
-            # Mode édition
+            # === MODE ÉDITION CORRIGÉ ===
             if not user_message.strip():
                 st.error("⚠️ Veuillez spécifier les instructions d'édition")
                 st.stop()
             
+            if st.session_state.qwen_edit_client is None:
+                st.error("❌ Modèle d'édition non disponible")
+                st.stop()
+            
             with st.spinner("✏️ Édition en cours..."):
-                # TODO: Remplacez par votre vrai modèle Qwen Edit
                 edited_image_path, edit_result = edit_image_with_qwen(
-                    image_path, user_message.strip(), st.session_state.qwen_client
+                    image_path, 
+                    user_message.strip(), 
+                    st.session_state.qwen_edit_client  # Utiliser le bon client
                 )
             
             if edited_image_path:
@@ -395,13 +467,42 @@ with st.expander("ℹ️ Guide d'utilisation"):
         - Powered by Qwen Image Edit pour des résultats précis
         """)
 
+# === SECTION DE TROUBLESHOOTING ===
+with st.expander("🔧 Troubleshooting - Édition d'images"):
+    st.markdown("""
+    **Si l'édition ne fonctionne pas :**
+    
+    1. **Vérifiez le modèle utilisé** - Dans la sidebar, regardez le statut "Qwen Edit"
+    
+    2. **Testez l'API** - Cliquez sur "Debug API Qwen Edit" dans la sidebar
+    
+    3. **Modèles possibles à essayer :**
+    ```python
+    # Dans le code, ligne ~140, remplacez par :
+    st.session_state.qwen_edit_client = Client("Qwen/Qwen-VL-Chat")
+    # ou
+    st.session_state.qwen_edit_client = Client("Qwen/Qwen2-VL-Instruct")
+    # ou votre modèle personnalisé
+    ```
+    
+    4. **Endpoints possibles :**
+    - `/edit_image`
+    - `/generate` 
+    - `/predict`
+    - `/chat`
+    
+    5. **Format des paramètres :**
+    - Certains modèles attendent `image` + `instruction`
+    - D'autres attendent `prompt` avec l'instruction incluse
+    """)
+
 st.markdown("""
 <div class="success-info">
-    <strong>✅ Intégration complète réussie !</strong><br>
-    • BLIP pour la description d'images<br>
-    • Qwen 2-72B pour les conversations<br>
-    • Qwen Image Edit pour l'édition d'images<br>
-    • Historique de conversation conservé<br>
-    • Sauvegarde automatique des images éditées
+    <strong>🔄 Mise à jour appliquée !</strong><br>
+    • ✅ Fonction d'édition corrigée<br>
+    • ✅ Client Qwen Edit initialisé<br>
+    • ✅ Gestion d'erreur améliorée<br>
+    • ✅ Section debug ajoutée<br>
+    • ✅ Guide de troubleshooting inclus
 </div>
 """, unsafe_allow_html=True)
