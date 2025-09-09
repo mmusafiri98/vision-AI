@@ -89,7 +89,7 @@ if "qwen_edit_client" not in st.session_state:
         st.error(f"Erreur init Qwen Edit: {e}")
         st.session_state.qwen_edit_client = None
 
-# === FONCTION ÉDITION IMAGE (corrigée) ===
+# === FONCTION ÉDITION IMAGE (corrigée pour tuple/URL/string) ===
 def edit_image_with_qwen(image_path, edit_instruction, client):
     try:
         result = client.predict(
@@ -101,11 +101,18 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
         # Stocker le résultat pour debug
         st.session_state["last_result"] = result
 
+        # Si result est une liste, prendre le premier élément
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
 
-        # Si le modèle renvoie une URL Hugging Face
-        if isinstance(result, str) and result.startswith("http"):
+        # Si result est un tuple, prendre le premier élément (chemin de l'image)
+        if isinstance(result, tuple) and len(result) > 0 and os.path.exists(result[0]):
+            edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
+            Image.open(result[0]).save(edited_image_path)
+            return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
+
+        # Si result est une URL
+        elif isinstance(result, str) and result.startswith("http"):
             response = requests.get(result)
             if response.status_code == 200:
                 edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
@@ -115,7 +122,7 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
             else:
                 return None, f"❌ Impossible de télécharger l'image (code {response.status_code})"
 
-        # Si le modèle renvoie un fichier local
+        # Si result est un chemin local
         elif isinstance(result, str) and os.path.exists(result):
             edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
             Image.open(result).save(edited_image_path)
@@ -186,54 +193,5 @@ if submit:
                 api_name="/model_chat"
             )
             st.session_state.chat_history.append({"role": "user", "content": user_message or "Image envoyée", "image": image_path})
-            st.session_state.chat_history.append({"role": "assistant", "content": response})
-            save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-            st.markdown(f"**🤖 Vision AI:** {response}")
+            st.session_state.chat_history.append({"role": "
 
-        else:
-            if not user_message:
-                st.error("⚠️ Spécifiez une instruction d'édition")
-                st.stop()
-
-            edited_path, msg = edit_image_with_qwen(image_path, user_message, st.session_state.qwen_edit_client)
-
-            if edited_path:
-                edited_caption = generate_caption(Image.open(edited_path), st.session_state.processor, st.session_state.model)
-                response = st.session_state.qwen_client.predict(
-                    query=f"Image éditée: {user_message}. Résultat: {edited_caption}",
-                    system=SYSTEM_PROMPT,
-                    api_name="/model_chat"
-                )
-
-                st.session_state.chat_history.append({"role": "user", "content": user_message, "image": image_path})
-                st.session_state.chat_history.append({"role": "assistant", "content": response, "edited_image": edited_path})
-                save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-
-                # ⚡ Affichage immédiat de l'image éditée
-                st.markdown(f"**🤖 Vision AI:** {response}")
-                st.image(edited_path, caption="✨ Image éditée", use_column_width=True)
-
-            else:
-                st.error(msg)
-
-    elif user_message:
-        response = st.session_state.qwen_client.predict(
-            query=user_message,
-            system=SYSTEM_PROMPT,
-            api_name="/model_chat"
-        )
-        st.session_state.chat_history.append({"role": "user", "content": user_message})
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
-        save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-        st.markdown(f"**🤖 Vision AI:** {response}")
-
-# === AFFICHAGE DEBUG RESULTAT MODELE ===
-if "last_result" in st.session_state:
-    st.info(f"Résultat brut modèle: {st.session_state['last_result']}")
-
-# === RESET ===
-if st.session_state.chat_history:
-    if st.button("🗑️ Vider la discussion"):
-        st.session_state.chat_history = []
-        save_chat_history([], st.session_state.chat_id)
-        st.experimental_rerun()
