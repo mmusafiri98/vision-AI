@@ -20,7 +20,6 @@ EDITED_IMAGES_DIR = "edited_images"
 os.makedirs(CHAT_DIR, exist_ok=True)
 os.makedirs(EDITED_IMAGES_DIR, exist_ok=True)
 
-# === SYSTEM PROMPT ===
 SYSTEM_PROMPT = """
 You are Vision AI.
 Your role is to help users by describing uploaded images with precision,
@@ -61,7 +60,7 @@ def generate_caption(image, processor, model):
         out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
     return processor.decode(out[0], skip_special_tokens=True)
 
-# === INIT SESSION ===
+# === SESSION INIT ===
 if "chat_id" not in st.session_state:
     st.session_state.chat_id = str(uuid.uuid4())
 if "chat_history" not in st.session_state:
@@ -70,12 +69,11 @@ if "mode" not in st.session_state:
     st.session_state.mode = "describe"
 
 if "processor" not in st.session_state or "model" not in st.session_state:
-    with st.spinner("Chargement du modèle BLIP..."):
-        processor, model = load_blip()
-        st.session_state.processor = processor
-        st.session_state.model = model
+    processor, model = load_blip()
+    st.session_state.processor = processor
+    st.session_state.model = model
 
-# === CLIENTS QWEN ===
+# === QWEN CLIENTS ===
 if "qwen_client" not in st.session_state:
     try:
         st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
@@ -90,7 +88,7 @@ if "qwen_edit_client" not in st.session_state:
         st.error(f"Erreur init Qwen Edit: {e}")
         st.session_state.qwen_edit_client = None
 
-# === FONCTION ÉDITION IMAGE ===
+# === IMAGE EDIT FUNCTION ===
 def edit_image_with_qwen(image_path, edit_instruction, client):
     try:
         result = client.predict(
@@ -98,37 +96,27 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
             prompt=edit_instruction,
             api_name="/infer"
         )
-
-        st.session_state["last_result"] = result  # debug
-
+        st.session_state["last_result"] = result
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
-
         if isinstance(result, tuple) and len(result) > 0 and os.path.exists(result[0]):
             edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
             img = Image.open(result[0]).convert("RGB")
             img.save(edited_image_path, format="PNG")
-            return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
-
+            return edited_image_path, f"✅ Image éditée selon: '{edit_instruction}'"
         elif isinstance(result, str) and result.startswith("http"):
             response = requests.get(result)
             if response.status_code == 200:
                 edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
                 with open(edited_image_path, "wb") as f:
                     f.write(response.content)
-                return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
-            else:
-                return None, f"❌ Impossible de télécharger l'image (code {response.status_code})"
-
+                return edited_image_path, f"✅ Image éditée selon: '{edit_instruction}'"
         elif isinstance(result, str) and os.path.exists(result):
             edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
             img = Image.open(result).convert("RGB")
             img.save(edited_image_path, format="PNG")
-            return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
-
-        else:
-            return None, f"❌ Résultat inattendu: {result}"
-
+            return edited_image_path, f"✅ Image éditée selon: '{edit_instruction}'"
+        return None, f"❌ Résultat inattendu: {result}"
     except Exception as e:
         return None, f"Erreur édition: {e}"
 
@@ -155,26 +143,24 @@ mode = st.sidebar.radio("Choisir:", ["📝 Description", "✏️ Édition"],
                         index=0 if st.session_state.mode == "describe" else 1)
 st.session_state.mode = "describe" if "Description" in mode else "edit"
 
-# === AFFICHAGE CHAT ===
+# === DISPLAY CHAT ===
 st.markdown("<h1 style='text-align:center'>🎯 Vision AI Chat</h1>", unsafe_allow_html=True)
 
 chat_container = st.container()
 with chat_container:
     for msg in st.session_state.chat_history:
         badge = "📝" if msg.get("type") == "describe" else "✏️" if msg.get("type") == "edit" else "💬"
-
         if msg["role"] == "user":
             st.markdown(f"**👤 Vous {badge}:** {msg['content']}")
             if msg.get("image") and os.path.exists(msg["image"]):
-                st.image(msg["image"], caption="📤 Image", width=300)
-
+                st.image(msg["image"], width=300)
         elif msg["role"] == "assistant":
             st.markdown(f"**🤖 Vision AI {badge}:** {msg['content']}")
             if msg.get("edited_image") and os.path.exists(msg["edited_image"]):
-                st.image(msg["edited_image"], caption="✨ Image éditée", width=300)
+                st.image(msg["edited_image"], width=300)
 
-# === FORMULAIRE EN BAS ===
-with st.form("chat_form", clear_on_submit=False):  # 🚀 corrigé
+# === FORM ===
+with st.form("chat_form", clear_on_submit=False):
     uploaded_file = st.file_uploader("📤 Upload image", type=["jpg", "jpeg", "png"])
     if st.session_state.mode == "describe":
         user_message = st.text_input("💬 Question sur l'image (optionnel)")
@@ -184,6 +170,7 @@ with st.form("chat_form", clear_on_submit=False):  # 🚀 corrigé
         submit = st.form_submit_button("✏️ Éditer")
 
 if submit:
+    # IMAGE UPLOAD
     if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
@@ -192,11 +179,7 @@ if submit:
         if st.session_state.mode == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
-            response = st.session_state.qwen_client.predict(
-                query=query,
-                system=SYSTEM_PROMPT,
-                api_name="/model_chat"
-            )
+            response = st.session_state.qwen_client.predict(query=query, system=SYSTEM_PROMPT, api_name="/model_chat")
             st.session_state.chat_history.append({
                 "role": "user",
                 "content": user_message or "Image envoyée",
@@ -209,7 +192,7 @@ if submit:
                 "type": "describe"
             })
 
-        else:
+        else:  # IMAGE EDIT
             if not user_message:
                 st.error("⚠️ Spécifiez une instruction d'édition")
             else:
@@ -238,30 +221,10 @@ if submit:
 
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
 
+    # TEXT ONLY
     elif user_message:
-        response = st.session_state.qwen_client.predict(
-            query=user_message,
-            system=SYSTEM_PROMPT,
-            api_name="/model_chat"
-        )
-        st.session_state.chat_history.append({
-            "role": "user",
-            "content": user_message,
-            "type": "text"
-        })
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": response,
-            "type": "text"
-        })
+        response = st.session_state.qwen_client.predict(query=user_message, system=SYSTEM_PROMPT, api_name="/model_chat")
+        st.session_state.chat_history.append({"role": "user", "content": user_message, "type": "text"})
+        st.session_state.chat_history.append({"role": "assistant", "content": response, "type": "text"})
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
 
-# === DEBUG OPTIONNEL ===
-if "last_result" in st.session_state:
-    st.info(f"Résultat brut modèle: {st.session_state['last_result']}")
-
-# === RESET ===
-if st.session_state.chat_history:
-    if st.button("🗑️ Vider la discussion"):
-        st.session_state.chat_history = []
-        save_chat_history([], st.session_state.chat_id)
