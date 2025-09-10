@@ -145,7 +145,6 @@ st.session_state.mode = "describe" if "Description" in mode else "edit"
 
 # === DISPLAY CHAT ===
 st.markdown("<h1 style='text-align:center'>🎯 Vision AI Chat</h1>", unsafe_allow_html=True)
-
 chat_container = st.container()
 with chat_container:
     for msg in st.session_state.chat_history:
@@ -162,12 +161,8 @@ with chat_container:
 # === FORM ===
 with st.form("chat_form", clear_on_submit=False):
     uploaded_file = st.file_uploader("📤 Upload image", type=["jpg", "jpeg", "png"])
-    if st.session_state.mode == "describe":
-        user_message = st.text_input("💬 Question sur l'image (optionnel)")
-        submit = st.form_submit_button("🚀 Analyser")
-    else:
-        user_message = st.text_input("✏️ Instruction d'édition", placeholder="ex: rendre le ciel bleu")
-        submit = st.form_submit_button("✏️ Éditer")
+    user_message = st.text_input("💬 Message ou instruction")
+    submit = st.form_submit_button("🚀 Envoyer")
 
 if submit:
     # IMAGE UPLOAD
@@ -177,14 +172,9 @@ if submit:
         image.save(image_path)
 
         if st.session_state.mode == "describe":
-            # Description image
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
-            response = st.session_state.qwen_client.predict(
-                query=query,
-                system=SYSTEM_PROMPT,
-                api_name="/model_chat"
-            )
+            response = st.session_state.qwen_client.predict(query=query, system=SYSTEM_PROMPT, api_name="/model_chat")
             st.session_state.chat_history.append({
                 "role": "user",
                 "content": user_message or "Image envoyée",
@@ -196,8 +186,7 @@ if submit:
                 "content": response,
                 "type": "describe"
             })
-
-        else:  # IMAGE EDIT
+        elif st.session_state.mode == "edit":
             if not user_message:
                 st.error("⚠️ Spécifiez une instruction d'édition")
             else:
@@ -224,24 +213,12 @@ if submit:
                 else:
                     st.error(msg)
 
-        save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-
-    # TEXT ONLY → jamais édit mode
+    # MESSAGE TEXTE SEUL (jamais mode edit)
     elif user_message:
-        response = st.session_state.qwen_client.predict(
-            query=user_message,
-            system=SYSTEM_PROMPT,
-            api_name="/model_chat"
-        )
-        st.session_state.chat_history.append({
-            "role": "user",
-            "content": user_message,
-            "type": "text"
-        })
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": response,
-            "type": "text"
-        })
-        save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+        response = st.session_state.qwen_client.predict(query=user_message, system=SYSTEM_PROMPT, api_name="/model_chat")
+        st.session_state.chat_history.append({"role": "user", "content": user_message, "type": "text"})
+        st.session_state.chat_history.append({"role": "assistant", "content": response, "type": "text"})
+
+    save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+
 
