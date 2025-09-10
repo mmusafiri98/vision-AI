@@ -138,7 +138,6 @@ if st.sidebar.button("➕ Nouveau chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
     save_chat_history([], st.session_state.chat_id)
-    st.rerun()  # qui serve
 
 available_chats = list_chats()
 if available_chats:
@@ -150,7 +149,6 @@ if available_chats:
     if selected != st.session_state.chat_id:
         st.session_state.chat_id = selected
         st.session_state.chat_history = load_chat_history(selected)
-        st.rerun()  # qui serve
 
 st.sidebar.title("🎛️ Mode")
 mode = st.sidebar.radio("Choisir:", ["📝 Description", "✏️ Édition"],
@@ -176,7 +174,7 @@ with chat_container:
                 st.image(msg["edited_image"], caption="✨ Image éditée", width=300)
 
 # === FORMULAIRE EN BAS ===
-with st.form("chat_form", clear_on_submit=True):
+with st.form("chat_form", clear_on_submit=False):  # 🚀 corrigé
     uploaded_file = st.file_uploader("📤 Upload image", type=["jpg", "jpeg", "png"])
     if st.session_state.mode == "describe":
         user_message = st.text_input("💬 Question sur l'image (optionnel)")
@@ -267,5 +265,3 @@ if st.session_state.chat_history:
     if st.button("🗑️ Vider la discussion"):
         st.session_state.chat_history = []
         save_chat_history([], st.session_state.chat_id)
-        st.rerun()  # qui serve
-
