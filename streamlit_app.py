@@ -90,7 +90,7 @@ if "qwen_edit_client" not in st.session_state:
         st.error(f"Erreur init Qwen Edit: {e}")
         st.session_state.qwen_edit_client = None
 
-# === FONCTION ÉDITION IMAGE CORRIGÉE ===
+# === FONCTION ÉDITION IMAGE ===
 def edit_image_with_qwen(image_path, edit_instruction, client):
     try:
         result = client.predict(
@@ -101,18 +101,15 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
 
         st.session_state["last_result"] = result  # debug
 
-        # Si result est une liste, prendre le premier élément
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
 
-        # Si result est un tuple, prendre le premier élément (chemin de l'image)
         if isinstance(result, tuple) and len(result) > 0 and os.path.exists(result[0]):
             edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
-            img = Image.open(result[0]).convert("RGB")  # conversion WebP → RGB
+            img = Image.open(result[0]).convert("RGB")
             img.save(edited_image_path, format="PNG")
             return edited_image_path, f"✅ Image éditée avec succès selon: '{edit_instruction}'"
 
-        # Si result est une URL
         elif isinstance(result, str) and result.startswith("http"):
             response = requests.get(result)
             if response.status_code == 200:
@@ -123,7 +120,6 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
             else:
                 return None, f"❌ Impossible de télécharger l'image (code {response.status_code})"
 
-        # Si result est un chemin local
         elif isinstance(result, str) and os.path.exists(result):
             edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
             img = Image.open(result).convert("RGB")
@@ -142,7 +138,7 @@ if st.sidebar.button("➕ Nouveau chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
     save_chat_history([], st.session_state.chat_id)
-    st.experimental_rerun()
+    st.rerun()
 
 available_chats = list_chats()
 if available_chats:
@@ -154,7 +150,7 @@ if available_chats:
     if selected != st.session_state.chat_id:
         st.session_state.chat_id = selected
         st.session_state.chat_history = load_chat_history(selected)
-        st.experimental_rerun()
+        st.rerun()
 
 st.sidebar.title("🎛️ Mode")
 mode = st.sidebar.radio("Choisir:", ["📝 Description", "✏️ Édition"],
@@ -200,9 +196,17 @@ if submit:
                 system=SYSTEM_PROMPT,
                 api_name="/model_chat"
             )
-            st.session_state.chat_history.append({"role": "user", "content": user_message or "Image envoyée", "image": image_path})
-            st.session_state.chat_history.append({"role": "assistant", "content": response})
-            save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": user_message or "Image envoyée",
+                "image": image_path,
+                "type": "describe"
+            })
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": response,
+                "type": "describe"
+            })
 
         else:
             if not user_message:
@@ -216,11 +220,22 @@ if submit:
                         system=SYSTEM_PROMPT,
                         api_name="/model_chat"
                     )
-                    st.session_state.chat_history.append({"role": "user", "content": user_message, "image": image_path})
-                    st.session_state.chat_history.append({"role": "assistant", "content": response, "edited_image": edited_path})
-                    save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+                    st.session_state.chat_history.append({
+                        "role": "user",
+                        "content": user_message,
+                        "image": image_path,
+                        "type": "edit"
+                    })
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response,
+                        "edited_image": edited_path,
+                        "type": "edit"
+                    })
                 else:
                     st.error(msg)
+
+        save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
 
     elif user_message:
         response = st.session_state.qwen_client.predict(
@@ -228,8 +243,16 @@ if submit:
             system=SYSTEM_PROMPT,
             api_name="/model_chat"
         )
-        st.session_state.chat_history.append({"role": "user", "content": user_message})
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": user_message,
+            "type": "text"
+        })
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": response,
+            "type": "text"
+        })
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
 
 # === DEBUG OPTIONNEL ===
@@ -241,5 +264,6 @@ if st.session_state.chat_history:
     if st.button("🗑️ Vider la discussion"):
         st.session_state.chat_history = []
         save_chat_history([], st.session_state.chat_id)
-        st.experimental_rerun()
+        st.rerun()
+
 
