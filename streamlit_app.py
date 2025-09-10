@@ -239,6 +239,7 @@ if submit:
                     st.error(msg)
 
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+        st.rerun()  # 👈 forza aggiornamento subito
 
     elif user_message:
         response = st.session_state.qwen_client.predict(
@@ -257,6 +258,7 @@ if submit:
             "type": "text"
         })
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+        st.rerun()  # 👈 forza aggiornamento subito
 
 # === DEBUG OPTIONNEL ===
 if "last_result" in st.session_state:
