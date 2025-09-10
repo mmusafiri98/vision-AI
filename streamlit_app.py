@@ -266,4 +266,3 @@ if st.session_state.chat_history:
         save_chat_history([], st.session_state.chat_id)
         st.rerun()
 
-
