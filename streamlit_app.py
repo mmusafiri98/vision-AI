@@ -138,7 +138,7 @@ if st.sidebar.button("➕ Nouveau chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
     save_chat_history([], st.session_state.chat_id)
-    st.rerun()
+    st.rerun()  # qui serve
 
 available_chats = list_chats()
 if available_chats:
@@ -150,7 +150,7 @@ if available_chats:
     if selected != st.session_state.chat_id:
         st.session_state.chat_id = selected
         st.session_state.chat_history = load_chat_history(selected)
-        st.rerun()
+        st.rerun()  # qui serve
 
 st.sidebar.title("🎛️ Mode")
 mode = st.sidebar.radio("Choisir:", ["📝 Description", "✏️ Édition"],
@@ -239,7 +239,6 @@ if submit:
                     st.error(msg)
 
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-        st.rerun()  # 👈 forza aggiornamento subito
 
     elif user_message:
         response = st.session_state.qwen_client.predict(
@@ -258,7 +257,6 @@ if submit:
             "type": "text"
         })
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-        st.rerun()  # 👈 forza aggiornamento subito
 
 # === DEBUG OPTIONNEL ===
 if "last_result" in st.session_state:
@@ -269,5 +267,5 @@ if st.session_state.chat_history:
     if st.button("🗑️ Vider la discussion"):
         st.session_state.chat_history = []
         save_chat_history([], st.session_state.chat_id)
-        st.rerun()
+        st.rerun()  # qui serve
 
