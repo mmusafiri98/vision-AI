@@ -163,12 +163,15 @@ st.markdown("<h1 style='text-align:center'>🎯 Vision AI Chat</h1>", unsafe_all
 chat_container = st.container()
 with chat_container:
     for msg in st.session_state.chat_history:
+        badge = "📝" if msg.get("type") == "describe" else "✏️" if msg.get("type") == "edit" else "💬"
+
         if msg["role"] == "user":
-            st.markdown(f"**👤 Vous:** {msg['content']}")
+            st.markdown(f"**👤 Vous {badge}:** {msg['content']}")
             if msg.get("image") and os.path.exists(msg["image"]):
                 st.image(msg["image"], caption="📤 Image", width=300)
-        else:
-            st.markdown(f"**🤖 Vision AI:** {msg['content']}")
+
+        elif msg["role"] == "assistant":
+            st.markdown(f"**🤖 Vision AI {badge}:** {msg['content']}")
             if msg.get("edited_image") and os.path.exists(msg["edited_image"]):
                 st.image(msg["edited_image"], caption="✨ Image éditée", width=300)
 
