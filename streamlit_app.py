@@ -9,11 +9,7 @@ import uuid
 import requests
 
 # === CONFIG ===
-st.set_page_config(
-    page_title="Vision AI Chat",
-    page_icon="🎯",
-    layout="wide"
-)
+st.set_page_config(page_title="Vision AI Chat", page_icon="🎯", layout="wide")
 
 CHAT_DIR = "chats"
 EDITED_IMAGES_DIR = "edited_images"
@@ -73,52 +69,13 @@ if "processor" not in st.session_state or "model" not in st.session_state:
     st.session_state.processor = processor
     st.session_state.model = model
 
-# === QWEN CLIENTS ===
-if "qwen_client" not in st.session_state:
+# === LLaMA CLIENT ===
+if "llama_client" not in st.session_state:
     try:
-        st.session_state.qwen_client = Client("Qwen/Qwen2-72B-Instruct")
+        st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
     except Exception as e:
-        st.error(f"Erreur init Qwen Chat: {e}")
-        st.session_state.qwen_client = None
-
-if "qwen_edit_client" not in st.session_state:
-    try:
-        st.session_state.qwen_edit_client = Client("Qwen/Qwen-Image-Edit")
-    except Exception as e:
-        st.error(f"Erreur init Qwen Edit: {e}")
-        st.session_state.qwen_edit_client = None
-
-# === IMAGE EDIT FUNCTION ===
-def edit_image_with_qwen(image_path, edit_instruction, client):
-    try:
-        result = client.predict(
-            image=handle_file(image_path),
-            prompt=edit_instruction,
-            api_name="/infer"
-        )
-        st.session_state["last_result"] = result
-        if isinstance(result, list) and len(result) > 0:
-            result = result[0]
-        if isinstance(result, tuple) and len(result) > 0 and os.path.exists(result[0]):
-            edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
-            img = Image.open(result[0]).convert("RGB")
-            img.save(edited_image_path, format="PNG")
-            return edited_image_path, f"✅ Image éditée selon: '{edit_instruction}'"
-        elif isinstance(result, str) and result.startswith("http"):
-            response = requests.get(result)
-            if response.status_code == 200:
-                edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
-                with open(edited_image_path, "wb") as f:
-                    f.write(response.content)
-                return edited_image_path, f"✅ Image éditée selon: '{edit_instruction}'"
-        elif isinstance(result, str) and os.path.exists(result):
-            edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
-            img = Image.open(result).convert("RGB")
-            img.save(edited_image_path, format="PNG")
-            return edited_image_path, f"✅ Image éditée selon: '{edit_instruction}'"
-        return None, f"❌ Résultat inattendu: {result}"
-    except Exception as e:
-        return None, f"Erreur édition: {e}"
+        st.error(f"Erreur init LLaMA Chat: {e}")
+        st.session_state.llama_client = None
 
 # === SIDEBAR ===
 st.sidebar.title("📂 Gestion des chats")
@@ -169,6 +126,20 @@ with st.form("chat_form", clear_on_submit=False):
         user_message = st.text_input("✏️ Instruction d'édition", placeholder="ex: rendre le ciel bleu")
         submit = st.form_submit_button("✏️ Éditer")
 
+def llama_predict(query):
+    """Appel au modèle LLaMA-3.1 via gradio_client"""
+    try:
+        return st.session_state.llama_client.predict(
+            message=query,
+            max_tokens=512,
+            temperature=0.7,
+            top_p=0.95,
+            api_name="/chat"
+        )
+    except Exception as e:
+        st.error(f"Erreur lors de l'appel au modèle LLaMA : {e}")
+        return "Erreur modèle"
+
 if submit:
     # IMAGE UPLOAD
     if uploaded_file:
@@ -176,54 +147,26 @@ if submit:
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
-        if st.session_state.mode == "describe":
-            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
-            response = st.session_state.qwen_client.predict(query=query, system=SYSTEM_PROMPT, api_name="/model_chat")
-            st.session_state.chat_history.append({
-                "role": "user",
-                "content": user_message or "Image envoyée",
-                "image": image_path,
-                "type": "describe"
-            })
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": response,
-                "type": "describe"
-            })
+        caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+        query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
 
-        else:  # IMAGE EDIT
-            if not user_message:
-                st.error("⚠️ Spécifiez une instruction d'édition")
-            else:
-                edited_path, msg = edit_image_with_qwen(image_path, user_message, st.session_state.qwen_edit_client)
-                if edited_path:
-                    edited_caption = generate_caption(Image.open(edited_path), st.session_state.processor, st.session_state.model)
-                    response = st.session_state.qwen_client.predict(
-                        query=f"Image éditée: {user_message}. Résultat: {edited_caption}",
-                        system=SYSTEM_PROMPT,
-                        api_name="/model_chat"
-                    )
-                    st.session_state.chat_history.append({
-                        "role": "user",
-                        "content": user_message,
-                        "image": image_path,
-                        "type": "edit"
-                    })
-                    st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": response,
-                        "edited_image": edited_path,
-                        "type": "edit"
-                    })
-                else:
-                    st.error(msg)
-
+        response = llama_predict(query)
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": user_message or "Image envoyée",
+            "image": image_path,
+            "type": "describe"
+        })
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": response,
+            "type": "describe"
+        })
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
 
     # TEXT ONLY
     elif user_message:
-        response = st.session_state.qwen_client.predict(query=user_message, system=SYSTEM_PROMPT, api_name="/model_chat")
+        response = llama_predict(user_message)
         st.session_state.chat_history.append({"role": "user", "content": user_message, "type": "text"})
         st.session_state.chat_history.append({"role": "assistant", "content": response, "type": "text"})
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
