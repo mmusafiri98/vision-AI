@@ -7,7 +7,7 @@ import json
 import os
 import uuid
 
-# === CONFIG ===
+
 st.set_page_config(page_title="Vision AI Chat", page_icon="🎯", layout="wide")
 
 CHAT_DIR = "chats"
