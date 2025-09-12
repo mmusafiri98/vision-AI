@@ -92,15 +92,16 @@ if available_chats:
         st.session_state.chat_id = selected
         st.session_state.chat_history = load_chat_history(selected)
 
-# Mode selection - CORRECTION: Synchroniser avec session_state
-st.sidebar.title("Mode")
+# Mode selection pour les images uniquement
+st.sidebar.title("Mode pour les images")
 mode_radio = st.sidebar.radio(
-    "Choisir le mode:", 
+    "Mode utilisé pour les images uploadées:", 
     ["Description", "Édition"],
-    index=0 if st.session_state.mode == "describe" else 1
+    index=0 if st.session_state.mode == "describe" else 1,
+    help="Ce mode s'applique uniquement quand vous uploadez une image. Les messages texte fonctionnent dans tous les modes."
 )
 
-# CORRECTION: Mettre à jour le mode dans session_state
+# Mettre à jour le mode dans session_state
 if mode_radio == "Description":
     st.session_state.mode = "describe"
 else:
@@ -112,26 +113,37 @@ st.markdown("<h1 style='text-align:center'>Vision AI Chat</h1>", unsafe_allow_ht
 chat_container = st.container()
 with chat_container:
     for msg in st.session_state.chat_history:
-        badge = "describe" if msg.get("type") == "describe" else "edit" if msg.get("type") == "edit" else "text"
+        badge = "describe" if msg.get("type") == "describe" else "edit" if msg.get("type") == "edit" else "chat"
         if msg["role"] == "user":
-            st.markdown(f"**Vous ({badge}):** {msg['content']}")
+            if msg.get("type") == "text":
+                st.markdown(f"**Vous (chat):** {msg['content']}")
+            else:
+                st.markdown(f"**Vous ({badge}):** {msg['content']}")
             if msg.get("image") and os.path.exists(msg["image"]):
                 st.image(msg["image"], width=300)
         elif msg["role"] == "assistant":
-            st.markdown(f"**Vision AI ({badge}):** {msg['content']}")
+            if msg.get("type") == "text":
+                st.markdown(f"**Vision AI (chat):** {msg['content']}")
+            else:
+                st.markdown(f"**Vision AI ({badge}):** {msg['content']}")
             if msg.get("edited_image") and os.path.exists(msg["edited_image"]):
                 st.image(msg["edited_image"], width=300)
 
 # === FORM ===
 with st.form("chat_form", clear_on_submit=False):
-    uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png"])
-    # CORRECTION: Utiliser st.session_state.mode au lieu de mode_radio
-    if st.session_state.mode == "describe":
-        user_message = st.text_input("Question sur l'image (optionnel)")
-        submit = st.form_submit_button("Analyser")
+    uploaded_file = st.file_uploader("Upload image (optionnel)", type=["jpg", "jpeg", "png"])
+    
+    # Interface unifiée pour tous les types de messages
+    if uploaded_file:
+        if st.session_state.mode == "describe":
+            user_message = st.text_input("Question sur l'image (optionnel)", placeholder="Décrivez cette image ou posez une question...")
+            submit = st.form_submit_button("Analyser l'image")
+        else:
+            user_message = st.text_input("Instruction d'édition", placeholder="ex: rendre le ciel bleu, ajouter des fleurs...")
+            submit = st.form_submit_button("Éditer l'image")
     else:
-        user_message = st.text_input("Instruction d'édition", placeholder="ex: rendre le ciel bleu")
-        submit = st.form_submit_button("Éditer")
+        user_message = st.text_input("Votre message", placeholder="Tapez votre message ici...")
+        submit = st.form_submit_button("Envoyer")
 
 # === LLaMA PREDICT ===
 def llama_predict(query):
@@ -149,23 +161,23 @@ def llama_predict(query):
 
 # === SUBMIT LOGIC ===
 if submit:
-    # CORRECTION: Utiliser st.session_state.mode directement
-    current_mode = st.session_state.mode
-    msg_type = current_mode
-
-    if uploaded_file:
+    if uploaded_file and user_message:
+        # Image + texte
+        current_mode = st.session_state.mode
+        msg_type = current_mode
+        
         image = Image.open(uploaded_file).convert("RGB")
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
+            query = f"Description image: {caption}. Question utilisateur: {user_message}"
             response = llama_predict(query)
 
             st.session_state.chat_history.append({
                 "role": "user",
-                "content": user_message or "Image envoyée",
+                "content": user_message,
                 "image": image_path,
                 "type": msg_type
             })
@@ -175,25 +187,61 @@ if submit:
                 "type": msg_type
             })
         else:
-            # Mode Édition placeholder
+            # Mode Édition
             st.session_state.chat_history.append({
                 "role": "user",
-                "content": user_message or "Image envoyée",
+                "content": user_message,
                 "image": image_path,
                 "type": msg_type
             })
             st.session_state.chat_history.append({
                 "role": "assistant",
-                "content": "Mode Édition actif, mais l'édition n'est pas encore implémentée.",
+                "content": f"Mode Édition: '{user_message}' - L'édition d'image n'est pas encore implémentée, mais je peux vous aider avec d'autres questions.",
                 "type": msg_type
             })
 
-        save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-        # CORRECTION: Forcer le rechargement de la page pour afficher les nouveaux messages
-        st.rerun()
+    elif uploaded_file and not user_message:
+        # Image seule
+        current_mode = st.session_state.mode
+        msg_type = current_mode
+        
+        image = Image.open(uploaded_file).convert("RGB")
+        image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
+        image.save(image_path)
 
-    elif user_message:
+        if msg_type == "describe":
+            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+            query = f"Description image: {caption}"
+            response = llama_predict(query)
+
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": "Image envoyée",
+                "image": image_path,
+                "type": msg_type
+            })
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": response,
+                "type": msg_type
+            })
+        else:
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": "Image envoyée (mode édition)",
+                "image": image_path,
+                "type": msg_type
+            })
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": "J'ai reçu votre image en mode édition. Veuillez me dire quelle modification vous souhaitez apporter.",
+                "type": msg_type
+            })
+
+    elif user_message and not uploaded_file:
+        # Texte seul - fonctionne dans tous les modes
         response = llama_predict(user_message)
+        
         st.session_state.chat_history.append({
             "role": "user",
             "content": user_message,
@@ -204,7 +252,18 @@ if submit:
             "content": response,
             "type": "text"
         })
+    
+    # Sauvegarder et recharger
+    if uploaded_file or user_message:
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-        # CORRECTION: Forcer le rechargement de la page pour afficher les nouveaux messages
         st.rerun()
 
+# === INFO ===
+st.sidebar.markdown("---")
+st.sidebar.info(
+    "💡 **Comment utiliser:**\n\n"
+    "• **Chat textuel:** Tapez simplement votre message (fonctionne dans tous les modes)\n\n"
+    "• **Avec image:** Uploadez une image et le mode sélectionné s'appliquera\n\n"
+    "• **Mode Description:** Analyse et décrit les images\n\n"
+    "• **Mode Édition:** Prévu pour modifier les images (en développement)"
+)
