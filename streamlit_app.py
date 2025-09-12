@@ -2,11 +2,12 @@ import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import torch
-from gradio_client import Client, handle_file
+from gradio_client import Client
 import json
 import os
 import uuid
-import requests
+
+from diffusers import StableDiffusionInpaintPipeline
 
 # === CONFIG ===
 st.set_page_config(page_title="Vision AI Chat", page_icon="🎯", layout="wide")
@@ -56,6 +57,17 @@ def generate_caption(image, processor, model):
         out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
     return processor.decode(out[0], skip_special_tokens=True)
 
+# === PIPELINE INPAINT (editor) ===
+@st.cache_resource
+def load_inpaint_model():
+    pipe = StableDiffusionInpaintPipeline.from_pretrained(
+        "runwayml/stable-diffusion-inpainting",
+        torch_dtype=torch.float16
+    )
+    if torch.cuda.is_available():
+        pipe = pipe.to("cuda")
+    return pipe
+
 # === SESSION INIT ===
 if "chat_id" not in st.session_state:
     st.session_state.chat_id = str(uuid.uuid4())
@@ -68,6 +80,9 @@ if "processor" not in st.session_state or "model" not in st.session_state:
     processor, model = load_blip()
     st.session_state.processor = processor
     st.session_state.model = model
+
+if "inpaint_pipe" not in st.session_state:
+    st.session_state.inpaint_pipe = load_inpaint_model()
 
 # === LLaMA CLIENT ===
 if "llama_client" not in st.session_state:
@@ -126,8 +141,8 @@ with st.form("chat_form", clear_on_submit=False):
         user_message = st.text_input("✏️ Instruction d'édition", placeholder="ex: rendre le ciel bleu")
         submit = st.form_submit_button("✏️ Éditer")
 
+# === LLaMA PREDICT ===
 def llama_predict(query):
-    """Appel au modèle LLaMA-3.1 via gradio_client"""
     try:
         return st.session_state.llama_client.predict(
             message=query,
@@ -140,33 +155,57 @@ def llama_predict(query):
         st.error(f"Erreur lors de l'appel au modèle LLaMA : {e}")
         return "Erreur modèle"
 
+# === SUBMIT LOGIC ===
 if submit:
-    # IMAGE UPLOAD
+    msg_type = "describe" if st.session_state.mode == "describe" else "edit"
+
     if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
-        caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
+        if msg_type == "describe":
+            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+            query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
+            response = llama_predict(query)
 
-        response = llama_predict(query)
-        st.session_state.chat_history.append({
-            "role": "user",
-            "content": user_message or "Image envoyée",
-            "image": image_path,
-            "type": "describe"
-        })
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": response,
-            "type": "describe"
-        })
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": user_message or "Image envoyée",
+                "image": image_path,
+                "type": msg_type
+            })
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": response,
+                "type": msg_type
+            })
+
+        else:
+            mask = Image.new("L", image.size, 255)  # maschera intera immagine
+            prompt = user_message if user_message else "Make some edits"
+            edited_image = st.session_state.inpaint_pipe(prompt=prompt, image=image, mask_image=mask).images[0]
+            edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
+            edited_image.save(edited_image_path)
+
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": user_message,
+                "image": image_path,
+                "type": msg_type
+            })
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": f"Image modifiée selon l'instruction: {user_message}",
+                "edited_image": edited_image_path,
+                "type": msg_type
+            })
+
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
 
-    # TEXT ONLY
     elif user_message:
         response = llama_predict(user_message)
         st.session_state.chat_history.append({"role": "user", "content": user_message, "type": "text"})
         st.session_state.chat_history.append({"role": "assistant", "content": response, "type": "text"})
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+
