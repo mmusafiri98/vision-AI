@@ -92,10 +92,19 @@ if available_chats:
         st.session_state.chat_id = selected
         st.session_state.chat_history = load_chat_history(selected)
 
-# Mode selection sans émojis
+# Mode selection - CORRECTION: Synchroniser avec session_state
 st.sidebar.title("Mode")
-mode_radio = st.sidebar.radio("Choisir le mode:", ["Description", "Édition"],
-                              index=0 if st.session_state.mode == "describe" else 1)
+mode_radio = st.sidebar.radio(
+    "Choisir le mode:", 
+    ["Description", "Édition"],
+    index=0 if st.session_state.mode == "describe" else 1
+)
+
+# CORRECTION: Mettre à jour le mode dans session_state
+if mode_radio == "Description":
+    st.session_state.mode = "describe"
+else:
+    st.session_state.mode = "edit"
 
 # === DISPLAY CHAT ===
 st.markdown("<h1 style='text-align:center'>Vision AI Chat</h1>", unsafe_allow_html=True)
@@ -116,7 +125,8 @@ with chat_container:
 # === FORM ===
 with st.form("chat_form", clear_on_submit=False):
     uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png"])
-    if mode_radio == "Description":
+    # CORRECTION: Utiliser st.session_state.mode au lieu de mode_radio
+    if st.session_state.mode == "describe":
         user_message = st.text_input("Question sur l'image (optionnel)")
         submit = st.form_submit_button("Analyser")
     else:
@@ -139,8 +149,8 @@ def llama_predict(query):
 
 # === SUBMIT LOGIC ===
 if submit:
-    # On fixe le mode **au moment du submit** pour éviter les changements entre sidebar et formulaire
-    current_mode = "describe" if mode_radio == "Description" else "edit"
+    # CORRECTION: Utiliser st.session_state.mode directement
+    current_mode = st.session_state.mode
     msg_type = current_mode
 
     if uploaded_file:
@@ -179,6 +189,8 @@ if submit:
             })
 
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+        # CORRECTION: Forcer le rechargement de la page pour afficher les nouveaux messages
+        st.rerun()
 
     elif user_message:
         response = llama_predict(user_message)
@@ -193,4 +205,6 @@ if submit:
             "type": "text"
         })
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+        # CORRECTION: Forcer le rechargement de la page pour afficher les nouveaux messages
+        st.rerun()
 
