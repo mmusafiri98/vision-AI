@@ -113,6 +113,7 @@ if submit:
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
             response = llama_predict(query)
+            ave_chat_history(st.session_state.chat_history, st.session_state.chat_id)
         else:
             response = "Mode Édition actif, mais l'édition n'est pas encore implémentée."
 
