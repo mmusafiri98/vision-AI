@@ -75,8 +75,8 @@ if "llama_client" not in st.session_state:
         st.session_state.llama_client = None
 
 # === SIDEBAR ===
-st.sidebar.title("📂 Gestion des chats")
-if st.sidebar.button("➕ Nouveau chat"):
+st.sidebar.title("Gestion des chats")
+if st.sidebar.button("Nouveau chat"):
     st.session_state.chat_id = str(uuid.uuid4())
     st.session_state.chat_history = []
     save_chat_history([], st.session_state.chat_id)
@@ -92,37 +92,37 @@ if available_chats:
         st.session_state.chat_id = selected
         st.session_state.chat_history = load_chat_history(selected)
 
-# Correction du problème de mode: on ne dépend plus des émojis
-st.sidebar.title("🎛️ Mode")
+# Mode selection sans émojis
+st.sidebar.title("Mode")
 mode_radio = st.sidebar.radio("Choisir le mode:", ["Description", "Édition"],
                               index=0 if st.session_state.mode == "describe" else 1)
 st.session_state.mode = "describe" if mode_radio == "Description" else "edit"
 
 # === DISPLAY CHAT ===
-st.markdown("<h1 style='text-align:center'>🎯 Vision AI Chat</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center'>Vision AI Chat</h1>", unsafe_allow_html=True)
 
 chat_container = st.container()
 with chat_container:
     for msg in st.session_state.chat_history:
-        badge = "📝" if msg.get("type") == "describe" else "✏️" if msg.get("type") == "edit" else "💬"
+        badge = "describe" if msg.get("type") == "describe" else "edit" if msg.get("type") == "edit" else "text"
         if msg["role"] == "user":
-            st.markdown(f"**👤 Vous {badge}:** {msg['content']}")
+            st.markdown(f"**Vous ({badge}):** {msg['content']}")
             if msg.get("image") and os.path.exists(msg["image"]):
                 st.image(msg["image"], width=300)
         elif msg["role"] == "assistant":
-            st.markdown(f"**🤖 Vision AI {badge}:** {msg['content']}")
+            st.markdown(f"**Vision AI ({badge}):** {msg['content']}")
             if msg.get("edited_image") and os.path.exists(msg["edited_image"]):
                 st.image(msg["edited_image"], width=300)
 
 # === FORM ===
 with st.form("chat_form", clear_on_submit=False):
-    uploaded_file = st.file_uploader("📤 Upload image", type=["jpg", "jpeg", "png"])
+    uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png"])
     if st.session_state.mode == "describe":
-        user_message = st.text_input("💬 Question sur l'image (optionnel)")
-        submit = st.form_submit_button("🚀 Analyser")
+        user_message = st.text_input("Question sur l'image (optionnel)")
+        submit = st.form_submit_button("Analyser")
     else:
-        user_message = st.text_input("✏️ Instruction d'édition", placeholder="ex: rendre le ciel bleu")
-        submit = st.form_submit_button("✏️ Éditer")
+        user_message = st.text_input("Instruction d'édition", placeholder="ex: rendre le ciel bleu")
+        submit = st.form_submit_button("Éditer")
 
 # === LLaMA PREDICT ===
 def llama_predict(query):
@@ -184,5 +184,4 @@ if submit:
         st.session_state.chat_history.append({"role": "user", "content": user_message, "type": "text"})
         st.session_state.chat_history.append({"role": "assistant", "content": response, "type": "text"})
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-
 
