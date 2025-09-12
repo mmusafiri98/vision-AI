@@ -7,7 +7,7 @@ import json
 import os
 import uuid
 
-
+# === CONFIG ===
 st.set_page_config(page_title="Vision AI Chat", page_icon="🎯", layout="wide")
 
 CHAT_DIR = "chats"
@@ -92,10 +92,11 @@ if available_chats:
         st.session_state.chat_id = selected
         st.session_state.chat_history = load_chat_history(selected)
 
+# Correction du problème de mode: on ne dépend plus des émojis
 st.sidebar.title("🎛️ Mode")
-mode = st.sidebar.radio("Choisir:", ["📝 Description", "✏️ Édition"],
-                        index=0 if st.session_state.mode == "describe" else 1)
-st.session_state.mode = "describe" if "Description" in mode else "edit"
+mode_radio = st.sidebar.radio("Choisir le mode:", ["Description", "Édition"],
+                              index=0 if st.session_state.mode == "describe" else 1)
+st.session_state.mode = "describe" if mode_radio == "Description" else "edit"
 
 # === DISPLAY CHAT ===
 st.markdown("<h1 style='text-align:center'>🎯 Vision AI Chat</h1>", unsafe_allow_html=True)
@@ -163,7 +164,7 @@ if submit:
                 "type": msg_type
             })
         else:
-            # Placeholder per edit: non fa nulla ma mantiene la modalità
+            # Mode Édition placeholder
             st.session_state.chat_history.append({
                 "role": "user",
                 "content": user_message or "Image envoyée",
@@ -172,7 +173,7 @@ if submit:
             })
             st.session_state.chat_history.append({
                 "role": "assistant",
-                "content": "Modalità edit attiva, ma l'editing non è ancora implementato.",
+                "content": "Mode Édition actif, mais l'édition n'est pas encore implémentée.",
                 "type": msg_type
             })
 
