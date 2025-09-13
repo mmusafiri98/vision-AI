@@ -6,6 +6,7 @@ from gradio_client import Client
 import json
 import os
 import uuid
+import time
 
 # === CONFIG ===
 st.set_page_config(page_title="Vision AI Chat", page_icon=None, layout="wide")
@@ -133,7 +134,6 @@ with chat_container:
 with st.form("chat_form", clear_on_submit=False):
     uploaded_file = st.file_uploader("Upload image (optionnel)", type=["jpg", "jpeg", "png"])
     
-    # Interface unifiée pour tous les types de messages
     if uploaded_file:
         if st.session_state.mode == "describe":
             user_message = st.text_input("Question sur l'image (optionnel)", placeholder="Décrivez cette image ou posez une question...")
@@ -145,16 +145,28 @@ with st.form("chat_form", clear_on_submit=False):
         user_message = st.text_input("Votre message", placeholder="Tapez votre message ici...")
         submit = st.form_submit_button("Envoyer")
 
-# === LLaMA PREDICT ===
-def llama_predict(query):
+# === LLaMA PREDICT avec streaming ===
+def llama_predict_stream(query):
     try:
-        return st.session_state.llama_client.predict(
-            message=query,
-            max_tokens=512,
-            temperature=0.7,
-            top_p=0.95,
-            api_name="/chat"
-        )
+        with st.spinner("🤖 Vision AI est en train de réfléchir..."):
+            # Récupérer la réponse complète du modèle
+            full_response = st.session_state.llama_client.predict(
+                message=query,
+                max_tokens=512,
+                temperature=0.7,
+                top_p=0.95,
+                api_name="/chat"
+            )
+
+        # Affichage avec effet "typing" en streaming
+        def stream_generator():
+            for char in full_response:
+                yield char
+                time.sleep(0.02)
+
+        streamed_text = st.write_stream(stream_generator())
+        return full_response
+
     except Exception as e:
         st.error(f"Erreur lors de l'appel au modèle LLaMA : {e}")
         return "Erreur modèle"
@@ -162,7 +174,6 @@ def llama_predict(query):
 # === SUBMIT LOGIC ===
 if submit:
     if uploaded_file and user_message:
-        # Image + texte
         current_mode = st.session_state.mode
         msg_type = current_mode
         
@@ -173,7 +184,7 @@ if submit:
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             query = f"Description image: {caption}. Question utilisateur: {user_message}"
-            response = llama_predict(query)
+            response = llama_predict_stream(query)
 
             st.session_state.chat_history.append({
                 "role": "user",
@@ -186,8 +197,8 @@ if submit:
                 "content": response,
                 "type": msg_type
             })
+
         else:
-            # Mode Édition
             st.session_state.chat_history.append({
                 "role": "user",
                 "content": user_message,
@@ -201,7 +212,6 @@ if submit:
             })
 
     elif uploaded_file and not user_message:
-        # Image seule
         current_mode = st.session_state.mode
         msg_type = current_mode
         
@@ -212,7 +222,7 @@ if submit:
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             query = f"Description image: {caption}"
-            response = llama_predict(query)
+            response = llama_predict_stream(query)
 
             st.session_state.chat_history.append({
                 "role": "user",
@@ -239,8 +249,7 @@ if submit:
             })
 
     elif user_message and not uploaded_file:
-        # Texte seul - fonctionne dans tous les modes
-        response = llama_predict(user_message)
+        response = llama_predict_stream(user_message)
         
         st.session_state.chat_history.append({
             "role": "user",
@@ -253,7 +262,6 @@ if submit:
             "type": "text"
         })
     
-    # Sauvegarder et recharger
     if uploaded_file or user_message:
         save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
         st.rerun()
