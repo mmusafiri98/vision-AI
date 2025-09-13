@@ -248,7 +248,7 @@ if submit:
         msg_type = current_mode
         
         image = Image.open(uploaded_file).convert("RGB")
-        image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex").png")
+        image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
         st.session_state.chat_history.append({
@@ -309,4 +309,3 @@ st.sidebar.info(
 
 st.sidebar.markdown("---")
 st.sidebar.success("✨ **Nouvelle fonctionnalité:**\nGénération de texte sans limite de tokens pour des réponses plus complètes et détaillées!")
-
