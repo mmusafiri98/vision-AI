@@ -147,9 +147,10 @@ with st.form("chat_form", clear_on_submit=False):
 def llama_predict_stream(query):
     try:
         with st.spinner("🤖 Vision AI réfléchit..."):
+            # Suppression de la limite de tokens - le modèle générera sans contrainte
             full_response = st.session_state.llama_client.predict(
                 message=query,
-                max_tokens=512,
+                max_tokens=None,  # Aucune limite de tokens
                 temperature=0.7,
                 top_p=0.95,
                 api_name="/chat"
@@ -165,8 +166,47 @@ def llama_predict_stream(query):
         return assistant_msg
 
     except Exception as e:
-        st.error(f"Erreur lors de l'appel au modèle LLaMA : {e}")
-        return "Erreur modèle"
+        # Si max_tokens=None ne fonctionne pas, essayer avec une valeur très élevée
+        try:
+            with st.spinner("🤖 Vision AI réfléchit..."):
+                full_response = st.session_state.llama_client.predict(
+                    message=query,
+                    max_tokens=8192,  # Valeur très élevée comme alternative
+                    temperature=0.7,
+                    top_p=0.95,
+                    api_name="/chat"
+                )
+
+            def stream_generator():
+                for char in full_response:
+                    yield char
+                    time.sleep(0.02)
+
+            assistant_msg = response_placeholder.write_stream(stream_generator())
+            return assistant_msg
+            
+        except Exception as e2:
+            # Si ça ne fonctionne toujours pas, essayer sans le paramètre max_tokens
+            try:
+                with st.spinner("🤖 Vision AI réfléchit..."):
+                    full_response = st.session_state.llama_client.predict(
+                        message=query,
+                        temperature=0.7,
+                        top_p=0.95,
+                        api_name="/chat"
+                    )
+
+                def stream_generator():
+                    for char in full_response:
+                        yield char
+                        time.sleep(0.02)
+
+                assistant_msg = response_placeholder.write_stream(stream_generator())
+                return assistant_msg
+                
+            except Exception as e3:
+                st.error(f"Erreur lors de l'appel au modèle LLaMA : {e3}")
+                return "Erreur modèle"
 
 # === SUBMIT LOGIC ===
 if submit:
@@ -188,7 +228,8 @@ if submit:
 
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            query = f"Description image: {caption}. Question utilisateur: {user_message}"
+            # Modification du prompt pour encourager des réponses plus détaillées
+            query = f"{SYSTEM_PROMPT}\n\nDescription détaillée de l'image: {caption}. Question de l'utilisateur: {user_message}. Veuillez fournir une réponse complète et détaillée sans vous limiter en longueur."
             response = llama_predict_stream(query)
             st.session_state.chat_history.append({
                 "role": "assistant",
@@ -207,7 +248,7 @@ if submit:
         msg_type = current_mode
         
         image = Image.open(uploaded_file).convert("RGB")
-        image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
+        image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex").png")
         image.save(image_path)
 
         st.session_state.chat_history.append({
@@ -219,7 +260,8 @@ if submit:
 
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            query = f"Description image: {caption}"
+            # Modification du prompt pour encourager des descriptions plus complètes
+            query = f"{SYSTEM_PROMPT}\n\nVeuillez analyser cette image en détail: {caption}. Fournissez une description complète, détaillée et approfondie de tous les éléments visibles, sans vous limiter en longueur."
             response = llama_predict_stream(query)
             st.session_state.chat_history.append({
                 "role": "assistant",
@@ -239,7 +281,9 @@ if submit:
             "content": user_message,
             "type": "text"
         })
-        response = llama_predict_stream(user_message)
+        # Ajout du système prompt pour les conversations textuelles
+        enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_message}\n\nVeuillez répondre de manière complète et détaillée."
+        response = llama_predict_stream(enhanced_query)
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": response,
@@ -256,9 +300,13 @@ st.sidebar.info(
     "💡 **Comment utiliser:**\n\n"
     "• **Chat textuel:** Tapez simplement votre message (fonctionne dans tous les modes)\n\n"
     "• **Avec image:** Uploadez une image et le mode sélectionné s'appliquera\n\n"
-    "• **Mode Description:** Analyse et décrit les images\n\n"
+    "• **Mode Description:** Analyse et décrit les images en détail\n\n"
     "• **Mode Édition:** Prévu pour modifier les images (en développement)\n\n"
     "• **Mémoire:** L'IA se souvient de toute la conversation et des images précédentes\n\n"
+    "• **Génération illimitée:** Le modèle peut maintenant générer des réponses sans limite de longueur\n\n"
     "• **Animations:** Réponse animée dans la conversation (comme un vrai chat)"
 )
+
+st.sidebar.markdown("---")
+st.sidebar.success("✨ **Nouvelle fonctionnalité:**\nGénération de texte sans limite de tokens pour des réponses plus complètes et détaillées!")
 
