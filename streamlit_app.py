@@ -61,6 +61,8 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
 if "mode" not in st.session_state:
     st.session_state.mode = "describe"
+if "waiting_for_response" not in st.session_state:
+    st.session_state.waiting_for_response = False
 
 if "processor" not in st.session_state or "model" not in st.session_state:
     processor, model = load_blip()
@@ -102,7 +104,6 @@ mode_radio = st.sidebar.radio(
     help="Ce mode s'applique uniquement quand vous uploadez une image. Les messages texte fonctionnent dans tous les modes."
 )
 
-# Mettre à jour le mode dans session_state
 if mode_radio == "Description":
     st.session_state.mode = "describe"
 else:
@@ -112,23 +113,24 @@ else:
 st.markdown("<h1 style='text-align:center'>Vision AI Chat</h1>", unsafe_allow_html=True)
 
 chat_container = st.container()
+new_response_placeholder = None
+
 with chat_container:
     for msg in st.session_state.chat_history:
         badge = "describe" if msg.get("type") == "describe" else "edit" if msg.get("type") == "edit" else "chat"
         if msg["role"] == "user":
-            if msg.get("type") == "text":
-                st.markdown(f"**Vous (chat):** {msg['content']}")
-            else:
-                st.markdown(f"**Vous ({badge}):** {msg['content']}")
+            st.markdown(f"**Vous ({badge}):** {msg['content']}")
             if msg.get("image") and os.path.exists(msg["image"]):
                 st.image(msg["image"], width=300)
         elif msg["role"] == "assistant":
-            if msg.get("type") == "text":
-                st.markdown(f"**Vision AI (chat):** {msg['content']}")
-            else:
-                st.markdown(f"**Vision AI ({badge}):** {msg['content']}")
+            st.markdown(f"**Vision AI ({badge}):** {msg['content']}")
             if msg.get("edited_image") and os.path.exists(msg["edited_image"]):
                 st.image(msg["edited_image"], width=300)
+
+    # Placeholder pour la nouvelle réponse
+    if st.session_state.waiting_for_response:
+        st.markdown("**Vision AI:**")
+        new_response_placeholder = st.empty()
 
 # === FORM ===
 with st.form("chat_form", clear_on_submit=False):
@@ -145,11 +147,10 @@ with st.form("chat_form", clear_on_submit=False):
         user_message = st.text_input("Votre message", placeholder="Tapez votre message ici...")
         submit = st.form_submit_button("Envoyer")
 
-# === LLaMA PREDICT avec streaming ===
+# === LLaMA PREDICT STREAM ===
 def llama_predict_stream(query):
     try:
         with st.spinner("🤖 Vision AI est en train de réfléchir..."):
-            # Récupérer la réponse complète du modèle
             full_response = st.session_state.llama_client.predict(
                 message=query,
                 max_tokens=512,
@@ -158,13 +159,14 @@ def llama_predict_stream(query):
                 api_name="/chat"
             )
 
-        # Affichage avec effet "typing" en streaming
-        def stream_generator():
-            for char in full_response:
-                yield char
-                time.sleep(0.02)
+        # Affichage streamé juste en dessous du message user
+        if new_response_placeholder is not None:
+            def stream_generator():
+                for char in full_response:
+                    yield char
+                    time.sleep(0.02)
+            new_response_placeholder.write_stream(stream_generator())
 
-        streamed_text = st.write_stream(stream_generator())
         return full_response
 
     except Exception as e:
@@ -184,7 +186,6 @@ if submit:
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             query = f"Description image: {caption}. Question utilisateur: {user_message}"
-            response = llama_predict_stream(query)
 
             st.session_state.chat_history.append({
                 "role": "user",
@@ -192,6 +193,10 @@ if submit:
                 "image": image_path,
                 "type": msg_type
             })
+            st.session_state.waiting_for_response = True
+            response = llama_predict_stream(query)
+            st.session_state.waiting_for_response = False
+
             st.session_state.chat_history.append({
                 "role": "assistant",
                 "content": response,
@@ -222,7 +227,6 @@ if submit:
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             query = f"Description image: {caption}"
-            response = llama_predict_stream(query)
 
             st.session_state.chat_history.append({
                 "role": "user",
@@ -230,6 +234,10 @@ if submit:
                 "image": image_path,
                 "type": msg_type
             })
+            st.session_state.waiting_for_response = True
+            response = llama_predict_stream(query)
+            st.session_state.waiting_for_response = False
+
             st.session_state.chat_history.append({
                 "role": "assistant",
                 "content": response,
@@ -249,13 +257,15 @@ if submit:
             })
 
     elif user_message and not uploaded_file:
-        response = llama_predict_stream(user_message)
-        
         st.session_state.chat_history.append({
             "role": "user",
             "content": user_message,
             "type": "text"
         })
+        st.session_state.waiting_for_response = True
+        response = llama_predict_stream(user_message)
+        st.session_state.waiting_for_response = False
+
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": response,
