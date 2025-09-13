@@ -267,5 +267,5 @@ st.sidebar.info(
     "• **Mode Description:** Analyse et décrit les images\n\n"
     "• **Mode Édition:** Prévu pour modifier les images (en développement)\n\n"
     "• **Mémoire:** L'IA se souvient de toute la conversation et des images précédentes\n\n"
-    "• **Génération illimitée:** Permet des réponses plus longues et détaillées"
+    "• **Animations:** 'Thinking' pendant le traitement et écriture dactylographique des réponses"
 )
