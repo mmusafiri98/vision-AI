@@ -9,7 +9,7 @@ import uuid
 import time
 
 # === CONFIG ===
-st.set_page_config(page_title="Vision AI Chat", page_icon=None, layout="wide")
+st.set_page_config(page_title="Vision AI Chat", layout="wide")
 
 CHAT_DIR = "chats"
 os.makedirs(CHAT_DIR, exist_ok=True)
@@ -93,29 +93,22 @@ if available_chats:
         st.session_state.chat_id = selected
         st.session_state.chat_history = load_chat_history(selected)
 
-# Mode selection pour les images uniquement
+# Mode pour les images uniquement
 st.sidebar.title("Mode pour les images")
 mode_radio = st.sidebar.radio(
     "Mode utilisé pour les images uploadées:", 
     ["Description", "Édition"],
-    index=0 if st.session_state.mode == "describe" else 1,
-    help="Ce mode s'applique uniquement quand vous uploadez une image. Les messages texte fonctionnent dans tous les modes."
+    index=0 if st.session_state.mode == "describe" else 1
 )
-
-if mode_radio == "Description":
-    st.session_state.mode = "describe"
-else:
-    st.session_state.mode = "edit"
+st.session_state.mode = "describe" if mode_radio == "Description" else "edit"
 
 # === DISPLAY CHAT ===
 st.markdown("<h1 style='text-align:center'>Vision AI Chat</h1>", unsafe_allow_html=True)
-
 chat_container = st.container()
 
 with chat_container:
-    # On affiche l'historique
     for msg in st.session_state.chat_history:
-        badge = "describe" if msg.get("type") == "describe" else "edit" if msg.get("type") == "edit" else "chat"
+        badge = msg.get("type", "chat")
         if msg["role"] == "user":
             st.markdown(f"**Vous ({badge}):** {msg['content']}")
             if msg.get("image") and os.path.exists(msg["image"]):
@@ -124,8 +117,6 @@ with chat_container:
             st.markdown(f"**Vision AI ({badge}):** {msg['content']}")
             if msg.get("edited_image") and os.path.exists(msg["edited_image"]):
                 st.image(msg["edited_image"], width=300)
-
-    # Placeholder pour la prochaine réponse de Vision AI (streaming)
     response_placeholder = st.empty()
 
 # === FORM ===
@@ -146,49 +137,45 @@ with st.form("chat_form", clear_on_submit=False):
 # === LLaMA PREDICT STREAM ===
 def llama_predict_stream(query):
     try:
+        if st.session_state.llama_client is None:
+            return "Erreur: LLaMA non initialisé."
+
+        full_response = ""
         with st.spinner("🤖 Vision AI réfléchit..."):
-            full_response = st.session_state.llama_client.predict(
+            # Streaming token par token
+            for chunk in st.session_state.llama_client.stream_predict(
                 message=query,
-                max_tokens=512,
                 temperature=0.7,
                 top_p=0.95,
                 api_name="/chat"
-            )
-
-        # Stream dans le placeholder de la conversation
-        def stream_generator():
-            for char in full_response:
-                yield char
-                time.sleep(0.02)
-
-        assistant_msg = response_placeholder.write_stream(stream_generator())
-        return assistant_msg
-
+            ):
+                full_response += chunk
+                response_placeholder.markdown(f"**Vision AI:** {full_response}")
+        return full_response
     except Exception as e:
         st.error(f"Erreur lors de l'appel au modèle LLaMA : {e}")
         return "Erreur modèle"
 
 # === SUBMIT LOGIC ===
 if submit:
-    if uploaded_file and user_message:
-        current_mode = st.session_state.mode
-        msg_type = current_mode
-        
+    current_mode = st.session_state.mode
+    msg_type = current_mode
+
+    if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
-        # Ajout du message user
         st.session_state.chat_history.append({
             "role": "user",
-            "content": user_message,
+            "content": user_message if user_message else "Image envoyée",
             "image": image_path,
             "type": msg_type
         })
 
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            query = f"Description image: {caption}. Question utilisateur: {user_message}"
+            query = f"Description image: {caption}. Question utilisateur: {user_message}" if user_message else f"Description image: {caption}"
             response = llama_predict_stream(query)
             st.session_state.chat_history.append({
                 "role": "assistant",
@@ -199,37 +186,6 @@ if submit:
             st.session_state.chat_history.append({
                 "role": "assistant",
                 "content": f"Mode Édition: '{user_message}' - L'édition d'image n'est pas encore implémentée.",
-                "type": msg_type
-            })
-
-    elif uploaded_file and not user_message:
-        current_mode = st.session_state.mode
-        msg_type = current_mode
-        
-        image = Image.open(uploaded_file).convert("RGB")
-        image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
-        image.save(image_path)
-
-        st.session_state.chat_history.append({
-            "role": "user",
-            "content": "Image envoyée",
-            "image": image_path,
-            "type": msg_type
-        })
-
-        if msg_type == "describe":
-            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            query = f"Description image: {caption}"
-            response = llama_predict_stream(query)
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": response,
-                "type": msg_type
-            })
-        else:
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": "J'ai reçu votre image en mode édition. Décrivez-moi les modifications souhaitées.",
                 "type": msg_type
             })
 
@@ -246,9 +202,8 @@ if submit:
             "type": "text"
         })
     
-    if uploaded_file or user_message:
-        save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
-        st.rerun()
+    save_chat_history(st.session_state.chat_history, st.session_state.chat_id)
+    st.rerun()
 
 # === INFO ===
 st.sidebar.markdown("---")
@@ -259,7 +214,6 @@ st.sidebar.info(
     "• **Mode Description:** Analyse et décrit les images\n\n"
     "• **Mode Édition:** Prévu pour modifier les images (en développement)\n\n"
     "• **Mémoire:** L'IA se souvient de toute la conversation et des images précédentes\n\n"
-    "• **Animations:** Réponse animée dans la conversation (comme un vrai chat)"
+    "• **Streaming:** La réponse de l'IA s'affiche progressivement comme un vrai chat"
 )
-
 
