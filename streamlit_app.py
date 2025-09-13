@@ -61,8 +61,6 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = load_chat_history(st.session_state.chat_id)
 if "mode" not in st.session_state:
     st.session_state.mode = "describe"
-if "waiting_for_response" not in st.session_state:
-    st.session_state.waiting_for_response = False
 
 if "processor" not in st.session_state or "model" not in st.session_state:
     processor, model = load_blip()
@@ -113,9 +111,9 @@ else:
 st.markdown("<h1 style='text-align:center'>Vision AI Chat</h1>", unsafe_allow_html=True)
 
 chat_container = st.container()
-new_response_placeholder = None
 
 with chat_container:
+    # On affiche l'historique
     for msg in st.session_state.chat_history:
         badge = "describe" if msg.get("type") == "describe" else "edit" if msg.get("type") == "edit" else "chat"
         if msg["role"] == "user":
@@ -127,10 +125,8 @@ with chat_container:
             if msg.get("edited_image") and os.path.exists(msg["edited_image"]):
                 st.image(msg["edited_image"], width=300)
 
-    # Placeholder pour la nouvelle réponse
-    if st.session_state.waiting_for_response:
-        st.markdown("**Vision AI:**")
-        new_response_placeholder = st.empty()
+    # Placeholder pour la prochaine réponse de Vision AI (streaming)
+    response_placeholder = st.empty()
 
 # === FORM ===
 with st.form("chat_form", clear_on_submit=False):
@@ -150,7 +146,7 @@ with st.form("chat_form", clear_on_submit=False):
 # === LLaMA PREDICT STREAM ===
 def llama_predict_stream(query):
     try:
-        with st.spinner("🤖 Vision AI est en train de réfléchir..."):
+        with st.spinner("🤖 Vision AI réfléchit..."):
             full_response = st.session_state.llama_client.predict(
                 message=query,
                 max_tokens=512,
@@ -159,15 +155,14 @@ def llama_predict_stream(query):
                 api_name="/chat"
             )
 
-        # Affichage streamé juste en dessous du message user
-        if new_response_placeholder is not None:
-            def stream_generator():
-                for char in full_response:
-                    yield char
-                    time.sleep(0.02)
-            new_response_placeholder.write_stream(stream_generator())
+        # Stream dans le placeholder de la conversation
+        def stream_generator():
+            for char in full_response:
+                yield char
+                time.sleep(0.02)
 
-        return full_response
+        assistant_msg = response_placeholder.write_stream(stream_generator())
+        return assistant_msg
 
     except Exception as e:
         st.error(f"Erreur lors de l'appel au modèle LLaMA : {e}")
@@ -183,36 +178,27 @@ if submit:
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
+        # Ajout du message user
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": user_message,
+            "image": image_path,
+            "type": msg_type
+        })
+
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             query = f"Description image: {caption}. Question utilisateur: {user_message}"
-
-            st.session_state.chat_history.append({
-                "role": "user",
-                "content": user_message,
-                "image": image_path,
-                "type": msg_type
-            })
-            st.session_state.waiting_for_response = True
             response = llama_predict_stream(query)
-            st.session_state.waiting_for_response = False
-
             st.session_state.chat_history.append({
                 "role": "assistant",
                 "content": response,
                 "type": msg_type
             })
-
         else:
             st.session_state.chat_history.append({
-                "role": "user",
-                "content": user_message,
-                "image": image_path,
-                "type": msg_type
-            })
-            st.session_state.chat_history.append({
                 "role": "assistant",
-                "content": f"Mode Édition: '{user_message}' - L'édition d'image n'est pas encore implémentée, mais je peux vous aider avec d'autres questions.",
+                "content": f"Mode Édition: '{user_message}' - L'édition d'image n'est pas encore implémentée.",
                 "type": msg_type
             })
 
@@ -224,20 +210,17 @@ if submit:
         image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
         image.save(image_path)
 
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": "Image envoyée",
+            "image": image_path,
+            "type": msg_type
+        })
+
         if msg_type == "describe":
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             query = f"Description image: {caption}"
-
-            st.session_state.chat_history.append({
-                "role": "user",
-                "content": "Image envoyée",
-                "image": image_path,
-                "type": msg_type
-            })
-            st.session_state.waiting_for_response = True
             response = llama_predict_stream(query)
-            st.session_state.waiting_for_response = False
-
             st.session_state.chat_history.append({
                 "role": "assistant",
                 "content": response,
@@ -245,14 +228,8 @@ if submit:
             })
         else:
             st.session_state.chat_history.append({
-                "role": "user",
-                "content": "Image envoyée (mode édition)",
-                "image": image_path,
-                "type": msg_type
-            })
-            st.session_state.chat_history.append({
                 "role": "assistant",
-                "content": "J'ai reçu votre image en mode édition. Veuillez me dire quelle modification vous souhaitez apporter.",
+                "content": "J'ai reçu votre image en mode édition. Décrivez-moi les modifications souhaitées.",
                 "type": msg_type
             })
 
@@ -262,10 +239,7 @@ if submit:
             "content": user_message,
             "type": "text"
         })
-        st.session_state.waiting_for_response = True
         response = llama_predict_stream(user_message)
-        st.session_state.waiting_for_response = False
-
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": response,
@@ -285,5 +259,7 @@ st.sidebar.info(
     "• **Mode Description:** Analyse et décrit les images\n\n"
     "• **Mode Édition:** Prévu pour modifier les images (en développement)\n\n"
     "• **Mémoire:** L'IA se souvient de toute la conversation et des images précédentes\n\n"
-    "• **Animations:** 'Thinking' pendant le traitement et écriture dactylographique des réponses"
+    "• **Animations:** Réponse animée dans la conversation (comme un vrai chat)"
 )
+
+
