@@ -15,7 +15,6 @@ def get_conn():
 
 # ------------------ UTILISATEURS ------------------
 def create_user(email, password, name):
-    """Créer un nouvel utilisateur"""
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -30,7 +29,6 @@ def create_user(email, password, name):
     return dict(user)
 
 def verify_user(email, password):
-    """Vérifier un utilisateur existant"""
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute("SELECT * FROM users WHERE email=%s", (email,))
@@ -92,3 +90,4 @@ def get_messages(conversation_id):
     cur.close()
     conn.close()
     return [dict(m) for m in msgs]
+
