@@ -200,51 +200,10 @@ if "logged_in" in st.session_state and st.session_state.logged_in:
                 del st.session_state[key]
             st.rerun()
 
-elif st.session_state.show_register:
-    # PAGE CRÉATION DE COMPTE
-    st.markdown('<h1 class="page-title">Create Account</h1>', unsafe_allow_html=True)
-    
-    with st.form("register_form"):
-        reg_email = st.text_input("Email", placeholder="Email", label_visibility="collapsed")
-        reg_password = st.text_input("Password", type="password", placeholder="Password", label_visibility="collapsed")
-        reg_name = st.text_input("Full Name", placeholder="Full Name", label_visibility="collapsed")
-        
-        st.markdown('<div class="create-account-btn">', unsafe_allow_html=True)
-        register_submitted = st.form_submit_button("Create Account", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        if register_submitted:
-            if not reg_email or not reg_password:
-                st.warning("Email et mot de passe obligatoires.")
-            elif len(reg_password) < 6:
-                st.warning("Le mot de passe doit contenir au moins 6 caractères.")
-            else:
-                with st.spinner("Création du compte en cours..."):
-                    user = create_user(reg_email, reg_password, reg_name)
-                    if user:
-                        st.success(f"✅ Compte créé pour {user.email}!")
-                        st.balloons()
-                        st.info("Vous pouvez maintenant vous connecter.")
-                        st.session_state.show_register = False
-                        st.rerun()
-    
-    # Lien Sign in
-    st.markdown("""
-    <div style="text-align: right; margin-top: 1rem;">
-        <p style="color: #666; font-size: 14px; margin: 0;">
-            Déjà un compte ? 
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown('<div class="secondary-btn">', unsafe_allow_html=True)
-    if st.button("← Sign in", use_container_width=True):
-        st.session_state.show_register = False
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
 else:
-    # PAGE DE CONNEXION
+    # PAGE UNIQUE - LOGIN + CRÉATION DE COMPTE
+    
+    # SECTION LOGIN
     st.markdown("""
     <div style="text-align: center; margin-bottom: 2rem;">
         <h1 style="color: #333; font-size: 1.8rem; font-weight: 600; margin: 0;">🟠 MonApp</h1>
@@ -272,7 +231,7 @@ else:
                         st.success("✅ Connexion réussie!")
                         st.rerun()
 
-    # Séparateur
+    # SÉPARATEUR
     st.markdown("""
     <div style="text-align: center; margin: 2rem 0; position: relative;">
         <div style="position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #e0e0e0;"></div>
@@ -280,8 +239,31 @@ else:
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown('<div class="secondary-btn">', unsafe_allow_html=True)
-    if st.button("Créer un nouveau compte", use_container_width=True):
-        st.session_state.show_register = True
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    # SECTION CREATE ACCOUNT
+    st.markdown('<h2 class="page-title" style="text-align: left;">Create Account</h2>', unsafe_allow_html=True)
+    
+    with st.form("register_form"):
+        reg_email = st.text_input("Email", placeholder="Email", label_visibility="collapsed", key="reg_email")
+        reg_password = st.text_input("Password", type="password", placeholder="Password", label_visibility="collapsed", key="reg_password")
+        reg_name = st.text_input("Full Name", placeholder="Full Name", label_visibility="collapsed", key="reg_name")
+        
+        st.markdown('<div class="create-account-btn">', unsafe_allow_html=True)
+        register_submitted = st.form_submit_button("Create Account", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if register_submitted:
+            if not reg_email or not reg_password:
+                st.warning("Email et mot de passe obligatoires.")
+            elif len(reg_password) < 6:
+                st.warning("Le mot de passe doit contenir au moins 6 caractères.")
+            else:
+                with st.spinner("Création du compte en cours..."):
+                    user = create_user(reg_email, reg_password, reg_name)
+                    if user:
+                        st.success(f"✅ Compte créé pour {user.email}!")
+                        st.balloons()
+                        st.info("Vous pouvez maintenant vous connecter avec vos identifiants ci-dessus.")
+                        # Optionnel : connecter automatiquement l'utilisateur
+                        # st.session_state.logged_in = True
+                        # st.session_state.user = user
+                        # st.rerun()
