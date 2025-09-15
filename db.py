@@ -48,7 +48,6 @@ def verify_user(email, password):
             st.error(f"❌ Erreur lors de la connexion: {error_msg}")
         return None
 
-
 def create_user(email, password, name=None, full_name=None):
     """Crée un nouveau utilisateur"""
     try:
@@ -142,96 +141,101 @@ if "logged_in" in st.session_state and st.session_state.logged_in:
         logout_user()
     except Exception as e:
         st.sidebar.error(f"Erreur sidebar: {e}")
-else:
-    st.sidebar.info("👤 Non connecté")
 
 # --------------------------
 # PAGE LOGIN
 # --------------------------
 if st.session_state.page == "login":
-    st.title("🔑 Connexion Utilisateur")
+    # Centrage du contenu comme sur l'image
+    col_empty1, col_form, col_empty2 = st.columns([1, 2, 1])
 
-    default_email = st.session_state.get("temp_email", "")
-    default_password = st.session_state.get("temp_password", "")
+    with col_form:
+        st.title("🔑 Connexion Utilisateur")
+        st.markdown("---")
 
-    with st.form("login_form"):
-        email = st.text_input("📧 Email", value=default_email)
-        password = st.text_input("🔒 Mot de passe", type="password", value=default_password)
-        login_submitted = st.form_submit_button("Se connecter")
+        default_email = st.session_state.get("temp_email", "")
+        default_password = st.session_state.get("temp_password", "")
 
-        if login_submitted:
-            if not email or not password:
-                st.warning("Merci d'entrer email et mot de passe.")
-            else:
-                with st.spinner("Connexion en cours..."):
-                    user = verify_user(email, password)
+        with st.form("login_form"):
+            email = st.text_input("📧 Email", value=default_email)
+            password = st.text_input("🔒 Mot de passe", type="password", value=default_password)
+            login_submitted = st.form_submit_button("Se connecter")
 
-                    if user:
-                        st.success(f"✅ Bienvenue {user.email} !")
+            if login_submitted:
+                if not email or not password:
+                    st.warning("Merci d'entrer email et mot de passe.")
+                else:
+                    with st.spinner("Connexion en cours..."):
+                        user = verify_user(email, password)
 
-                        st.session_state.logged_in = True
-                        st.session_state.user = user
+                        if user:
+                            st.success(f"✅ Bienvenue {user.email} !")
 
-                        if "temp_email" in st.session_state:
-                            del st.session_state.temp_email
-                        if "temp_password" in st.session_state:
-                            del st.session_state.temp_password
+                            st.session_state.logged_in = True
+                            st.session_state.user = user
 
-                        st.info("Redirection vers le dashboard...")
-                        st.balloons()
-                        go_to_dashboard()
-                        st.rerun()
-                    else:
-                        st.error("❌ Connexion échouée")
+                            if "temp_email" in st.session_state:
+                                del st.session_state.temp_email
+                            if "temp_password" in st.session_state:
+                                del st.session_state.temp_password
 
-    st.markdown("---")
-    st.write("Pas encore de compte ?")
-    if st.button("📝 Créer un compte"):
-        go_to_register()
-        st.rerun()
+                            st.info("Redirection vers le dashboard...")
+                            st.balloons()
+                            go_to_dashboard()
+                            st.rerun()
+                        else:
+                            st.error("❌ Connexion échouée")
+
+        st.markdown("---")
+        st.write("Pas encore de compte ?")
+        if st.button("📝 Créer un compte"):
+            go_to_register()
+            st.rerun()
 
 # --------------------------
 # PAGE CREATION COMPTE
 # --------------------------
 elif st.session_state.page == "register":
-    st.title("📝 Créer un nouveau compte")
+    # Centrage du contenu
+    col_empty1, col_form, col_empty2 = st.columns([1, 2, 1])
+    with col_form:
+        st.title("📝 Créer un nouveau compte")
+        st.info("💡 Votre compte sera automatiquement confirmé.")
 
-    st.info("💡 Votre compte sera automatiquement confirmé.")
+        with st.form("register_form"):
+            new_email = st.text_input("📧 Email")
+            new_password = st.text_input("🔒 Mot de passe", type="password")
+            new_name = st.text_input("👤 Nom (optionnel)")
+            new_fullname = st.text_input("📝 Nom complet (optionnel)")
+            register_submitted = st.form_submit_button("Créer le compte")
 
-    with st.form("register_form"):
-        new_email = st.text_input("📧 Email")
-        new_password = st.text_input("🔒 Mot de passe", type="password")
-        new_name = st.text_input("👤 Nom (optionnel)")
-        new_fullname = st.text_input("📝 Nom complet (optionnel)")
-        register_submitted = st.form_submit_button("Créer le compte")
+            if register_submitted:
+                if not new_email or not new_password:
+                    st.warning("Email et mot de passe sont obligatoires.")
+                elif len(new_password) < 6:
+                    st.warning("Le mot de passe doit contenir au moins 6 caractères.")
+                elif not "@" in new_email or not "." in new_email:
+                    st.warning("Veuillez entrer une adresse email valide.")
+                else:
+                    with st.spinner("Création du compte en cours..."):
+                        user = create_user(new_email, new_password, new_name, new_fullname)
 
-        if register_submitted:
-            if not new_email or not new_password:
-                st.warning("Email et mot de passe sont obligatoires.")
-            elif len(new_password) < 6:
-                st.warning("Le mot de passe doit contenir au moins 6 caractères.")
-            elif not "@" in new_email or not "." in new_email:
-                st.warning("Veuillez entrer une adresse email valide.")
-            else:
-                with st.spinner("Création du compte en cours..."):
-                    user = create_user(new_email, new_password, new_name, new_fullname)
+                        if user:
+                            st.success(f"✅ Compte créé pour {user.email}!")
+                            st.balloons()
 
-                    if user:
-                        st.success(f"✅ Compte créé pour {user.email}!")
-                        st.balloons()
+                            st.session_state.temp_email = new_email
+                            st.session_state.temp_password = new_password
 
-                        st.session_state.temp_email = new_email
-                        st.session_state.temp_password = new_password
+                            st.success("🎉 Redirection automatique vers la page de connexion...")
+                            go_to_login()
+                            st.rerun()
 
-                        st.success("🎉 Redirection automatique vers la page de connexion...")
-                        go_to_login()
-                        st.rerun()
-
-    st.markdown("---")
-    st.write("Déjà un compte ?")
-    if st.button("🔑 Retour au login"):
-        go_to_login()
-        st.rerun()
+        st.markdown("---")
+        st.write("Déjà un compte ?")
+        if st.button("🔑 Retour au login"):
+            go_to_login()
+            st.rerun()
 
 # --------------------------
 # PAGE DASHBOARD
