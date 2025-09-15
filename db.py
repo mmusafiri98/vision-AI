@@ -42,17 +42,14 @@ def create_user(email: str, password: str, name: str = None, full_name: str = No
     Retourne un dict avec message et identifiants pour l'interface
     """
     try:
-        # Création dans Supabase Auth
-        response = supabase_admin.auth.sign_up({
-            "email": email,
-            "password": password
-        })
+        # Création utilisateur dans Supabase Auth
+        response = supabase_admin.auth.sign_up({"email": email, "password": password})
         user = response.user
         if not user:
             raise Exception(f"Impossible de créer l'utilisateur: {response.data}")
 
         # ⚡ Confirmer automatiquement l'utilisateur
-        supabase_admin.auth.admin.update_user(
+        supabase_admin.auth.admin.update_user_by_id(
             user_id=user.id,
             attributes={"email_confirmed_at": "now()"}
         )
@@ -125,3 +122,36 @@ def test_connection():
         logger.error(f"Test de connexion échoué: {e}")
         return False
 
+# --------------------------
+# Exemple d'utilisation (optionnel)
+# --------------------------
+if __name__ == "__main__":
+    print("🔄 Test de connexion à Supabase via API...")
+    if test_connection():
+        create_users_table()
+
+        # Créer un utilisateur de test
+        try:
+            new_user = create_user(
+                email="test@example.com",
+                password="password123",
+                name="TestUser",
+                full_name="Utilisateur Test"
+            )
+            print("✅ Utilisateur créé:", new_user)
+        except Exception as e:
+            print("❌ Erreur:", e)
+
+        # Vérifier un utilisateur
+        try:
+            user = verify_user("test@example.com", "password123")
+            print("👀 Utilisateur connecté:", user)
+        except Exception as e:
+            print("❌ Erreur:", e)
+
+        # Lister tous les utilisateurs
+        try:
+            users = list_users()
+            print(f"\n📋 Tous les utilisateurs: {users}")
+        except Exception as e:
+            print("❌ Erreur:", e)
