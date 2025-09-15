@@ -39,7 +39,7 @@ def create_users_table():
 def create_user(email: str, password: str, name: str = None, full_name: str = None):
     """
     Crée un utilisateur via Supabase Auth et ajoute infos dans la table users
-    Retourne un dict avec message et identifiants à afficher à l'utilisateur
+    Retourne un dict avec message et identifiants pour l'interface
     """
     try:
         # Création dans Supabase Auth
@@ -51,8 +51,11 @@ def create_user(email: str, password: str, name: str = None, full_name: str = No
         if not user:
             raise Exception(f"Impossible de créer l'utilisateur: {response.data}")
 
-        # Confirmer l'utilisateur automatiquement
-        supabase_admin.auth.api.update_user(user.id, {"email_confirmed_at": "now()"})
+        # ⚡ Confirmer automatiquement l'utilisateur
+        supabase_admin.auth.admin.update_user(
+            user_id=user.id,
+            attributes={"email_confirmed_at": "now()"}
+        )
 
         # Ajouter infos dans la table users
         user_data = {"email": email}
@@ -62,9 +65,8 @@ def create_user(email: str, password: str, name: str = None, full_name: str = No
             user_data["full_name"] = full_name
 
         supabase_admin.table("users").insert(user_data).execute()
-        logger.info(f"Utilisateur créé: {user}")
+        logger.info(f"Utilisateur créé et confirmé: {user}")
 
-        # Retourner message pour interface
         return {
             "message": "Utilisateur créé avec succès ! Merci de sauvegarder vos identifiants.",
             "email": email,
