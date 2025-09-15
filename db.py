@@ -97,9 +97,9 @@ st.markdown("""
     
     /* Boutons personnalisés */
     .stButton > button {
-        background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%);
+        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
         border: none;
-        border-radius: 12px;
+        border-radius: 8px;
         padding: 12px 24px;
         color: white;
         font-weight: 600;
@@ -109,8 +109,38 @@ st.markdown("""
     }
     
     .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 20px rgba(255, 107, 53, 0.3);
+        transform: translateY(-1px);
+        box-shadow: 0 8px 16px rgba(0, 123, 255, 0.3);
+    }
+    
+    /* Bouton orange pour la page de connexion */
+    .login-page .stButton > button {
+        background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%);
+    }
+    
+    .login-page .stButton > button:hover {
+        box-shadow: 0 8px 16px rgba(255, 107, 53, 0.3);
+    }
+    
+    /* Style spécial pour les inputs sans label */
+    .stTextInput > label {
+        display: none !important;
+    }
+    
+    .stTextInput > div > div > input {
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 14px 16px;
+        font-size: 14px;
+        background: #fafafa;
+        transition: all 0.3s ease;
+        margin-bottom: 8px;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
+        background: white;
     }
     
     /* Bouton secondaire */
@@ -288,6 +318,7 @@ else:
         # --------------------------
         # FORMULAIRE DE CONNEXION
         # --------------------------
+        st.markdown('<div class="login-page">', unsafe_allow_html=True)
         with st.form("login_form"):
             login_email = st.text_input("Email", placeholder="votre@email.com")
             login_password = st.text_input("Mot de passe", type="password", placeholder="••••••••")
@@ -314,19 +345,27 @@ else:
         if st.button("Créer un nouveau compte", use_container_width=True):
             st.session_state.show_register = True
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
     
     else:
         # --------------------------
-        # FORMULAIRE D'INSCRIPTION
+        # FORMULAIRE D'INSCRIPTION - Style comme l'image
         # --------------------------
-        st.markdown("<p style='text-align: center; color: #666; margin-bottom: 1rem;'>Créer votre compte</p>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style="text-align: left; margin-bottom: 2rem;">
+            <h2 style="color: #333; font-size: 1.5rem; font-weight: 600; margin: 0;">Create Account</h2>
+        </div>
+        """, unsafe_allow_html=True)
         
         with st.form("register_form"):
-            reg_email = st.text_input("Email", placeholder="votre@email.com")
-            reg_password = st.text_input("Mot de passe", type="password", placeholder="••••••••")
-            reg_name = st.text_input("Nom (optionnel)", placeholder="Votre nom")
-            reg_fullname = st.text_input("Nom complet (optionnel)", placeholder="Nom et prénom")
-            register_submitted = st.form_submit_button("Créer le compte")
+            # Inputs avec style minimaliste comme dans l'image
+            reg_email = st.text_input("", placeholder="Email", label_visibility="collapsed")
+            reg_password = st.text_input("", type="password", placeholder="Password", label_visibility="collapsed")
+            reg_name = st.text_input("", placeholder="Full Name", label_visibility="collapsed")
+            
+            # Bouton Create Account (bleu comme dans l'image)
+            st.markdown("<br>", unsafe_allow_html=True)
+            register_submitted = st.form_submit_button("Create Account", use_container_width=True)
 
             if register_submitted:
                 if not reg_email or not reg_password:
@@ -335,20 +374,21 @@ else:
                     st.warning("Le mot de passe doit contenir au moins 6 caractères.")
                 else:
                     with st.spinner("Création du compte en cours..."):
-                        user = create_user(reg_email, reg_password, reg_name, reg_fullname)
+                        user = create_user(reg_email, reg_password, reg_name, reg_name)
                         if user:
                             st.success(f"✅ Compte créé pour {user.email}!")
                             st.balloons()
                             st.info("Vous pouvez maintenant vous connecter.")
                             st.session_state.show_register = False
-
+        
+        # Lien "Sign in" en bas à droite comme dans l'image
         st.markdown("""
-        <div class="separator">
-            <span>ou</span>
+        <div style="text-align: right; margin-top: 1rem;">
+            <a href="#" style="color: #666; text-decoration: none; font-size: 14px;" onclick="return false;">Sign in</a>
         </div>
         """, unsafe_allow_html=True)
         
-        if st.button("Retour à la connexion", use_container_width=True):
+        if st.button("← Retour à la connexion", key="back_btn"):
             st.session_state.show_register = False
             st.rerun()
     
