@@ -50,7 +50,7 @@ def create_user(email: str, password: str, name: str = None, full_name: str = No
 
         # ⚡ Confirmer automatiquement l'utilisateur
         supabase_admin.auth.admin.update_user_by_id(
-            user_id=user.id,
+            id=user.id,
             attributes={"email_confirmed_at": "now()"}
         )
 
