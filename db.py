@@ -31,188 +31,101 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS pour le style moderne inspiré de l'image
+# CSS amélioré et simplifié
 st.markdown("""
 <style>
-    /* Cache le sidebar */
-    .css-1d391kg {display: none}
-    .css-1rs6os {display: none}
-    .css-17ziqus {display: none}
-    [data-testid="stSidebar"] {display: none}
-    .css-1lcbmhc {display: none}
-    
-    /* Cache le header Streamlit */
+    /* Cache le sidebar et header */
+    .css-1d391kg, .css-1rs6os, .css-17ziqus, [data-testid="stSidebar"], .css-1lcbmhc {display: none}
     header[data-testid="stHeader"] {display: none}
     
-    /* Style général */
+    /* Background */
     .stApp {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         min-height: 100vh;
     }
     
     /* Container principal */
-    .main-container {
+    .main > div {
         background: white;
-        padding: 2rem;
+        padding: 2.5rem;
         border-radius: 20px;
         box-shadow: 0 20px 40px rgba(0,0,0,0.1);
         max-width: 400px;
         margin: 2rem auto;
     }
     
-    /* Logo/Titre */
-    .logo {
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    
-    .logo h1 {
-        color: #333;
-        font-size: 1.8rem;
-        font-weight: 600;
-        margin: 0;
-    }
-    
-    .logo p {
-        color: #666;
-        font-size: 1rem;
-        margin: 0.5rem 0;
-    }
-    
-    /* Inputs personnalisés */
+    /* Inputs */
     .stTextInput > div > div > input {
-        border: 2px solid #f1f1f1;
-        border-radius: 12px;
-        padding: 12px 16px;
-        font-size: 14px;
-        background: #fafafa;
-        transition: all 0.3s ease;
+        border: 1px solid #e0e0e0 !important;
+        border-radius: 8px !important;
+        padding: 14px 16px !important;
+        font-size: 14px !important;
+        background: #fafafa !important;
+        margin-bottom: 8px !important;
     }
     
     .stTextInput > div > div > input:focus {
-        border-color: #ff6b35;
-        box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
-        background: white;
+        border-color: #007bff !important;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1) !important;
+        background: white !important;
     }
     
-    /* Boutons personnalisés */
-    .stButton > button {
-        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-        border: none;
-        border-radius: 8px;
-        padding: 12px 24px;
-        color: white;
-        font-weight: 600;
-        font-size: 16px;
-        width: 100%;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 8px 16px rgba(0, 123, 255, 0.3);
-    }
-    
-    /* Bouton orange pour la page de connexion */
-    .login-page .stButton > button {
-        background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%);
-    }
-    
-    .login-page .stButton > button:hover {
-        box-shadow: 0 8px 16px rgba(255, 107, 53, 0.3);
-    }
-    
-    /* Style spécial pour les inputs sans label */
+    /* Cache les labels */
     .stTextInput > label {
         display: none !important;
     }
     
-    .stTextInput > div > div > input {
-        border: 1px solid #e0e0e0;
-        border-radius: 6px;
-        padding: 14px 16px;
-        font-size: 14px;
-        background: #fafafa;
-        transition: all 0.3s ease;
-        margin-bottom: 8px;
+    /* Boutons */
+    .stButton > button {
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 12px 24px !important;
+        color: white !important;
+        font-weight: 600 !important;
+        font-size: 16px !important;
+        width: 100% !important;
+        transition: all 0.3s ease !important;
     }
     
-    .stTextInput > div > div > input:focus {
-        border-color: #007bff;
-        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
-        background: white;
+    /* Bouton bleu pour création */
+    .create-account-btn button {
+        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%) !important;
+    }
+    
+    .create-account-btn button:hover {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 8px 16px rgba(0, 123, 255, 0.3) !important;
+    }
+    
+    /* Bouton orange pour connexion */
+    .login-btn button {
+        background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%) !important;
+    }
+    
+    .login-btn button:hover {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 8px 16px rgba(255, 107, 53, 0.3) !important;
     }
     
     /* Bouton secondaire */
-    .secondary-btn {
+    .secondary-btn button {
         background: transparent !important;
-        border: 2px solid #ff6b35 !important;
-        color: #ff6b35 !important;
+        border: 2px solid #666 !important;
+        color: #666 !important;
     }
     
-    .secondary-btn:hover {
-        background: #ff6b35 !important;
-        color: white !important;
+    /* Titre */
+    .page-title {
+        color: #333;
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 2rem;
+        text-align: left;
     }
     
     /* Messages */
-    .stSuccess {
-        background: linear-gradient(135deg, #4CAF50 0%, #66BB6A 100%);
-        border-radius: 12px;
-        border: none;
-    }
-    
-    .stError {
-        background: linear-gradient(135deg, #f44336 0%, #ef5350 100%);
-        border-radius: 12px;
-        border: none;
-    }
-    
-    .stWarning {
-        background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);
-        border-radius: 12px;
-        border: none;
-    }
-    
-    /* Séparateur */
-    .separator {
-        text-align: center;
-        margin: 2rem 0;
-        position: relative;
-    }
-    
-    .separator::before {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 0;
-        right: 0;
-        height: 1px;
-        background: #e0e0e0;
-    }
-    
-    .separator span {
-        background: white;
-        padding: 0 1rem;
-        color: #666;
-        font-size: 14px;
-    }
-    
-    /* Dashboard */
-    .dashboard-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 2rem;
-        border-radius: 20px;
-        margin: 1rem 0;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-    }
-    
-    .profile-info {
-        background: rgba(255,255,255,0.1);
-        padding: 1rem;
-        border-radius: 12px;
-        margin: 1rem 0;
+    .stSuccess, .stError, .stWarning {
+        border-radius: 8px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -234,13 +147,13 @@ def verify_user(email, password):
             st.error(f"❌ Erreur connexion: {msg}")
         return None
 
-def create_user(email, password, name=None, full_name=None):
+def create_user(email, password, name=None):
     try:
         response = admin.auth.admin.create_user({
             "email": email,
             "password": password,
             "email_confirm": True,
-            "user_metadata": {"name": name or "", "full_name": full_name or ""}
+            "user_metadata": {"name": name or "", "full_name": name or ""}
         })
         if response.user:
             return response.user
@@ -258,138 +171,117 @@ def create_user(email, password, name=None, full_name=None):
 # LOGIQUE PRINCIPALE
 # --------------------------
 
+# Initialiser l'état de la page
+if "show_register" not in st.session_state:
+    st.session_state.show_register = False
+
 # Vérifier si l'utilisateur est déjà connecté
 if "logged_in" in st.session_state and st.session_state.logged_in:
-    # DASHBOARD - Utilisateur connecté
-    st.markdown("""
-    <div class="dashboard-card">
-        <div class="logo">
-            <h1>🏠 Dashboard</h1>
-            <p>Bienvenue dans votre espace personnel</p>
-        </div>
-        <div class="profile-info">
-            <h3>👤 Profil</h3>
-            <p><strong>Email:</strong> {}</p>
-            <p><strong>ID:</strong> {}</p>
-        </div>
-    </div>
-    """.format(st.session_state.user.email, st.session_state.user.id), unsafe_allow_html=True)
-
-    metadata = getattr(st.session_state.user, "user_metadata", {})
-    if metadata and (metadata.get("name") or metadata.get("full_name")):
-        st.markdown("""
-        <div class="profile-info">
-            <h4>Informations supplémentaires:</h4>
-        </div>
-        """, unsafe_allow_html=True)
-        if metadata.get("name"): 
-            st.write(f"**Nom:** {metadata['name']}")
-        if metadata.get("full_name"): 
-            st.write(f"**Nom complet:** {metadata['full_name']}")
-
-    st.markdown("<br>", unsafe_allow_html=True)
+    # DASHBOARD
+    st.markdown('<h1 class="page-title">🏠 Dashboard</h1>', unsafe_allow_html=True)
+    st.write(f"Bienvenue, {st.session_state.user.email}!")
     
+    st.subheader("👤 Profil")
+    st.write(f"**Email:** {st.session_state.user.email}")
+    st.write(f"**ID:** {st.session_state.user.id}")
+    
+    metadata = getattr(st.session_state.user, "user_metadata", {})
+    if metadata and metadata.get("name"):
+        st.write(f"**Nom:** {metadata['name']}")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🔄 Actualiser", use_container_width=True):
             st.rerun()
     with col2:
         if st.button("🚪 Déconnexion", use_container_width=True):
-            # Nettoyer la session
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
 
-else:
-    # PAGE DE CONNEXION/INSCRIPTION avec design moderne
+elif st.session_state.show_register:
+    # PAGE CRÉATION DE COMPTE
+    st.markdown('<h1 class="page-title">Create Account</h1>', unsafe_allow_html=True)
+    
+    with st.form("register_form"):
+        reg_email = st.text_input("Email", placeholder="Email", label_visibility="collapsed")
+        reg_password = st.text_input("Password", type="password", placeholder="Password", label_visibility="collapsed")
+        reg_name = st.text_input("Full Name", placeholder="Full Name", label_visibility="collapsed")
+        
+        st.markdown('<div class="create-account-btn">', unsafe_allow_html=True)
+        register_submitted = st.form_submit_button("Create Account", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if register_submitted:
+            if not reg_email or not reg_password:
+                st.warning("Email et mot de passe obligatoires.")
+            elif len(reg_password) < 6:
+                st.warning("Le mot de passe doit contenir au moins 6 caractères.")
+            else:
+                with st.spinner("Création du compte en cours..."):
+                    user = create_user(reg_email, reg_password, reg_name)
+                    if user:
+                        st.success(f"✅ Compte créé pour {user.email}!")
+                        st.balloons()
+                        st.info("Vous pouvez maintenant vous connecter.")
+                        st.session_state.show_register = False
+                        st.rerun()
+    
+    # Lien Sign in
     st.markdown("""
-    <div class="main-container">
-        <div class="logo">
-            <h1>🟠 MonApp</h1>
-            <p>Bon de vous revoir !</p>
-        </div>
+    <div style="text-align: right; margin-top: 1rem;">
+        <p style="color: #666; font-size: 14px; margin: 0;">
+            Déjà un compte ? 
+        </p>
+    </div>
     """, unsafe_allow_html=True)
     
-    # Variables pour gérer l'affichage
-    if "show_register" not in st.session_state:
+    st.markdown('<div class="secondary-btn">', unsafe_allow_html=True)
+    if st.button("← Sign in", use_container_width=True):
         st.session_state.show_register = False
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+else:
+    # PAGE DE CONNEXION
+    st.markdown("""
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 style="color: #333; font-size: 1.8rem; font-weight: 600; margin: 0;">🟠 MonApp</h1>
+        <p style="color: #666; font-size: 1rem; margin: 0.5rem 0;">Bon de vous revoir !</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    if not st.session_state.show_register:
-        # --------------------------
-        # FORMULAIRE DE CONNEXION
-        # --------------------------
-        st.markdown('<div class="login-page">', unsafe_allow_html=True)
-        with st.form("login_form"):
-            login_email = st.text_input("Email", placeholder="votre@email.com")
-            login_password = st.text_input("Mot de passe", type="password", placeholder="••••••••")
-            login_submitted = st.form_submit_button("Se connecter")
-
-            if login_submitted:
-                if not login_email or not login_password:
-                    st.warning("Merci d'entrer email et mot de passe.")
-                else:
-                    with st.spinner("Connexion en cours..."):
-                        user = verify_user(login_email, login_password)
-                        if user:
-                            st.session_state.logged_in = True
-                            st.session_state.user = user
-                            st.success("✅ Connexion réussie!")
-                            st.rerun()
-
-        st.markdown("""
-        <div class="separator">
-            <span>ou</span>
-        </div>
-        """, unsafe_allow_html=True)
+    with st.form("login_form"):
+        login_email = st.text_input("Email", placeholder="votre@email.com")
+        login_password = st.text_input("Password", type="password", placeholder="••••••••")
         
-        if st.button("Créer un nouveau compte", use_container_width=True):
-            st.session_state.show_register = True
-            st.rerun()
+        st.markdown('<div class="login-btn">', unsafe_allow_html=True)
+        login_submitted = st.form_submit_button("Se connecter", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-    
-    else:
-        # --------------------------
-        # FORMULAIRE D'INSCRIPTION - Style comme l'image
-        # --------------------------
-        st.markdown("""
-        <div style="text-align: left; margin-bottom: 2rem;">
-            <h2 style="color: #333; font-size: 1.5rem; font-weight: 600; margin: 0;">Create Account</h2>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        with st.form("register_form"):
-            # Inputs avec style minimaliste comme dans l'image
-            reg_email = st.text_input("", placeholder="Email", label_visibility="collapsed")
-            reg_password = st.text_input("", type="password", placeholder="Password", label_visibility="collapsed")
-            reg_name = st.text_input("", placeholder="Full Name", label_visibility="collapsed")
-            
-            # Bouton Create Account (bleu comme dans l'image)
-            st.markdown("<br>", unsafe_allow_html=True)
-            register_submitted = st.form_submit_button("Create Account", use_container_width=True)
 
-            if register_submitted:
-                if not reg_email or not reg_password:
-                    st.warning("Email et mot de passe obligatoires.")
-                elif len(reg_password) < 6:
-                    st.warning("Le mot de passe doit contenir au moins 6 caractères.")
-                else:
-                    with st.spinner("Création du compte en cours..."):
-                        user = create_user(reg_email, reg_password, reg_name, reg_name)
-                        if user:
-                            st.success(f"✅ Compte créé pour {user.email}!")
-                            st.balloons()
-                            st.info("Vous pouvez maintenant vous connecter.")
-                            st.session_state.show_register = False
-        
-        # Lien "Sign in" en bas à droite comme dans l'image
-        st.markdown("""
-        <div style="text-align: right; margin-top: 1rem;">
-            <a href="#" style="color: #666; text-decoration: none; font-size: 14px;" onclick="return false;">Sign in</a>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("← Retour à la connexion", key="back_btn"):
-            st.session_state.show_register = False
-            st.rerun()
+        if login_submitted:
+            if not login_email or not login_password:
+                st.warning("Merci d'entrer email et mot de passe.")
+            else:
+                with st.spinner("Connexion en cours..."):
+                    user = verify_user(login_email, login_password)
+                    if user:
+                        st.session_state.logged_in = True
+                        st.session_state.user = user
+                        st.success("✅ Connexion réussie!")
+                        st.rerun()
+
+    # Séparateur
+    st.markdown("""
+    <div style="text-align: center; margin: 2rem 0; position: relative;">
+        <div style="position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #e0e0e0;"></div>
+        <span style="background: white; padding: 0 1rem; color: #666; font-size: 14px;">ou</span>
+    </div>
+    """, unsafe_allow_html=True)
     
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('<div class="secondary-btn">', unsafe_allow_html=True)
+    if st.button("Créer un nouveau compte", use_container_width=True):
+        st.session_state.show_register = True
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
