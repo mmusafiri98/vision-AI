@@ -51,6 +51,11 @@ def verify_user(email, password):
 def create_user(email, password, name=None, full_name=None):
     """Crée un nouveau utilisateur"""
     try:
+        # Validation basique de l'email
+        if not email or "@" not in email or "." not in email:
+            st.error("❌ Format d'email invalide")
+            return None
+            
         response = admin.auth.admin.create_user({
             "email": email,
             "password": password,
@@ -64,10 +69,17 @@ def create_user(email, password, name=None, full_name=None):
         if response.user:
             return response.user
         else:
+            st.error("❌ Erreur: Aucun utilisateur créé")
             return None
             
     except Exception as e:
-        st.error(f"❌ Erreur création compte: {e}")
+        error_msg = str(e)
+        if "invalid format" in error_msg.lower():
+            st.error("❌ Format d'email invalide. Veuillez entrer une adresse email valide.")
+        elif "already registered" in error_msg.lower():
+            st.error("❌ Cette adresse email est déjà utilisée.")
+        else:
+            st.error(f"❌ Erreur création compte: {error_msg}")
         return None
 
 # --------------------------
@@ -191,6 +203,8 @@ elif st.session_state.page == "register":
             st.warning("Email et mot de passe sont obligatoires.")
         elif len(new_password) < 6:
             st.warning("Le mot de passe doit contenir au moins 6 caractères.")
+        elif not "@" in new_email or not "." in new_email:
+            st.warning("Veuillez entrer une adresse email valide.")
         else:
             with st.spinner("Création du compte en cours..."):
                 user = create_user(new_email, new_password, new_name, new_fullname)
@@ -211,8 +225,7 @@ elif st.session_state.page == "register":
                     if st.button("Aller au login"):
                         go_to_login()
                         st.rerun()
-                else:
-                    st.error("❌ Erreur lors de la création du compte")
+                # Si user est None, l'erreur a déjà été affichée dans create_user()
     
     if st.button("Retour au login", on_click=go_to_login):
         pass
