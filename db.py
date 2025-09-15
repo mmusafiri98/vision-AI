@@ -33,8 +33,8 @@ if "page" not in st.session_state:
 if st.session_state.page == "login":
     st.title("🔑 Connexion Utilisateur")
 
-    login_email = st.text_input("Email")
-    login_password = st.text_input("Mot de passe", type="password")
+    login_email = st.text_input("Email", key="login_email")
+    login_password = st.text_input("Mot de passe", type="password", key="login_password")
 
     if st.button("Se connecter"):
         if not login_email or not login_password:
@@ -63,10 +63,10 @@ if st.session_state.page == "login":
 elif st.session_state.page == "register":
     st.title("📝 Créer un nouveau compte")
 
-    new_email = st.text_input("Email")
-    new_password = st.text_input("Mot de passe", type="password")
-    new_name = st.text_input("Nom (optionnel)")
-    new_fullname = st.text_input("Nom complet (optionnel)")
+    new_email = st.text_input("Email", key="new_email")
+    new_password = st.text_input("Mot de passe", type="password", key="new_password")
+    new_name = st.text_input("Nom (optionnel)", key="new_name")
+    new_fullname = st.text_input("Nom complet (optionnel)", key="new_fullname")
 
     if st.button("Créer le compte"):
         if not new_email or not new_password:
