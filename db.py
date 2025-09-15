@@ -1,93 +1,165 @@
 import os
 import psycopg2
-import psycopg2.extras
-import bcrypt
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+import logging
 
-# Connexion à PostgreSQL via secrets
-def get_conn():
-    return psycopg2.connect(
-        dbname=os.environ.get("DB_NAME"),
-        user=os.environ.get("DB_USER"),
-        password=os.environ.get("DB_PASS"),
-        host=os.environ.get("DB_HOST"),
-        port=os.environ.get("DB_PORT")
-    )
+# Charger les variables d'environnement
+load_dotenv()
 
-# ------------------ UTILISATEURS ------------------
-def create_user(email, password, name):
-    conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    cur.execute(
-        "INSERT INTO users (email, password_hash, name) VALUES (%s, %s, %s) RETURNING id, email, name",
-        (email, hashed, name)
-    )
-    user = cur.fetchone()
-    conn.commit()
-    cur.close()
-    conn.close()
-    return dict(user)
+# Configuration de logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def verify_user(email, password):
-    conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM users WHERE email=%s", (email,))
-    user = cur.fetchone()
-    cur.close()
-    conn.close()
-    if user and bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
-        return dict(user)
-    return None
+class DatabaseConnection:
+    def __init__(self):
+        """
+        Initialise la connexion à la base de données Supabase
+        """
+        # URL de connexion Supabase
+        self.database_url = os.getenv('DATABASE_URL') or \
+                           "postgresql://postgres:[8A%/pB7^Kt2E@db.bhtpxckpzhsgstycjiwb.supabase.co:5432/postgres?sslmode=require"
+        
+        # Paramètres de connexion alternatifs (si vous préférez séparer les paramètres)
+        self.db_config = {
+            'host': os.getenv('DB_HOST', 'db.bhtpxckpzhsgstycjiwb.supabase.co'),
+            'database': os.getenv('DB_NAME', 'postgres'),
+            'user': os.getenv('DB_USER', 'postgres'),
+            'password': os.getenv('DB_PASSWORD', 'VOTRE_MOT_DE_PASSE'),
+            'port': os.getenv('DB_PORT', '5432'),
+            'sslmode': 'require'
+        }
+        
+        self.connection = None
+    
+    def connect(self):
+        """
+        Établit la connexion à la base de données
+        """
+        try:
+            # Méthode 1: Avec l'URL complète
+            self.connection = psycopg2.connect(
+                self.database_url,
+                cursor_factory=RealDictCursor  # Pour avoir des résultats sous forme de dictionnaire
+            )
+            
+            # Alternative - Méthode 2: Avec les paramètres séparés
+            # self.connection = psycopg2.connect(**self.db_config, cursor_factory=RealDictCursor)
+            
+            logger.info("✅ Connexion à Supabase établie avec succès")
+            return self.connection
+            
+        except psycopg2.Error as e:
+            logger.error(f"❌ Erreur de connexion à la base de données: {e}")
+            raise e
+    
+    def disconnect(self):
+        """
+        Ferme la connexion à la base de données
+        """
+        if self.connection:
+            self.connection.close()
+            logger.info("🔌 Connexion fermée")
+    
+    def get_cursor(self):
+        """
+        Retourne un curseur pour exécuter des requêtes
+        """
+        if not self.connection:
+            self.connect()
+        return self.connection.cursor()
+    
+    def execute_query(self, query, params=None):
+        """
+        Exécute une requête SELECT et retourne les résultats
+        
+        Args:
+            query (str): Requête SQL
+            params (tuple): Paramètres de la requête (optionnel)
+        
+        Returns:
+            list: Résultats de la requête
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute(query, params)
+                results = cursor.fetchall()
+                return results
+        except psycopg2.Error as e:
+            logger.error(f"Erreur lors de l'exécution de la requête: {e}")
+            raise e
+    
+    def execute_insert(self, query, params=None):
+        """
+        Exécute une requête INSERT/UPDATE/DELETE
+        
+        Args:
+            query (str): Requête SQL
+            params (tuple): Paramètres de la requête (optionnel)
+        
+        Returns:
+            int: Nombre de lignes affectées
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute(query, params)
+                self.connection.commit()
+                return cursor.rowcount
+        except psycopg2.Error as e:
+            self.connection.rollback()
+            logger.error(f"Erreur lors de l'insertion: {e}")
+            raise e
 
-# ------------------ CONVERSATIONS ------------------
-def create_conversation(user_id, title="Nouvelle conversation"):
-    conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute(
-        "INSERT INTO conversations (user_id, title) VALUES (%s, %s) RETURNING *",
-        (user_id, title)
-    )
-    conv = cur.fetchone()
-    conn.commit()
-    cur.close()
-    conn.close()
-    return dict(conv)
+# Instance globale de la connexion
+db = DatabaseConnection()
 
-def get_conversations(user_id):
-    conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute(
-        "SELECT * FROM conversations WHERE user_id=%s ORDER BY created_at DESC",
-        (user_id,)
-    )
-    convs = cur.fetchall()
-    cur.close()
-    conn.close()
-    return [dict(c) for c in convs]
+# Fonctions utilitaires pour une utilisation simple
+def get_connection():
+    """
+    Retourne une connexion à la base de données
+    """
+    return db.connect()
 
-# ------------------ MESSAGES ------------------
-def add_message(conversation_id, sender, content):
-    conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute(
-        "INSERT INTO messages (conversation_id, sender, content) VALUES (%s, %s, %s) RETURNING *",
-        (conversation_id, sender, content)
-    )
-    msg = cur.fetchone()
-    conn.commit()
-    cur.close()
-    conn.close()
-    return dict(msg)
+def close_connection():
+    """
+    Ferme la connexion globale
+    """
+    db.disconnect()
 
-def get_messages(conversation_id):
-    conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute(
-        "SELECT * FROM messages WHERE conversation_id=%s ORDER BY created_at ASC",
-        (conversation_id,)
-    )
-    msgs = cur.fetchall()
-    cur.close()
-    conn.close()
-    return [dict(m) for m in msgs]
+def test_connection():
+    """
+    Test la connexion à la base de données
+    """
+    try:
+        conn = get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT version();")
+            version = cursor.fetchone()
+            logger.info(f"🎉 Test réussi ! Version PostgreSQL: {version[0]}")
+            return True
+    except Exception as e:
+        logger.error(f"❌ Test de connexion échoué: {e}")
+        return False
+    finally:
+        close_connection()
 
+# Exemple d'utilisation
+if __name__ == "__main__":
+    # Test de la connexion
+    print("🔄 Test de connexion à Supabase...")
+    test_connection()
+    
+    # Exemple de requête
+    try:
+        # Lister les tables
+        tables = db.execute_query("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public';
+        """)
+        print(f"\n📋 Tables disponibles: {[table['table_name'] for table in tables]}")
+        
+    except Exception as e:
+        print(f"Erreur: {e}")
+    finally:
+        close_connection()
