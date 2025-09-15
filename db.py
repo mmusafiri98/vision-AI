@@ -7,14 +7,17 @@ import os
 # --------------------------
 @st.cache_resource
 def init_supabase():
-    supabase_url = os.environ["SUPABASE_URL"]
-    supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
-    supabase_service_key = os.environ["SUPABASE_SERVICE_KEY"]
+    try:
+        supabase_url = os.environ["SUPABASE_URL"]
+        supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
+        supabase_service_key = os.environ["SUPABASE_SERVICE_KEY"]
 
-    client = create_client(supabase_url, supabase_anon_key)
-    admin = create_client(supabase_url, supabase_service_key)
-
-    return client, admin
+        client = create_client(supabase_url, supabase_anon_key)
+        admin = create_client(supabase_url, supabase_service_key)
+        return client, admin
+    except KeyError as e:
+        st.error(f"Erreur de configuration: la variable d'environnement {e} est manquante.")
+        st.stop()
 
 client, admin = init_supabase()
 
@@ -87,7 +90,6 @@ def create_user(email, password, name=None, full_name=None):
 if "page" not in st.session_state:
     st.session_state.page = "login"
 
-# Fonctions de navigation
 def go_to_register():
     st.session_state.page = "register"
 
@@ -112,10 +114,11 @@ def logout_user():
 # --------------------------
 # SIDEBAR - Informations utilisateur
 # --------------------------
-if "logged_in" in st.session_state and st.session_state.logged_in:
+if "logged_in" in st.session_state and st.session_state.logged_in and st.session_state.user:
     try:
+        # CORRECTION ICI: Utilisation de .email au lieu de ['email']
         st.sidebar.success(f"Connecté en tant que {st.session_state.user.email}")
-
+        
         st.sidebar.write(f"**ID:** {st.session_state.user.id[:8]}...")
         st.sidebar.write(f"**Créé:** {str(st.session_state.user.created_at)[:10]}")
 
@@ -146,7 +149,6 @@ if "logged_in" in st.session_state and st.session_state.logged_in:
 # PAGE LOGIN
 # --------------------------
 if st.session_state.page == "login":
-    # Centrage du contenu comme sur l'image
     col_empty1, col_form, col_empty2 = st.columns([1, 2, 1])
 
     with col_form:
@@ -169,6 +171,7 @@ if st.session_state.page == "login":
                         user = verify_user(email, password)
 
                         if user:
+                            # CORRECTION ICI: Utilisation de .email
                             st.success(f"✅ Bienvenue {user.email} !")
 
                             st.session_state.logged_in = True
@@ -196,7 +199,6 @@ if st.session_state.page == "login":
 # PAGE CREATION COMPTE
 # --------------------------
 elif st.session_state.page == "register":
-    # Centrage du contenu
     col_empty1, col_form, col_empty2 = st.columns([1, 2, 1])
     with col_form:
         st.title("📝 Créer un nouveau compte")
@@ -241,11 +243,12 @@ elif st.session_state.page == "register":
 # PAGE DASHBOARD
 # --------------------------
 elif st.session_state.page == "dashboard":
-    if "logged_in" not in st.session_state or not st.session_state.logged_in:
+    if "logged_in" not in st.session_state or not st.session_state.logged_in or not st.session_state.user:
         st.warning("⚠️ Vous devez être connecté pour accéder au dashboard.")
         go_to_login()
         st.rerun()
     else:
+        # CORRECTION ICI: Utilisation de .email
         st.title("🏠 Dashboard")
         st.write(f"Bienvenue sur votre dashboard, {st.session_state.user.email}!")
 
@@ -253,6 +256,7 @@ elif st.session_state.page == "dashboard":
 
         with col1:
             st.subheader("👤 Profil")
+            # CORRECTION ICI: Utilisation de .email
             st.write(f"**Email:** {st.session_state.user.email}")
             st.write(f"**ID:** {st.session_state.user.id}")
             st.write(f"**Créé:** {st.session_state.user.created_at}")
@@ -311,4 +315,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
