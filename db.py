@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Configuration Supabase API
 # --------------------------
 SUPABASE_URL = "https://bhtpxckpzhsgstycjiwb.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # Service Role
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # ⚠️ Utiliser Service Role pour créer des users
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --------------------------
@@ -28,46 +28,45 @@ def create_users_table():
 
 def create_user(email: str, password: str, name: str = None):
     """
-    Crée un nouvel utilisateur via Supabase Auth et table users.
+    Crée un utilisateur via Supabase Auth et ajoute infos dans table users.
     """
-    # Vérifier si l'utilisateur existe déjà dans Auth
-    existing_user = get_user_by_email(email)
-    if existing_user:
-        raise ValueError(f"Un utilisateur avec l'email '{email}' existe déjà.")
+    try:
+        # Créer l'utilisateur dans Supabase Auth
+        response = supabase.auth.sign_up(email=email, password=password)
+        user = response.user
+        if not user:
+            raise Exception(f"❌ Impossible de créer l'utilisateur: {response.session or response.data}")
 
-    # Créer l'utilisateur dans Supabase Auth
-    response = supabase.auth.sign_up({
-        "email": email,
-        "password": password
-    })
-
-    if response.user:
-        # Ajouter des informations supplémentaires dans la table users
+        # Ajouter infos supplémentaires dans table users
         user_data = {"email": email}
         if name:
             user_data["name"] = name
 
         supabase.table("users").insert(user_data).execute()
-        logger.info(f"👤 Utilisateur créé: {response.user}")
-        return response.user
-    else:
-        raise Exception(response.session or response.data)
+        logger.info(f"👤 Utilisateur créé: {user}")
+        return user
+    except Exception as e:
+        logger.error(f"❌ Erreur create_user: {e}")
+        raise e
 
 
 def verify_user(email: str, password: str):
     """
-    Vérifie la connexion utilisateur via Supabase Auth
+    Connecte un utilisateur via Supabase Auth
     """
-    response = supabase.auth.sign_in({
-        "email": email,
-        "password": password
-    })
-
-    if response.user:
-        logger.info(f"👀 Utilisateur connecté: {response.user}")
-        return response.user
-    else:
-        raise Exception(response.session or response.data)
+    try:
+        response = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        if response.user:
+            logger.info(f"👀 Utilisateur connecté: {response.user}")
+            return response.user
+        else:
+            raise Exception("❌ Email ou mot de passe incorrect")
+    except Exception as e:
+        logger.error(f"❌ Erreur verify_user: {e}")
+        raise e
 
 
 def get_user_by_email(email: str):
@@ -114,29 +113,19 @@ if __name__ == "__main__":
 
         # Créer un utilisateur de test
         try:
-            print("\n👤 Création d'un utilisateur de test...")
             new_user = create_user(
                 email="test@example.com",
-                password="password123",  # ⚠️ Hasher en production si nécessaire
+                password="password123",
                 name="Test User"
             )
             print("✅ Utilisateur créé:", new_user)
-        except ValueError as ve:
-            print("ℹ️", ve)
         except Exception as e:
             print("❌ Erreur:", e)
 
         # Vérifier un utilisateur
         try:
             user = verify_user("test@example.com", "password123")
-            print("👀 Utilisateur vérifié:", user)
-        except Exception as e:
-            print("❌ Erreur:", e)
-
-        # Lister tous les utilisateurs
-        try:
-            users = list_users()
-            print(f"\n📋 Tous les utilisateurs: {users}")
+            print("👀 Utilisateur connecté:", user)
         except Exception as e:
             print("❌ Erreur:", e)
 
