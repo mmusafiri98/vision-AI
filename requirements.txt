@@ -5,3 +5,4 @@ pillow>=10.2.0
 gradio_client
 psycopg2-binary>=2.9.9
 bcrypt>=4.1.2
+python-dotenv
