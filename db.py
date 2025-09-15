@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Configuration Supabase API
 # --------------------------
 SUPABASE_URL = "https://bhtpxckpzhsgstycjiwb.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # ⚠️ Remplace par ta clé anon (frontend) ou service_role (backend)
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # ⚠️ Remplace par ta clé anon ou service_role
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -29,17 +29,24 @@ def create_users_table():
 
 def create_user(username: str, email: str, password: str, full_name: str = None):
     """
-    Crée un nouvel utilisateur via l'API Supabase
+    Crée un nouvel utilisateur via l'API Supabase.
+    Si la colonne full_name n'existe pas, elle sera ignorée.
     """
     if get_user_by_email(email):
         raise ValueError(f"Un utilisateur avec l'email '{email}' existe déjà.")
 
-    response = supabase.table("users").insert({
+    # Construire le dictionnaire d'insertion
+    user_data = {
         "username": username,
         "email": email,
-        "password": password,  # ⚠️ Hasher le mot de passe en production
-        "full_name": full_name
-    }).execute()
+        "password": password  # ⚠️ Hasher en production
+    }
+
+    # Ajouter full_name seulement si défini
+    if full_name is not None:
+        user_data["full_name"] = full_name
+
+    response = supabase.table("users").insert(user_data).execute()
 
     if not response.data:
         raise Exception("❌ Erreur lors de la création de l'utilisateur")
@@ -49,9 +56,7 @@ def create_user(username: str, email: str, password: str, full_name: str = None)
 
 
 def get_user_by_email(email: str):
-    """
-    Récupère un utilisateur par email via l'API Supabase
-    """
+    """Récupère un utilisateur par email via l'API Supabase"""
     response = supabase.table("users").select("*").eq("email", email).execute()
     if not response.data:
         return None
@@ -59,9 +64,7 @@ def get_user_by_email(email: str):
 
 
 def verify_user(email: str, password: str):
-    """
-    Vérifie si un utilisateur existe avec cet email et ce mot de passe
-    """
+    """Vérifie si un utilisateur existe avec cet email et ce mot de passe"""
     user = get_user_by_email(email)
     if user and user.get("password") == password:
         return user
@@ -69,9 +72,7 @@ def verify_user(email: str, password: str):
 
 
 def list_users():
-    """
-    Liste tous les utilisateurs via l'API Supabase
-    """
+    """Liste tous les utilisateurs via l'API Supabase"""
     response = supabase.table("users").select("*").execute()
     if not response.data:
         return []
@@ -79,9 +80,7 @@ def list_users():
 
 
 def test_connection():
-    """
-    Test basique pour vérifier que l'API Supabase répond
-    """
+    """Test basique pour vérifier que l'API Supabase répond"""
     try:
         users = list_users()
         logger.info(f"🎉 Test réussi ! {len(users)} utilisateur(s) récupéré(s).")
@@ -107,7 +106,7 @@ if __name__ == "__main__":
                 username="test_user",
                 email="test@example.com",
                 password="password123",
-               
+                full_name="Utilisateur Test"  # sera ignoré si la colonne n'existe pas
             )
             print("✅ Utilisateur créé:", new_user)
         except ValueError as ve:
@@ -128,4 +127,5 @@ if __name__ == "__main__":
             print(f"\n📋 Tous les utilisateurs: {users}")
         except Exception as e:
             print("❌ Erreur:", e)
+
 
