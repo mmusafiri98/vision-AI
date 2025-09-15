@@ -1,12 +1,12 @@
 import streamlit as st
 
-with st.form("my_form"):
-    st.write("Inside the form")
-    slider_val = st.slider("Form slider")
-    checkbox_val = st.checkbox("Form checkbox")
+animal = st.form('my_animal')
 
-    # Every form must have a submit button.
-    submitted = st.form_submit_button("Submit")
-    if submitted:
-        st.write("slider", slider_val, "checkbox", checkbox_val)
-st.write("Outside the form")
+
+
+sentence = user.text_input('Your sentence:', 'username')
+say_it = sentence.rstrip('.,!?') + f', {sound}!'
+if submit:
+    animal.subheader(say_it)
+else:
+    animal.subheader('&nbsp;')
