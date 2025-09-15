@@ -10,10 +10,10 @@ def init_supabase():
     supabase_url = os.environ["SUPABASE_URL"]
     supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
     supabase_service_key = os.environ["SUPABASE_SERVICE_KEY"]
-    
+
     client = create_client(supabase_url, supabase_anon_key)
     admin = create_client(supabase_url, supabase_service_key)
-    
+
     return client, admin
 
 client, admin = init_supabase()
@@ -105,6 +105,12 @@ def logout_user():
     if "user" in st.session_state:
         del st.session_state.user
     st.session_state.page = "login"
+    
+    # Clear any stored credentials on logout
+    if "temp_email" in st.session_state:
+        del st.session_state.temp_email
+    if "temp_password" in st.session_state:
+        del st.session_state.temp_password
 
 # --------------------------
 # SIDEBAR - Informations utilisateur
@@ -152,9 +158,13 @@ else:
 if st.session_state.page == "login":
     st.title("🔑 Connexion Utilisateur")
     
+    # Retrieve temp credentials if they exist
+    default_email = st.session_state.get("temp_email", "")
+    default_password = st.session_state.get("temp_password", "")
+    
     with st.form("login_form"):
-        email = st.text_input("📧 Email")
-        password = st.text_input("🔒 Mot de passe", type="password")
+        email = st.text_input("📧 Email", value=default_email)
+        password = st.text_input("🔒 Mot de passe", type="password", value=default_password)
         login_submitted = st.form_submit_button("Se connecter")
     
     if login_submitted:
@@ -170,6 +180,12 @@ if st.session_state.page == "login":
                     # Sauvegarder dans la session
                     st.session_state.logged_in = True
                     st.session_state.user = user
+                    
+                    # Clear temp credentials after successful login
+                    if "temp_email" in st.session_state:
+                        del st.session_state.temp_email
+                    if "temp_password" in st.session_state:
+                        del st.session_state.temp_password
                     
                     # Afficher les infos utilisateur
                     st.write(f"**ID:** {user.id}")
@@ -226,6 +242,10 @@ elif st.session_state.page == "register":
                 if user:
                     st.success(f"✅ Compte créé pour {user.email}!")
                     st.balloons()
+                    
+                    # Sauvegarder temporairement les identifiants
+                    st.session_state.temp_email = new_email
+                    st.session_state.temp_password = new_password
                     
                     # Afficher les infos du compte créé
                     st.write(f"**ID:** {user.id}")
