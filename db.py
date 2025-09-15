@@ -1,97 +1,176 @@
-import os
 import streamlit as st
-from supabase import create_client
+import os
+import db # Assurez-vous que votre fichier db.py est bien dans le même dossier
 
-# --------------------------
-# Initialisation de Supabase
-# --------------------------
-@st.cache_resource
-def init_supabase():
-    """Initialise le client Supabase et l'admin client."""
-    try:
-        supabase_url = os.environ["SUPABASE_URL"]
-        supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
-        supabase_service_key = os.environ["SUPABASE_SERVICE_KEY"]
+# === STYLE CSS ===
+# J'ai créé un style qui imite les designs de connexion modernes et épurés
+# que vous avez fournis en images.
+st.markdown(
+    """
+    <style>
+    body {
+        background: linear-gradient(135deg, #1f4287, #2159c4);
+        color: white;
+        font-family: Arial, sans-serif;
+    }
+    .stApp {
+        background: linear-gradient(135deg, #1f4287, #2159c4);
+        background-attachment: fixed;
+    }
+    .main-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        width: 100%;
+    }
+    .login-form-container {
+        background-color: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 40px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        width: 100%;
+        max-width: 400px;
+        text-align: center;
+    }
+    h1, h2 {
+        color: #FFFFFF;
+        text-align: center;
+    }
+    .stTextInput label, .stMarkdown, .stButton button, .stCheckbox label {
+        color: #FFFFFF;
+    }
+    .stTextInput input {
+        background-color: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+    }
+    .stButton button {
+        background-color: #4A90E2;
+        border: none;
+        color: white;
+        font-weight: bold;
+        padding: 10px 20px;
+        border-radius: 10px;
+    }
+    .stButton button:hover {
+        background-color: #357ABD;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-        client = create_client(supabase_url, supabase_anon_key)
-        admin = create_client(supabase_url, supabase_service_key)
-        return client, admin
-    except KeyError as e:
-        st.error(f"Erreur de configuration: la variable d'environnement {e} est manquante.")
-        st.stop()
+# === GESTION DES PAGES ===
+if "page" not in st.session_state:
+    st.session_state.page = "login"
 
-client, admin = init_supabase()
+def go_to_register():
+    st.session_state.page = "register"
 
-# --------------------------
-# Fonctions d'authentification
-# --------------------------
-def verify_user(email, password):
-    """Vérifie les identifiants de l'utilisateur et renvoie l'objet utilisateur."""
-    try:
-        response = client.auth.sign_in_with_password({
-            "email": email,
-            "password": password
-        })
-        return response.user
-    except Exception as e:
-        error_msg = str(e)
-        if "Email not confirmed" in error_msg:
-            st.error("❌ Email non confirmé.")
-        elif "Invalid login credentials" in error_msg:
-            st.error("❌ Email ou mot de passe incorrect.")
+def go_to_login():
+    st.session_state.page = "login"
+
+def go_to_dashboard():
+    st.session_state.page = "dashboard"
+
+def logout_user():
+    if "user" in st.session_state:
+        del st.session_state.user
+    st.session_state.page = "login"
+    st.rerun()
+
+# === PAGE DE CONNEXION ===
+if st.session_state.page == "login":
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    st.markdown("<div class='login-form-container'>", unsafe_allow_html=True)
+    st.header("Login")
+
+    email = st.text_input("Username", key="login_email")
+    password = st.text_input("Password", type="password", key="login_password")
+
+    if st.button("LOGIN", use_container_width=True):
+        user = db.verify_user(email, password)
+        if user:
+            st.session_state.user = user
+            st.success("Connexion réussie!")
+            go_to_dashboard()
+            st.rerun()
         else:
-            st.error(f"❌ Erreur lors de la connexion: {error_msg}")
-        return None
+            st.error("Email ou mot de passe incorrect.")
 
-def create_user(email, password, name=None):
-    """Crée un nouvel utilisateur avec confirmation automatique de l'email."""
-    try:
-        response = admin.auth.admin.create_user({
-            "email": email,
-            "password": password,
-            "email_confirm": True,
-            "user_metadata": {
-                "name": name or ""
-            }
-        })
-        if response.user:
-            return response.user
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center;'>Forgot your password?</p>", unsafe_allow_html=True)
+    st.markdown("---", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center;'>New here? <a href='#' style='color: white; text-decoration: none; font-weight: bold;'>Sign Up</a></p>", unsafe_allow_html=True)
+    if st.button("Sign Up", key="signup_button"):
+        go_to_register()
+        st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# === PAGE D'INSCRIPTION ===
+elif st.session_state.page == "register":
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    st.markdown("<div class='login-form-container'>", unsafe_allow_html=True)
+    st.header("Sign Up")
+
+    email_reg = st.text_input("Email", key="reg_email")
+    name_reg = st.text_input("Username", key="reg_name")
+    pass_reg = st.text_input("Password", type="password", key="reg_pass")
+
+    if st.button("CREATE ACCOUNT", use_container_width=True):
+        if not email_reg or not pass_reg:
+            st.error("Veuillez remplir tous les champs obligatoires.")
         else:
-            raise Exception("Aucun utilisateur n'a été créé.")
-    except Exception as e:
-        error_msg = str(e)
-        if "already registered" in error_msg:
-            st.error("❌ Cette adresse email est déjà utilisée.")
-        else:
-            st.error(f"❌ Erreur de création de compte: {error_msg}")
-        return None
+            user = db.create_user(email_reg, pass_reg, name_reg)
+            if user:
+                st.success("Compte créé avec succès! Vous pouvez maintenant vous connecter.")
+                go_to_login()
+                st.rerun()
+            else:
+                st.error("La création du compte a échoué.")
 
-# --------------------------
-# Fonctions de gestion des conversations et messages
-# --------------------------
-def create_conversation(user_id, title):
-    """Crée une nouvelle conversation pour l'utilisateur."""
-    response = client.table('conversations').insert({
-        "user_id": user_id,
-        "title": title
-    }).execute()
-    return response.data[0]
+    st.markdown("---", unsafe_allow_html=True)
+    if st.button("Go to Login"):
+        go_to_login()
+        st.rerun()
 
-def get_conversations(user_id):
-    """Récupère toutes les conversations d'un utilisateur."""
-    response = client.table('conversations').select('*').eq('user_id', user_id).order('created_at', desc=True).execute()
-    return response.data
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-def add_message(conversation_id, sender, content):
-    """Ajoute un message à une conversation."""
-    response = client.table('messages').insert({
-        "conversation_id": conversation_id,
-        "sender": sender,
-        "content": content
-    }).execute()
-    return response.data[0]
+# === PAGE DU DASHBOARD (EXEMPLE) ===
+elif st.session_state.page == "dashboard":
+    if "user" not in st.session_state or st.session_state.user is None:
+        st.warning("Veuillez vous connecter pour accéder à cette page.")
+        go_to_login()
+        st.rerun()
+    else:
+        st.title("Bienvenue sur votre Dashboard!")
+        st.write(f"Connecté en tant que: **{st.session_state.user.email}**")
+        if st.button("Se déconnecter"):
+            logout_user()
 
-def get_messages(conversation_id):
-    """Récupère tous les messages d'une conversation."""
-    response = client.table('messages').select('*').eq('conversation_id', conversation_id).order('created_at', desc=False).execute()
-    return response.data
+# === PIED DE PAGE ===
+st.markdown(
+    """
+    <style>
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        color: gray;
+        text-align: center;
+        padding: 10px;
+    }
+    </style>
+    <div class="footer">
+        © 2024 Vision AI. All rights reserved.
+    </div>
+    """,
+    unsafe_allow_html=True
+)
