@@ -204,7 +204,7 @@ else:
     # SECTION LOGIN
     st.markdown("""
     <div style="text-align: center; margin-bottom: 2rem;">
-        <h1 style="color: #333; font-size: 1.8rem; font-weight: 600; margin: 0;">🟠 MonApp</h1>
+        <h1 style="color: #333; font-size: 1.8rem; font-weight: 600; margin: 0;">Login</h1>
         <p style="color: #666; font-size: 1rem; margin: 0.5rem 0;">Bon de vous revoir !</p>
     </div>
     """, unsafe_allow_html=True)
