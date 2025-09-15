@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Configuration Supabase API
 # --------------------------
 SUPABASE_URL = "https://bhtpxckpzhsgstycjiwb.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # ⚠️ Utiliser Service Role pour créer des users
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # ⚠️ Utiliser Service Role pour créer des utilisateurs
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --------------------------
@@ -28,16 +28,19 @@ def create_users_table():
 
 def create_user(email: str, password: str, name: str = None):
     """
-    Crée un utilisateur via Supabase Auth et ajoute infos dans table users.
+    Crée un utilisateur via Supabase Auth et ajoute infos dans la table users.
     """
     try:
-        # Créer l'utilisateur dans Supabase Auth
-        response = supabase.auth.sign_up(email=email, password=password)
+        # Créer l'utilisateur via Supabase Auth
+        response = supabase.auth.sign_up({
+            "email": email,
+            "password": password
+        })
         user = response.user
         if not user:
-            raise Exception(f"❌ Impossible de créer l'utilisateur: {response.session or response.data}")
+            raise Exception(f"❌ Impossible de créer l'utilisateur: {response.data}")
 
-        # Ajouter infos supplémentaires dans table users
+        # Ajouter infos supplémentaires dans la table users
         user_data = {"email": email}
         if name:
             user_data["name"] = name
@@ -52,7 +55,7 @@ def create_user(email: str, password: str, name: str = None):
 
 def verify_user(email: str, password: str):
     """
-    Connecte un utilisateur via Supabase Auth
+    Connexion utilisateur via Supabase Auth
     """
     try:
         response = supabase.auth.sign_in_with_password({
@@ -128,4 +131,8 @@ if __name__ == "__main__":
             print("👀 Utilisateur connecté:", user)
         except Exception as e:
             print("❌ Erreur:", e)
+
+        # Lister tous les utilisateurs
+        users = list_users()
+        print(f"\n📋 Tous les utilisateurs: {users}")
 
