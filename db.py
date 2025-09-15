@@ -38,13 +38,13 @@ def verify_user(email, password):
         response = client.auth.sign_in_with_password({"email": email, "password": password})
         return response.user
     except Exception as e:
-        error_msg = str(e)
-        if "Email not confirmed" in error_msg:
+        msg = str(e)
+        if "Email not confirmed" in msg:
             st.error("❌ Email non confirmé.")
-        elif "Invalid login credentials" in error_msg:
+        elif "Invalid login credentials" in msg:
             st.error("❌ Email ou mot de passe incorrect.")
         else:
-            st.error(f"❌ Erreur lors de la connexion: {error_msg}")
+            st.error(f"❌ Erreur connexion: {msg}")
         return None
 
 def create_user(email, password, name=None, full_name=None):
@@ -60,11 +60,11 @@ def create_user(email, password, name=None, full_name=None):
         st.error("❌ Aucun utilisateur créé")
         return None
     except Exception as e:
-        error_msg = str(e)
-        if "already registered" in error_msg.lower():
+        msg = str(e)
+        if "already registered" in msg.lower():
             st.error("❌ Cette adresse email est déjà utilisée.")
         else:
-            st.error(f"❌ Erreur création compte: {error_msg}")
+            st.error(f"❌ Erreur création compte: {msg}")
         return None
 
 # --------------------------
@@ -111,7 +111,6 @@ if st.session_state.page == "login":
                 with st.spinner("Connexion en cours..."):
                     user = verify_user(email, password)
                     if user:
-                        st.success(f"✅ Bienvenue {user.email} !")
                         st.session_state.logged_in = True
                         st.session_state.user = user
                         for key in ["temp_email", "temp_password"]:
@@ -200,3 +199,4 @@ st.markdown(
     f"<div style='text-align:center;color:gray;font-size:12px;'>🔒 Application sécurisée • Page: {st.session_state.page}</div>",
     unsafe_allow_html=True
 )
+
