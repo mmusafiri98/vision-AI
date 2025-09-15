@@ -42,7 +42,7 @@ def create_user(email: str, password: str, name: str = None, full_name: str = No
     Retourne un dict avec message et identifiants pour l'interface
     """
     try:
-        # Création utilisateur dans Supabase Auth
+        # Création utilisateur
         response = supabase_admin.auth.sign_up({"email": email, "password": password})
         user = response.user
         if not user:
@@ -50,7 +50,7 @@ def create_user(email: str, password: str, name: str = None, full_name: str = No
 
         # ⚡ Confirmer automatiquement l'utilisateur
         supabase_admin.auth.admin.update_user_by_id(
-            id=user.id,
+            uid=user.id,
             attributes={"email_confirmed_at": "now()"}
         )
 
