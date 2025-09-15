@@ -17,7 +17,6 @@ class DatabaseConnection:
         """
         Initialise la connexion à la base de données Supabase
         """
-        # Paramètres de connexion séparés (pas de DATABASE_URL avec caractères spéciaux)
         self.db_config = {
             'host': os.getenv('DB_HOST', 'db.bhtpxckpzhsgstycjiwb.supabase.co'),
             'database': os.getenv('DB_NAME', 'postgres'),
@@ -26,7 +25,6 @@ class DatabaseConnection:
             'port': os.getenv('DB_PORT', '5432'),
             'sslmode': 'require'
         }
-
         self.connection = None
 
     def connect(self):
@@ -36,7 +34,7 @@ class DatabaseConnection:
         try:
             self.connection = psycopg2.connect(
                 **self.db_config,
-                cursor_factory=RealDictCursor  # résultats sous forme de dictionnaire
+                cursor_factory=RealDictCursor
             )
             logger.info("✅ Connexion à Supabase établie avec succès")
             return self.connection
@@ -113,19 +111,86 @@ def test_connection():
         close_connection()
 
 
+# --------------------------
+# Fonctions spécifiques "users"
+# --------------------------
+def create_users_table():
+    """
+    Crée la table users si elle n'existe pas
+    """
+    query = """
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password VARCHAR(200) NOT NULL,
+        full_name VARCHAR(100),
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    """
+    db.execute_insert(query)
+    logger.info("📋 Table 'users' prête.")
+
+
+def create_user(username, email, password, full_name=None):
+    """
+    Crée un nouvel utilisateur
+    """
+    # Vérifier si l'utilisateur existe déjà
+    existing = get_user_by_email(email)
+    if existing:
+        raise ValueError("Un utilisateur avec cet email existe déjà.")
+
+    query = """
+    INSERT INTO users (username, email, password, full_name)
+    VALUES (%s, %s, %s, %s)
+    RETURNING *;
+    """
+    results = db.execute_query(query, (username, email, password, full_name))
+    return results[0] if results else None
+
+
+def get_user_by_email(email):
+    """
+    Récupère un utilisateur par email
+    """
+    query = "SELECT * FROM users WHERE email = %s;"
+    results = db.execute_query(query, (email,))
+    return results[0] if results else None
+
+
+# --------------------------
 # Exemple d'utilisation
+# --------------------------
 if __name__ == "__main__":
     print("🔄 Test de connexion à Supabase...")
     if test_connection():
-        try:
-            tables = db.execute_query("""
-                SELECT table_name 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public';
-            """)
-            print(f"\n📋 Tables disponibles: {[table['table_name'] for table in tables]}")
-        except Exception as e:
-            print(f"Erreur: {e}")
-        finally:
-            close_connection()
+        # Création de la table users
+        create_users_table()
 
+        # Création d'un utilisateur
+        try:
+            print("\n👤 Création d'un utilisateur de test...")
+            new_user = create_user(
+                username="test_user",
+                email="test@example.com",
+                password="password123",  # ⚠️ A hasher en prod
+                full_name="Utilisateur Test"
+            )
+            print(f"✅ Utilisateur créé: {new_user}")
+        except ValueError as e:
+            print(f"ℹ️ {e}")
+
+        # Récupération d'un utilisateur
+        user = get_user_by_email("test@example.com")
+        print(f"👀 Utilisateur récupéré: {user}")
+
+        # Lister les tables
+        tables = db.execute_query("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public';
+        """)
+        print(f"\n📋 Tables disponibles: {[table['table_name'] for table in tables]}")
+
+        close_connection()
