@@ -34,17 +34,13 @@ st.set_page_config(
 # Fonctions utilitaires
 # --------------------------
 def verify_user(email, password):
-    """Vérifie les identifiants utilisateur"""
     try:
-        response = client.auth.sign_in_with_password({
-            "email": email,
-            "password": password
-        })
+        response = client.auth.sign_in_with_password({"email": email, "password": password})
         return response.user
     except Exception as e:
         error_msg = str(e)
         if "Email not confirmed" in error_msg:
-            st.error("❌ Email non confirmé. Contactez l'administrateur.")
+            st.error("❌ Email non confirmé.")
         elif "Invalid login credentials" in error_msg:
             st.error("❌ Email ou mot de passe incorrect.")
         else:
@@ -52,40 +48,27 @@ def verify_user(email, password):
         return None
 
 def create_user(email, password, name=None, full_name=None):
-    """Crée un nouveau utilisateur"""
     try:
-        if not email or "@" not in email or "." not in email:
-            st.error("❌ Format d'email invalide")
-            return None
-
         response = admin.auth.admin.create_user({
             "email": email,
             "password": password,
             "email_confirm": True,
-            "user_metadata": {
-                "name": name or "",
-                "full_name": full_name or ""
-            }
+            "user_metadata": {"name": name or "", "full_name": full_name or ""}
         })
-
         if response.user:
             return response.user
-        else:
-            st.error("❌ Erreur: Aucun utilisateur créé")
-            return None
-
+        st.error("❌ Aucun utilisateur créé")
+        return None
     except Exception as e:
         error_msg = str(e)
-        if "invalid format" in error_msg.lower():
-            st.error("❌ Format d'email invalide. Veuillez entrer une adresse email valide.")
-        elif "already registered" in error_msg.lower():
+        if "already registered" in error_msg.lower():
             st.error("❌ Cette adresse email est déjà utilisée.")
         else:
             st.error(f"❌ Erreur création compte: {error_msg}")
         return None
 
 # --------------------------
-# Gestion des pages via session_state
+# Gestion des pages
 # --------------------------
 if "page" not in st.session_state:
     st.session_state.page = "login"
@@ -134,15 +117,12 @@ if st.session_state.page == "login":
                         for key in ["temp_email", "temp_password"]:
                             if key in st.session_state:
                                 del st.session_state[key]
-                        st.info("Redirection vers le dashboard...")
-                        st.balloons()
                         go_to_dashboard()
                         st.rerun()
                     else:
                         st.error("❌ Connexion échouée")
 
     st.markdown("---")
-    st.write("Pas encore de compte ?")
     if st.button("📝 Créer un compte"):
         go_to_register()
         st.rerun()
@@ -163,25 +143,20 @@ elif st.session_state.page == "register":
 
         if register_submitted:
             if not new_email or not new_password:
-                st.warning("Email et mot de passe sont obligatoires.")
+                st.warning("Email et mot de passe obligatoires.")
             elif len(new_password) < 6:
                 st.warning("Le mot de passe doit contenir au moins 6 caractères.")
-            elif not "@" in new_email or not "." in new_email:
-                st.warning("Veuillez entrer une adresse email valide.")
             else:
                 with st.spinner("Création du compte en cours..."):
                     user = create_user(new_email, new_password, new_name, new_fullname)
                     if user:
                         st.success(f"✅ Compte créé pour {user.email}!")
                         st.balloons()
+                        # Sauvegarde temporaire pour login automatique
                         st.session_state.temp_email = new_email
                         st.session_state.temp_password = new_password
-                        st.success("🎉 Redirection automatique vers la page de connexion...")
-                        go_to_login()
-                        st.rerun()
 
     st.markdown("---")
-    st.write("Déjà un compte ?")
     if st.button("🔑 Retour au login"):
         go_to_login()
         st.rerun()
@@ -190,26 +165,23 @@ elif st.session_state.page == "register":
 # PAGE DASHBOARD
 # --------------------------
 elif st.session_state.page == "dashboard":
-    if "logged_in" not in st.session_state or not st.session_state.logged_in or "user" not in st.session_state or not st.session_state.user:
-        st.warning("⚠️ Vous devez être connecté pour accéder au dashboard.")
+    if "logged_in" not in st.session_state or not st.session_state.logged_in:
+        st.warning("⚠️ Connectez-vous d'abord.")
         go_to_login()
         st.rerun()
     else:
         st.title("🏠 Dashboard")
-        st.write(f"Bienvenue sur votre dashboard, {st.session_state.user.email}!")
+        st.write(f"Bienvenue, {st.session_state.user.email}!")
 
         st.subheader("👤 Profil")
         st.write(f"**Email:** {st.session_state.user.email}")
         st.write(f"**ID:** {st.session_state.user.id}")
-        st.write(f"**Créé:** {st.session_state.user.created_at}")
 
-        if hasattr(st.session_state.user, 'user_metadata') and st.session_state.user.user_metadata:
-            metadata = st.session_state.user.user_metadata
+        metadata = getattr(st.session_state.user, "user_metadata", {})
+        if metadata:
             st.write("**Métadonnées:**")
-            if metadata.get('name'):
-                st.write(f"- Nom: {metadata['name']}")
-            if metadata.get('full_name'):
-                st.write(f"- Nom complet: {metadata['full_name']}")
+            if metadata.get("name"): st.write(f"- Nom: {metadata['name']}")
+            if metadata.get("full_name"): st.write(f"- Nom complet: {metadata['full_name']}")
 
         st.subheader("🛠️ Actions")
         col1, col2 = st.columns(2)
@@ -220,37 +192,11 @@ elif st.session_state.page == "dashboard":
             if st.button("🚪 Se déconnecter", use_container_width=True):
                 logout_user()
 
-        st.subheader("📊 Contenu principal")
-        tab1, tab2, tab3 = st.tabs(["Données", "Statistiques", "Paramètres"])
-        with tab1:
-            st.write("Ici vous pouvez afficher des données spécifiques à l'utilisateur.")
-            st.info(f"Données pour: {st.session_state.user.email}")
-        with tab2:
-            st.write("Graphiques et statistiques basées sur votre profil.")
-            st.info(f"Utilisateur ID: {st.session_state.user.id}")
-        with tab3:
-            st.write("Paramètres de compte et préférences.")
-            if st.button("Modifier le profil"):
-                st.info("Fonctionnalité de modification du profil à implémenter.")
-
-# --------------------------
-# PAGE PAR DÉFAUT
-# --------------------------
-else:
-    st.error("❌ Page inconnue. Redirection vers la page de connexion.")
-    go_to_login()
-    st.rerun()
-
 # --------------------------
 # FOOTER
 # --------------------------
 st.markdown("---")
 st.markdown(
-    f"""
-    <div style='text-align: center; color: gray; font-size: 12px;'>
-    🔒 Application sécurisée avec Supabase • Page actuelle: {st.session_state.page}
-    </div>
-    """,
+    f"<div style='text-align:center;color:gray;font-size:12px;'>🔒 Application sécurisée • Page: {st.session_state.page}</div>",
     unsafe_allow_html=True
 )
-
