@@ -1,177 +1,127 @@
-import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 import logging
+from supabase import create_client, Client
 
-# Charger les variables d'environnement (.env)
-load_dotenv()
-
-# Configuration du logging
+# --------------------------
+# Configuration logging
+# --------------------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --------------------------
+# Configuration Supabase API
+# --------------------------
+SUPABASE_URL = "https://bhtpxckpzhsgstycjiwb.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # ⚠️ Remplace par ta clé anon (frontend) ou service_role (backend)
 
-class DatabaseConnection:
-    def __init__(self):
-        """
-        Initialise la connexion à la base de données Supabase
-        """
-        self.db_config = {
-            "host": os.getenv("DB_HOST", "db.bhtpxckpzhsgstycjiwb.supabase.co"),
-            "database": os.getenv("DB_NAME", "postgres"),
-            "user": os.getenv("DB_USER", "postgres"),
-            "password": os.getenv("DB_PASSWORD", ""),  # ⚠️ Mets ton mot de passe dans .env
-            "port": os.getenv("DB_PORT", "5432"),
-            "sslmode": "require",
-        }
-        self.connection = None
-
-    def connect(self):
-        """Établit la connexion"""
-        try:
-            self.connection = psycopg2.connect(
-                **self.db_config,
-                cursor_factory=RealDictCursor
-            )
-            logger.info("✅ Connexion à Supabase établie avec succès")
-            return self.connection
-        except psycopg2.Error as e:
-            logger.error(f"❌ Erreur de connexion: {e}")
-            raise e
-
-    def disconnect(self):
-        """Ferme la connexion"""
-        if self.connection:
-            self.connection.close()
-            self.connection = None
-            logger.info("🔌 Connexion fermée")
-
-    def get_cursor(self):
-        """Retourne un curseur actif"""
-        if not self.connection:
-            self.connect()
-        return self.connection.cursor()
-
-    def execute_query(self, query, params=None):
-        """Exécute une requête SELECT"""
-        try:
-            with self.get_cursor() as cursor:
-                cursor.execute(query, params)
-                return cursor.fetchall()
-        except psycopg2.Error as e:
-            logger.error(f"Erreur SQL (SELECT): {e}")
-            raise e
-
-    def execute_insert(self, query, params=None):
-        """Exécute une requête INSERT/UPDATE/DELETE"""
-        try:
-            with self.get_cursor() as cursor:
-                cursor.execute(query, params)
-                self.connection.commit()
-                return cursor.rowcount
-        except psycopg2.Error as e:
-            self.connection.rollback()
-            logger.error(f"Erreur SQL (INSERT/UPDATE/DELETE): {e}")
-            raise e
-
-
-# Instance globale
-db = DatabaseConnection()
+# Création du client Supabase
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --------------------------
-# Fonctions utilitaires
+# Fonctions utilisateurs
 # --------------------------
-def get_connection():
-    return db.connect()
+def create_users_table():
+    """
+    ⚠️ L'API Supabase ne permet pas de créer des tables via HTTPS.
+    Crée la table "users" directement dans le Dashboard Supabase.
+    Colonnes recommandées : id, username, email, password, full_name, created_at
+    """
+    logger.info("📋 Assurez-vous que la table 'users' existe déjà dans Supabase.")
 
-def close_connection():
-    db.disconnect()
+
+def create_user(username: str, email: str, password: str, full_name: str = None):
+    """
+    Crée un nouvel utilisateur via l'API Supabase
+    """
+    # Vérifier si l'utilisateur existe déjà
+    existing_user = get_user_by_email(email)
+    if existing_user:
+        raise ValueError(f"Un utilisateur avec l'email '{email}' existe déjà.")
+
+    response = supabase.table("users").insert({
+        "username": username,
+        "email": email,
+        "password": password,  # ⚠️ Hasher le mot de passe en production
+        "full_name": full_name
+    }).execute()
+
+    if response.error:
+        logger.error(f"❌ Erreur lors de la création de l'utilisateur: {response.error}")
+        raise Exception(response.error)
+    
+    logger.info(f"👤 Utilisateur créé: {response.data}")
+    return response.data
+
+
+def get_user_by_email(email: str):
+    """
+    Récupère un utilisateur par email via l'API Supabase
+    """
+    response = supabase.table("users").select("*").eq("email", email).execute()
+    if response.error:
+        logger.error(f"❌ Erreur lors de la récupération de l'utilisateur: {response.error}")
+        raise Exception(response.error)
+    return response.data[0] if response.data else None
+
+
+def list_users():
+    """
+    Liste tous les utilisateurs via l'API Supabase
+    """
+    response = supabase.table("users").select("*").execute()
+    if response.error:
+        logger.error(f"❌ Erreur lors de la récupération des utilisateurs: {response.error}")
+        raise Exception(response.error)
+    return response.data
+
 
 def test_connection():
-    """Teste la connexion"""
+    """
+    Test basique pour vérifier que l'API Supabase répond
+    """
     try:
-        conn = get_connection()
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT version();")
-            version = cursor.fetchone()
-            logger.info(f"🎉 Test réussi ! Version PostgreSQL: {version['version']}")
-            return True
+        users = list_users()
+        logger.info(f"🎉 Test réussi ! {len(users)} utilisateur(s) récupéré(s).")
+        return True
     except Exception as e:
         logger.error(f"❌ Test de connexion échoué: {e}")
         return False
-    finally:
-        close_connection()
 
-# --------------------------
-# Fonctions spécifiques "users"
-# --------------------------
-def create_users_table():
-    """Crée la table users si elle n'existe pas"""
-    query = """
-    CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        email VARCHAR(100) UNIQUE NOT NULL,
-        password VARCHAR(200) NOT NULL,
-        full_name VARCHAR(100),
-        created_at TIMESTAMP DEFAULT NOW()
-    );
-    """
-    db.execute_insert(query)
-    logger.info("📋 Table 'users' prête.")
-
-def create_user(username, email, password, full_name=None):
-    """Crée un nouvel utilisateur"""
-    if get_user_by_email(email):
-        raise ValueError("Un utilisateur avec cet email existe déjà.")
-    query = """
-    INSERT INTO users (username, email, password, full_name)
-    VALUES (%s, %s, %s, %s)
-    RETURNING *;
-    """
-    result = db.execute_query(query, (username, email, password, full_name))
-    return result[0] if result else None
-
-def get_user_by_email(email):
-    """Récupère un utilisateur par email"""
-    query = "SELECT * FROM users WHERE email = %s;"
-    result = db.execute_query(query, (email,))
-    return result[0] if result else None
 
 # --------------------------
 # Exemple d'utilisation
 # --------------------------
 if __name__ == "__main__":
-    print("🔄 Test de connexion à Supabase...")
-    if test_connection():
-        # Créer la table users
-        create_users_table()
+    print("🔄 Test de connexion à Supabase via API...")
 
-        # Créer un utilisateur
+    if test_connection():
+        create_users_table()  # Juste pour info
+
+        # Créer un utilisateur de test
         try:
             print("\n👤 Création d'un utilisateur de test...")
             new_user = create_user(
                 username="test_user",
                 email="test@example.com",
-                password="password123",  # ⚠️ A hasher en prod
+                password="password123",
                 full_name="Utilisateur Test"
             )
-            print(f"✅ Utilisateur créé: {new_user}")
-        except ValueError as e:
-            print(f"ℹ️ {e}")
+            print("✅ Utilisateur créé:", new_user)
+        except ValueError as ve:
+            print("ℹ️", ve)
+        except Exception as e:
+            print("❌ Erreur:", e)
 
         # Récupérer un utilisateur
-        user = get_user_by_email("test@example.com")
-        print(f"👀 Utilisateur récupéré: {user}")
+        try:
+            user = get_user_by_email("test@example.com")
+            print("👀 Utilisateur récupéré:", user)
+        except Exception as e:
+            print("❌ Erreur:", e)
 
-        # Lister les tables
-        tables = db.execute_query("""
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public';
-        """)
-        print(f"\n📋 Tables disponibles: {[t['table_name'] for t in tables]}")
-
-        close_connection()
+        # Lister tous les utilisateurs
+        try:
+            users = list_users()
+            print(f"\n📋 Tous les utilisateurs: {users}")
+        except Exception as e:
+            print("❌ Erreur:", e)
 
