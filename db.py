@@ -1,7 +1,7 @@
 from supabase import create_client
 
 SUPABASE_URL = "https://bhtpxckpzhsgstycjiwb.supabase.co"
-SUPABASE_KEY = "VOTRE_CLE_SERVICE_ROLE"  # Service Role pour pouvoir créer des users
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # Service Role pour pouvoir créer des users
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Créer un utilisateur via Supabase Auth
