@@ -30,7 +30,6 @@ def create_users_table():
 def create_user(name: str, email: str, password_hash: str, full_name: str = None):
     """
     Crée un nouvel utilisateur via l'API Supabase.
-    Si la colonne full_name n'existe pas, elle sera ignorée.
     """
     if get_user_by_email(email):
         raise ValueError(f"Un utilisateur avec l'email '{email}' existe déjà.")
@@ -43,7 +42,7 @@ def create_user(name: str, email: str, password_hash: str, full_name: str = None
     }
 
     # Ajouter full_name seulement si défini
-    if full_name is not None:
+    if full_name:
         user_data["full_name"] = full_name
 
     response = supabase.table("users").insert(user_data).execute()
@@ -127,4 +126,5 @@ if __name__ == "__main__":
             print(f"\n📋 Tous les utilisateurs: {users}")
         except Exception as e:
             print("❌ Erreur:", e)
+
 
