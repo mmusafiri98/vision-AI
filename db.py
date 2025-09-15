@@ -170,6 +170,7 @@ if st.session_state.page == "login":
                         user = verify_user(email, password)
 
                         if user:
+                            # CORRECTION: user.email
                             st.success(f"✅ Bienvenue {user.email} !")
 
                             st.session_state.logged_in = True
@@ -247,12 +248,14 @@ elif st.session_state.page == "dashboard":
         st.rerun()
     else:
         st.title("🏠 Dashboard")
+        # CORRECTION: user.email
         st.write(f"Bienvenue sur votre dashboard, {st.session_state.user.email}!")
 
         col1, col2 = st.columns(2)
 
         with col1:
             st.subheader("👤 Profil")
+            # CORRECTION: user.email
             st.write(f"**Email:** {st.session_state.user.email}")
             st.write(f"**ID:** {st.session_state.user.id}")
             st.write(f"**Créé:** {st.session_state.user.created_at}")
