@@ -107,7 +107,7 @@ if __name__ == "__main__":
                 username="test_user",
                 email="test@example.com",
                 password="password123",
-                full_name="Utilisateur Test"
+               
             )
             print("✅ Utilisateur créé:", new_user)
         except ValueError as ve:
