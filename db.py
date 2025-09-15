@@ -103,9 +103,9 @@ if __name__ == "__main__":
         try:
             print("\n👤 Création d'un utilisateur de test...")
             new_user = create_user(
-                username="test_user",
+                name="test_user",
                 email="test@example.com",
-                password="password123",
+                password_hash="password123",
                 full_name="Utilisateur Test"  # sera ignoré si la colonne n'existe pas
             )
             print("✅ Utilisateur créé:", new_user)
