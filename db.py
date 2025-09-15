@@ -4,7 +4,7 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 import logging
 
-# Charger les variables d'environnement
+# Charger les variables d'environnement (.env)
 load_dotenv()
 
 # Configuration du logging
@@ -18,19 +18,17 @@ class DatabaseConnection:
         Initialise la connexion à la base de données Supabase
         """
         self.db_config = {
-            'host': os.getenv('DB_HOST', 'db.bhtpxckpzhsgstycjiwb.supabase.co'),
-            'database': os.getenv('DB_NAME', 'postgres'),
-            'user': os.getenv('DB_USER', 'postgres'),
-            'password': os.getenv('DB_PASSWORD', '[8A%/pB7^Kt2'),  # ⚠️ Mets ton vrai mot de passe ici ou dans .env
-            'port': os.getenv('DB_PORT', '5432'),
-            'sslmode': 'require'
+            "host": os.getenv("DB_HOST", "db.bhtpxckpzhsgstycjiwb.supabase.co"),
+            "database": os.getenv("DB_NAME", "postgres"),
+            "user": os.getenv("DB_USER", "postgres"),
+            "password": os.getenv("DB_PASSWORD", ""),  # ⚠️ Mets ton mot de passe dans .env
+            "port": os.getenv("DB_PORT", "5432"),
+            "sslmode": "require",
         }
         self.connection = None
 
     def connect(self):
-        """
-        Établit la connexion à la base de données
-        """
+        """Établit la connexion"""
         try:
             self.connection = psycopg2.connect(
                 **self.db_config,
@@ -39,42 +37,34 @@ class DatabaseConnection:
             logger.info("✅ Connexion à Supabase établie avec succès")
             return self.connection
         except psycopg2.Error as e:
-            logger.error(f"❌ Erreur de connexion à la base de données: {e}")
+            logger.error(f"❌ Erreur de connexion: {e}")
             raise e
 
     def disconnect(self):
-        """
-        Ferme la connexion à la base de données
-        """
+        """Ferme la connexion"""
         if self.connection:
             self.connection.close()
+            self.connection = None
             logger.info("🔌 Connexion fermée")
 
     def get_cursor(self):
-        """
-        Retourne un curseur pour exécuter des requêtes
-        """
+        """Retourne un curseur actif"""
         if not self.connection:
             self.connect()
         return self.connection.cursor()
 
     def execute_query(self, query, params=None):
-        """
-        Exécute une requête SELECT et retourne les résultats
-        """
+        """Exécute une requête SELECT"""
         try:
             with self.get_cursor() as cursor:
                 cursor.execute(query, params)
-                results = cursor.fetchall()
-                return results
+                return cursor.fetchall()
         except psycopg2.Error as e:
-            logger.error(f"Erreur lors de l'exécution de la requête: {e}")
+            logger.error(f"Erreur SQL (SELECT): {e}")
             raise e
 
     def execute_insert(self, query, params=None):
-        """
-        Exécute une requête INSERT/UPDATE/DELETE
-        """
+        """Exécute une requête INSERT/UPDATE/DELETE"""
         try:
             with self.get_cursor() as cursor:
                 cursor.execute(query, params)
@@ -82,14 +72,16 @@ class DatabaseConnection:
                 return cursor.rowcount
         except psycopg2.Error as e:
             self.connection.rollback()
-            logger.error(f"Erreur lors de l'insertion: {e}")
+            logger.error(f"Erreur SQL (INSERT/UPDATE/DELETE): {e}")
             raise e
 
 
 # Instance globale
 db = DatabaseConnection()
 
+# --------------------------
 # Fonctions utilitaires
+# --------------------------
 def get_connection():
     return db.connect()
 
@@ -97,6 +89,7 @@ def close_connection():
     db.disconnect()
 
 def test_connection():
+    """Teste la connexion"""
     try:
         conn = get_connection()
         with conn.cursor() as cursor:
@@ -110,14 +103,11 @@ def test_connection():
     finally:
         close_connection()
 
-
 # --------------------------
 # Fonctions spécifiques "users"
 # --------------------------
 def create_users_table():
-    """
-    Crée la table users si elle n'existe pas
-    """
+    """Crée la table users si elle n'existe pas"""
     query = """
     CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -131,33 +121,23 @@ def create_users_table():
     db.execute_insert(query)
     logger.info("📋 Table 'users' prête.")
 
-
 def create_user(username, email, password, full_name=None):
-    """
-    Crée un nouvel utilisateur
-    """
-    # Vérifier si l'utilisateur existe déjà
-    existing = get_user_by_email(email)
-    if existing:
+    """Crée un nouvel utilisateur"""
+    if get_user_by_email(email):
         raise ValueError("Un utilisateur avec cet email existe déjà.")
-
     query = """
     INSERT INTO users (username, email, password, full_name)
     VALUES (%s, %s, %s, %s)
     RETURNING *;
     """
-    results = db.execute_query(query, (username, email, password, full_name))
-    return results[0] if results else None
-
+    result = db.execute_query(query, (username, email, password, full_name))
+    return result[0] if result else None
 
 def get_user_by_email(email):
-    """
-    Récupère un utilisateur par email
-    """
+    """Récupère un utilisateur par email"""
     query = "SELECT * FROM users WHERE email = %s;"
-    results = db.execute_query(query, (email,))
-    return results[0] if results else None
-
+    result = db.execute_query(query, (email,))
+    return result[0] if result else None
 
 # --------------------------
 # Exemple d'utilisation
@@ -165,10 +145,10 @@ def get_user_by_email(email):
 if __name__ == "__main__":
     print("🔄 Test de connexion à Supabase...")
     if test_connection():
-        # Création de la table users
+        # Créer la table users
         create_users_table()
 
-        # Création d'un utilisateur
+        # Créer un utilisateur
         try:
             print("\n👤 Création d'un utilisateur de test...")
             new_user = create_user(
@@ -181,16 +161,17 @@ if __name__ == "__main__":
         except ValueError as e:
             print(f"ℹ️ {e}")
 
-        # Récupération d'un utilisateur
+        # Récupérer un utilisateur
         user = get_user_by_email("test@example.com")
         print(f"👀 Utilisateur récupéré: {user}")
 
         # Lister les tables
         tables = db.execute_query("""
-            SELECT table_name 
-            FROM information_schema.tables 
+            SELECT table_name
+            FROM information_schema.tables
             WHERE table_schema = 'public';
         """)
-        print(f"\n📋 Tables disponibles: {[table['table_name'] for table in tables]}")
+        print(f"\n📋 Tables disponibles: {[t['table_name'] for t in tables]}")
 
         close_connection()
+
