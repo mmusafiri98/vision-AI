@@ -1,3 +1,4 @@
+import os
 import logging
 from supabase import create_client, Client
 
@@ -8,16 +9,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --------------------------
-# Configuration Supabase API
+# Configuration Supabase via Secrets
 # --------------------------
-SUPABASE_URL = "https://bhtpxckpzhsgstycjiwb.supabase.co"
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
 
-# ⚠️ Clé Service Role pour opérations back-end (création utilisateurs)
-SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM3"
+# Clients Supabase
 supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-
-# ⚠️ Clé Anon pour opérations front-end (login/signup utilisateurs)
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Nzg3ODYwMywiZXhwIjoyMDczNDU0NjAzfQ.vXTKr_aRGyODOzvFwjKB-NWpgyPdpN9bgdAQ1-uNolo"
 supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 # --------------------------
@@ -26,8 +25,7 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 def create_users_table():
     """
-    ⚠️ L'API Supabase ne permet pas de créer des tables via HTTPS.
-    Créez la table "users" directement dans le Dashboard Supabase.
+    ⚠️ Créez la table "users" directement dans le Dashboard Supabase.
     Colonnes recommandées :
         id SERIAL PRIMARY KEY,
         name VARCHAR(50) UNIQUE NOT NULL,
@@ -41,6 +39,7 @@ def create_users_table():
 def create_user(email: str, password: str, name: str = None, full_name: str = None):
     """
     Crée un utilisateur via Supabase Auth et ajoute infos dans la table users
+    Retourne un dict avec message et identifiants à afficher à l'utilisateur
     """
     try:
         # Création dans Supabase Auth
@@ -50,7 +49,10 @@ def create_user(email: str, password: str, name: str = None, full_name: str = No
         })
         user = response.user
         if not user:
-            raise Exception(f"❌ Impossible de créer l'utilisateur: {response.data}")
+            raise Exception(f"Impossible de créer l'utilisateur: {response.data}")
+
+        # Confirmer l'utilisateur automatiquement
+        supabase_admin.auth.api.update_user(user.id, {"email_confirmed_at": "now()"})
 
         # Ajouter infos dans la table users
         user_data = {"email": email}
@@ -60,10 +62,17 @@ def create_user(email: str, password: str, name: str = None, full_name: str = No
             user_data["full_name"] = full_name
 
         supabase_admin.table("users").insert(user_data).execute()
-        logger.info(f"👤 Utilisateur créé: {user}")
-        return user
+        logger.info(f"Utilisateur créé: {user}")
+
+        # Retourner message pour interface
+        return {
+            "message": "Utilisateur créé avec succès ! Merci de sauvegarder vos identifiants.",
+            "email": email,
+            "password": password
+        }
+
     except Exception as e:
-        logger.error(f"❌ Erreur create_user: {e}")
+        logger.error(f"Erreur create_user: {e}")
         raise e
 
 def verify_user(email: str, password: str):
@@ -76,12 +85,12 @@ def verify_user(email: str, password: str):
             "password": password
         })
         if response.user:
-            logger.info(f"👀 Utilisateur connecté: {response.user}")
+            logger.info(f"Utilisateur connecté: {response.user}")
             return response.user
         else:
-            raise Exception("❌ Email ou mot de passe incorrect")
+            raise Exception("Email ou mot de passe incorrect")
     except Exception as e:
-        logger.error(f"❌ Erreur verify_user: {e}")
+        logger.error(f"Erreur verify_user: {e}")
         raise e
 
 def get_user_by_email(email: str):
@@ -111,41 +120,6 @@ def test_connection():
         logger.info(f"🎉 Test réussi ! {len(users)} utilisateur(s) récupéré(s).")
         return True
     except Exception as e:
-        logger.error(f"❌ Test de connexion échoué: {e}")
+        logger.error(f"Test de connexion échoué: {e}")
         return False
-
-# --------------------------
-# Exemple d'utilisation
-# --------------------------
-if __name__ == "__main__":
-    print("🔄 Test de connexion à Supabase via API...")
-
-    if test_connection():
-        create_users_table()
-
-        # Créer un utilisateur de test
-        try:
-            new_user = create_user(
-                email="test@example.com",
-                password="password123",
-                name="TestUser",
-                full_name="Utilisateur Test"
-            )
-            print("✅ Utilisateur créé:", new_user)
-        except Exception as e:
-            print("❌ Erreur:", e)
-
-        # Vérifier un utilisateur
-        try:
-            user = verify_user("test@example.com", "password123")
-            print("👀 Utilisateur connecté:", user)
-        except Exception as e:
-            print("❌ Erreur:", e)
-
-        # Lister tous les utilisateurs
-        try:
-            users = list_users()
-            print(f"\n📋 Tous les utilisateurs: {users}")
-        except Exception as e:
-            print("❌ Erreur:", e)
 
