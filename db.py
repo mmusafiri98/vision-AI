@@ -18,7 +18,7 @@ class DatabaseConnection:
         """
         # URL de connexion Supabase
         self.database_url = os.getenv('DATABASE_URL') or \
-                           "postgresql://postgres:[8A%/pB7^Kt2E@db.bhtpxckpzhsgstycjiwb.supabase.co:5432/postgres?sslmode=require"
+                           "postgresql://postgres:[8A%/pB7^Kt2@db.bhtpxckpzhsgstycjiwb.supabase.co:5432/postgres?sslmode=require"
         
         # Paramètres de connexion alternatifs (si vous préférez séparer les paramètres)
         self.db_config = {
@@ -147,9 +147,33 @@ def test_connection():
 if __name__ == "__main__":
     # Test de la connexion
     print("🔄 Test de connexion à Supabase...")
-    test_connection()
+    if test_connection():
+        
+        # Créer la table users si elle n'existe pas
+        print("\n📋 Création/vérification de la table users...")
+        create_users_table()
+        
+        # Exemple de création d'utilisateur
+        try:
+            print("\n👤 Test de création d'utilisateur...")
+            new_user = create_user(
+                username="test_user",
+                email="test@example.com",
+                password="password123",  # En production, hasher le mot de passe !
+                full_name="Utilisateur Test"
+            )
+            print(f"Utilisateur créé: {new_user}")
+            
+            # Test de récupération
+            user = get_user_by_email("test@example.com")
+            print(f"Utilisateur récupéré: {user}")
+            
+        except ValueError as e:
+            print(f"ℹ️  {e}")  # Utilisateur déjà existant
+        except Exception as e:
+            print(f"❌ Erreur: {e}")
     
-    # Exemple de requête
+    # Lister les tables
     try:
         # Lister les tables
         tables = db.execute_query("""
