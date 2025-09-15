@@ -1,9 +1,6 @@
 import streamlit as st
 
-animal = st.form('my_animal')
-
-
-
+user = st.form('my_user')
 sentence = user.text_input('Your sentence:', 'username')
 say_it = sentence.rstrip('.,!?') + f', {sound}!'
 if submit:
