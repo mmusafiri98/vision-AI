@@ -3,30 +3,34 @@ from supabase import create_client
 import os
 
 # --------------------------
-# Configurazione Supabase
+# Configuration Supabase
 # --------------------------
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 
-supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)   # per login
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # per creare utenti
+supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)   # pour login
+supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # pour créer utilisateurs
 
 # --------------------------
-# Interfaccia centrata
+# Gestion simple des "pages"
 # --------------------------
-st.set_page_config(page_title="Login / Registrazione", page_icon="🔑", layout="centered")
+if "page" not in st.session_state:
+    st.session_state.page = "login"
 
-st.title("🔑 Area Utente")
+# --------------------------
+# Page Login
+# --------------------------
+if st.session_state.page == "login":
+    st.set_page_config(page_title="Login", page_icon="🔑", layout="centered")
+    st.title("🔑 Connexion Utilisateur")
 
-with st.container():
-    st.subheader("Login")
-    login_email = st.text_input("Email Login")
-    login_password = st.text_input("Password Login", type="password")
-    
-    if st.button("Login"):
+    login_email = st.text_input("Email")
+    login_password = st.text_input("Mot de passe", type="password")
+
+    if st.button("Se connecter"):
         if not login_email or not login_password:
-            st.warning("Inserisci email e password per il login.")
+            st.warning("Merci d’entrer email et mot de passe.")
         else:
             try:
                 response = supabase_client.auth.sign_in_with_password({
@@ -34,37 +38,47 @@ with st.container():
                     "password": login_password
                 })
                 if response.user:
-                    st.success(f"✅ Login riuscito! Benvenuto {response.user.email}")
+                    st.success(f"✅ Connexion réussie ! Bienvenue {response.user.email}")
                 else:
-                    st.error("❌ Email o password errata")
+                    st.error("❌ Email ou mot de passe incorrect")
             except Exception as e:
-                st.error(f"❌ Errore login: {e}")
+                st.error(f"❌ Erreur lors de la connexion: {e}")
 
     st.markdown("---")
-    st.subheader("Crea un nuovo account")
-    new_email = st.text_input("Email Nuovo Account")
-    new_password = st.text_input("Password Nuovo Account", type="password")
-    new_name = st.text_input("Nome (opzionale)")
-    new_fullname = st.text_input("Nome completo (opzionale)")
+    if st.button("Créer un compte"):
+        st.session_state.page = "register"
+        st.experimental_rerun()  # Recharge la page pour aller vers l'inscription
 
-    if st.button("Crea Account"):
+# --------------------------
+# Page Création compte
+# --------------------------
+elif st.session_state.page == "register":
+    st.set_page_config(page_title="Créer un compte", page_icon="📝", layout="centered")
+    st.title("📝 Créer un nouveau compte")
+
+    new_email = st.text_input("Email")
+    new_password = st.text_input("Mot de passe", type="password")
+    new_name = st.text_input("Nom (optionnel)")
+    new_fullname = st.text_input("Nom complet (optionnel)")
+
+    if st.button("Créer le compte"):
         if not new_email or not new_password:
-            st.warning("Inserisci email e password per creare l'account.")
+            st.warning("Merci d’entrer email et mot de passe.")
         else:
             try:
-                # Creazione account via Admin
+                # Création utilisateur via Admin
                 response = supabase_admin.auth.sign_up({
                     "email": new_email,
                     "password": new_password
                 })
                 user = response.user
                 if user:
-                    # Conferma automatica
+                    # Confirmer automatiquement
                     supabase_admin.auth.admin.update_user_by_id(
                         uid=user.id,
                         attributes={"email_confirmed_at": "now()"}
                     )
-                    # Inserimento nella tabella users (opzionale)
+                    # Ajouter dans la table users (optionnel)
                     user_data = {"email": new_email}
                     if new_name:
                         user_data["name"] = new_name
@@ -72,9 +86,13 @@ with st.container():
                         user_data["full_name"] = new_fullname
                     supabase_admin.table("users").insert(user_data).execute()
 
-                    st.success(f"✅ Utente creato: {new_email}. Salva i tuoi dati!")
+                    st.success(f"✅ Compte créé pour {new_email}. Vous pouvez maintenant vous connecter !")
                 else:
-                    st.error("❌ Errore nella creazione dell'utente")
+                    st.error("❌ Erreur lors de la création de l'utilisateur")
             except Exception as e:
-                st.error(f"❌ Errore creazione account: {e}")
+                st.error(f"❌ Erreur création compte: {e}")
+
+    if st.button("Retour au login"):
+        st.session_state.page = "login"
+        st.experimental_rerun()
 
