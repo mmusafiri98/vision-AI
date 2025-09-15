@@ -37,9 +37,9 @@ def create_user(username: str, email: str, password: str, full_name: str = None)
 
     # Construire le dictionnaire d'insertion
     user_data = {
-        "username": username,
+        "name": name,
         "email": email,
-        "password": password  # ⚠️ Hasher en production
+        "password_hash": password_hash  # ⚠️ Hasher en production
     }
 
     # Ajouter full_name seulement si défini
