@@ -5,11 +5,65 @@ import os
 # --------------------------
 # Configuration Supabase
 # --------------------------
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
-SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
-supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)   # Login
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # Création utilisateurs
+@st.cache_resource
+def init_supabase():
+    supabase_url = os.environ["SUPABASE_URL"]
+    supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
+    supabase_service_key = os.environ["SUPABASE_SERVICE_KEY"]
+    
+    client = create_client(supabase_url, supabase_anon_key)
+    admin = create_client(supabase_url, supabase_service_key)
+    
+    return client, admin
+
+client, admin = init_supabase()
+
+# --------------------------
+# Fonctions d'authentification
+# --------------------------
+def verify_user(email, password):
+    """Vérifie les identifiants utilisateur"""
+    try:
+        response = client.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        return response.user
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la connexion: {e}")
+        return None
+
+def create_user(email, password, name=None, full_name=None):
+    """Crée un nouveau utilisateur"""
+    try:
+        response = admin.auth.sign_up({
+            "email": email,
+            "password": password
+        })
+        user = response.user
+        
+        if user:
+            # Confirmer automatiquement
+            admin.auth.admin.update_user_by_id(
+                uid=user.id,
+                attributes={"email_confirmed_at": "now()"}
+            )
+            
+            # Ajouter dans la table users (optionnel)
+            user_data = {"email": email}
+            if name:
+                user_data["name"] = name
+            if full_name:
+                user_data["full_name"] = full_name
+            
+            admin.table("users").insert(user_data).execute()
+            return user
+        else:
+            return None
+            
+    except Exception as e:
+        st.error(f"❌ Erreur création compte: {e}")
+        return None
 
 # --------------------------
 # Configuration page
@@ -21,14 +75,11 @@ st.set_page_config(
 )
 
 # --------------------------
-# Gestion des pages via session_state
+# Gestion des pages
 # --------------------------
 if "page" not in st.session_state:
     st.session_state.page = "login"
 
-# --------------------------
-# Fonctions de navigation
-# --------------------------
 def go_to_register():
     st.session_state.page = "register"
 
@@ -42,34 +93,26 @@ if st.session_state.page == "login":
     st.title("🔑 Connexion Utilisateur")
     
     with st.form("login_form"):
-        login_email = st.text_input("Email")
-        login_password = st.text_input("Mot de passe", type="password")
+        email = st.text_input("Email")
+        password = st.text_input("Mot de passe", type="password")
         login_submitted = st.form_submit_button("Se connecter")
     
     if login_submitted:
-        if not login_email or not login_password:
+        if not email or not password:
             st.warning("Merci d'entrer email et mot de passe.")
         else:
-            try:
-                response = supabase_client.auth.sign_in_with_password({
-                    "email": login_email,
-                    "password": login_password
-                })
-                if response.user:
-                    st.success(f"✅ Connexion réussie ! Bienvenue {response.user.email}")
-                    # Ici vous pouvez rediriger vers une autre page ou stocker l'état de connexion
-                    # st.session_state.logged_in = True
-                    # st.session_state.user = response.user
-                else:
-                    st.error("❌ Email ou mot de passe incorrect")
-            except Exception as e:
-                st.error(f"❌ Erreur lors de la connexion: {e}")
+            user = verify_user(email, password)  # Ligne équivalente à votre ligne 63
+            
+            if user:
+                st.success(f"✅ Connexion réussie ! Bienvenue {user.email}")
+                st.session_state.logged_in = True
+                st.session_state.user = user
+            else:
+                st.error("❌ Email ou mot de passe incorrect")
     
     st.markdown("---")
-    
-    # Utilisation d'un callback pour éviter le rerun immédiat
     if st.button("Créer un compte", on_click=go_to_register):
-        pass  # Le callback s'occupe du changement de page
+        pass
 
 # --------------------------
 # PAGE CREATION COMPTE
@@ -88,37 +131,12 @@ elif st.session_state.page == "register":
         if not new_email or not new_password:
             st.warning("Merci d'entrer email et mot de passe.")
         else:
-            try:
-                # Création utilisateur via Admin
-                response = supabase_admin.auth.sign_up({
-                    "email": new_email,
-                    "password": new_password
-                })
-                user = response.user
-                if user:
-                    # Confirmer automatiquement
-                    supabase_admin.auth.admin.update_user_by_id(
-                        uid=user.id,
-                        attributes={"email_confirmed_at": "now()"}
-                    )
-                    # Ajouter dans la table users (optionnel)
-                    user_data = {"email": new_email}
-                    if new_name:
-                        user_data["name"] = new_name
-                    if new_fullname:
-                        user_data["full_name"] = new_fullname
-                    
-                    supabase_admin.table("users").insert(user_data).execute()
-                    st.success(f"✅ Compte créé pour {new_email}. Vous pouvez maintenant vous connecter !")
-                    
-                    # Optionnel : retourner automatiquement au login après création
-                    # st.session_state.page = "login"
-                    # st.rerun()
-                else:
-                    st.error("❌ Erreur lors de la création de l'utilisateur")
-            except Exception as e:
-                st.error(f"❌ Erreur création compte: {e}")
+            user = create_user(new_email, new_password, new_name, new_fullname)
+            
+            if user:
+                st.success(f"✅ Compte créé pour {new_email}. Vous pouvez maintenant vous connecter !")
+            else:
+                st.error("❌ Erreur lors de la création du compte")
     
-    # Utilisation d'un callback pour le bouton retour
     if st.button("Retour au login", on_click=go_to_login):
-        pass  # Le callback s'occupe du changement de page
+        pass
