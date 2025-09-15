@@ -1,5 +1,5 @@
 import streamlit as st
-import db  # votre fichier db.py
+
 
 # === SESSION INIT ===
 if "user" not in st.session_state:
