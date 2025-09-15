@@ -137,6 +137,7 @@ if "logged_in" in st.session_state and st.session_state.logged_in:
 
         if st.sidebar.button("🏠 Dashboard"):
             go_to_dashboard()
+            st.rerun()
 
         if st.sidebar.button("🚪 Se déconnecter"):
             logout_user()
@@ -194,6 +195,7 @@ if st.session_state.page == "login":
     st.write("Pas encore de compte ?")
     if st.button("📝 Créer un compte"):
         go_to_register()
+        st.rerun()   # redirection immédiate
 
 # --------------------------
 # PAGE CREATION COMPTE
@@ -229,15 +231,15 @@ elif st.session_state.page == "register":
                         st.session_state.temp_email = new_email
                         st.session_state.temp_password = new_password
 
-                        st.success("🎉 Vous pouvez maintenant vous connecter!")
-
-                        if st.button("🔑 Aller au login"):
-                            go_to_login()
+                        st.success("🎉 Redirection automatique vers la page de connexion...")
+                        go_to_login()
+                        st.rerun()  # redirection auto vers login
 
     st.markdown("---")
     st.write("Déjà un compte ?")
     if st.button("🔑 Retour au login"):
         go_to_login()
+        st.rerun()   # redirection immédiate
 
 # --------------------------
 # PAGE DASHBOARD
@@ -246,6 +248,7 @@ elif st.session_state.page == "dashboard":
     if "logged_in" not in st.session_state or not st.session_state.logged_in:
         st.warning("⚠️ Vous devez être connecté pour accéder au dashboard.")
         go_to_login()
+        st.rerun()
     else:
         st.title("🏠 Dashboard")
         st.write(f"Bienvenue sur votre dashboard, {st.session_state.user.email}!")
@@ -298,6 +301,7 @@ elif st.session_state.page == "dashboard":
 else:
     st.error("❌ Page inconnue. Redirection vers la page de connexion.")
     go_to_login()
+    st.rerun()
 
 # --------------------------
 # FOOTER
@@ -311,3 +315,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
