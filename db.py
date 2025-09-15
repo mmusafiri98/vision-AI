@@ -114,9 +114,8 @@ def logout_user():
 # --------------------------
 # SIDEBAR - Informations utilisateur
 # --------------------------
-if "logged_in" in st.session_state and st.session_state.logged_in and st.session_state.user:
+if "logged_in" in st.session_state and st.session_state.logged_in and "user" in st.session_state and st.session_state.user:
     try:
-        # CORRECTION ICI: Utilisation de .email au lieu de ['email']
         st.sidebar.success(f"Connecté en tant que {st.session_state.user.email}")
         
         st.sidebar.write(f"**ID:** {st.session_state.user.id[:8]}...")
@@ -171,7 +170,6 @@ if st.session_state.page == "login":
                         user = verify_user(email, password)
 
                         if user:
-                            # CORRECTION ICI: Utilisation de .email
                             st.success(f"✅ Bienvenue {user.email} !")
 
                             st.session_state.logged_in = True
@@ -243,12 +241,11 @@ elif st.session_state.page == "register":
 # PAGE DASHBOARD
 # --------------------------
 elif st.session_state.page == "dashboard":
-    if "logged_in" not in st.session_state or not st.session_state.logged_in or not st.session_state.user:
+    if "logged_in" not in st.session_state or not st.session_state.logged_in or "user" not in st.session_state or not st.session_state.user:
         st.warning("⚠️ Vous devez être connecté pour accéder au dashboard.")
         go_to_login()
         st.rerun()
     else:
-        # CORRECTION ICI: Utilisation de .email
         st.title("🏠 Dashboard")
         st.write(f"Bienvenue sur votre dashboard, {st.session_state.user.email}!")
 
@@ -256,7 +253,6 @@ elif st.session_state.page == "dashboard":
 
         with col1:
             st.subheader("👤 Profil")
-            # CORRECTION ICI: Utilisation de .email
             st.write(f"**Email:** {st.session_state.user.email}")
             st.write(f"**ID:** {st.session_state.user.id}")
             st.write(f"**Créé:** {st.session_state.user.created_at}")
