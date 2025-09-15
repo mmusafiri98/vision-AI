@@ -11,9 +11,8 @@ logger = logging.getLogger(__name__)
 # Configuration Supabase API
 # --------------------------
 SUPABASE_URL = "https://bhtpxckpzhsgstycjiwb.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # ⚠️ Remplace par ta clé anon ou service_role
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJodHB4Y2twemhzZ3N0eWNqaXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Nzg2MDMsImV4cCI6MjA3MzQ1NDYwM30.RmqgQdoMNAt-TtGaqWkSz4YOhZSLXUcVfbK6e784ewM"  # ⚠️ Remplace par ta clé anon (frontend) ou service_role (backend)
 
-# Création du client Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --------------------------
@@ -29,33 +28,34 @@ def create_users_table():
 
 
 def create_user(username: str, email: str, password: str, full_name: str = None):
-    """Crée un nouvel utilisateur via l'API Supabase"""
-    existing_user = get_user_by_email(email)
-    if existing_user:
+    """
+    Crée un nouvel utilisateur via l'API Supabase
+    """
+    if get_user_by_email(email):
         raise ValueError(f"Un utilisateur avec l'email '{email}' existe déjà.")
 
     response = supabase.table("users").insert({
         "username": username,
         "email": email,
-        "password": password,  # ⚠️ Hasher le mot de passe en prod
+        "password": password,  # ⚠️ Hasher le mot de passe en production
         "full_name": full_name
     }).execute()
 
-    if response.status_code != 201:
-        raise Exception(f"Erreur API Supabase: {response.status_code} - {response.data}")
+    if not response.data:
+        raise Exception("❌ Erreur lors de la création de l'utilisateur")
 
     logger.info(f"👤 Utilisateur créé: {response.data}")
     return response.data
 
 
 def get_user_by_email(email: str):
-    """Récupère un utilisateur par email via l'API Supabase"""
+    """
+    Récupère un utilisateur par email via l'API Supabase
+    """
     response = supabase.table("users").select("*").eq("email", email).execute()
-
-    if response.status_code != 200:
-        raise Exception(f"Erreur API Supabase: {response.status_code} - {response.data}")
-
-    return response.data[0] if response.data else None
+    if not response.data:
+        return None
+    return response.data[0]
 
 
 def verify_user(email: str, password: str):
@@ -69,17 +69,19 @@ def verify_user(email: str, password: str):
 
 
 def list_users():
-    """Liste tous les utilisateurs via l'API Supabase"""
+    """
+    Liste tous les utilisateurs via l'API Supabase
+    """
     response = supabase.table("users").select("*").execute()
-
-    if response.status_code != 200:
-        raise Exception(f"Erreur API Supabase: {response.status_code} - {response.data}")
-
+    if not response.data:
+        return []
     return response.data
 
 
 def test_connection():
-    """Test basique pour vérifier que l'API Supabase répond"""
+    """
+    Test basique pour vérifier que l'API Supabase répond
+    """
     try:
         users = list_users()
         logger.info(f"🎉 Test réussi ! {len(users)} utilisateur(s) récupéré(s).")
@@ -96,7 +98,7 @@ if __name__ == "__main__":
     print("🔄 Test de connexion à Supabase via API...")
 
     if test_connection():
-        create_users_table()  # Juste pour info
+        create_users_table()
 
         # Créer un utilisateur de test
         try:
@@ -126,5 +128,4 @@ if __name__ == "__main__":
             print(f"\n📋 Tous les utilisateurs: {users}")
         except Exception as e:
             print("❌ Erreur:", e)
-
 
