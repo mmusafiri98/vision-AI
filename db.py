@@ -35,10 +35,8 @@ def verify_user(email, password):
 
 def create_user(email, password, name=None, full_name=None):
     """Crée un nouveau utilisateur"""
-    
-    # ÉTAPE 1: Essayer admin.create_user (recommandé)
     try:
-        st.info("🔄 Création avec admin.create_user...")
+        # Utiliser admin.create_user pour créer un utilisateur confirmé
         response = admin.auth.admin.create_user({
             "email": email,
             "password": password,
@@ -50,35 +48,14 @@ def create_user(email, password, name=None, full_name=None):
         })
         
         if response.user:
-            st.success("✅ Utilisateur créé avec admin.create_user")
+            st.success("✅ Utilisateur créé avec succès!")
             return response.user
-    
+        else:
+            return None
+            
     except Exception as e:
-        st.warning(f"⚠️ admin.create_user échoué: {e}")
-    
-    # ÉTAPE 2: Fallback avec sign_up normal
-    try:
-        st.info("🔄 Tentative avec sign_up normal...")
-        response = admin.auth.sign_up({
-            "email": email,
-            "password": password,
-            "options": {
-                "data": {
-                    "name": name or "",
-                    "full_name": full_name or ""
-                }
-            }
-        })
-        
-        if response.user:
-            st.success("✅ Utilisateur créé avec sign_up")
-            st.info("💡 Si vous avez l'erreur 'Email not confirmed', désactivez la confirmation d'email dans Authentication > Settings")
-            return response.user
-    
-    except Exception as e:
-        st.error(f"❌ sign_up échoué: {e}")
-    
-    return None
+        st.error(f"❌ Erreur création compte: {e}")
+        return None
 
 # --------------------------
 # Configuration page
@@ -107,16 +84,6 @@ def go_to_login():
 if st.session_state.page == "login":
     st.title("🔑 Connexion Utilisateur")
     
-    # Message d'aide
-    with st.expander("❓ Problème de connexion ?"):
-        st.markdown("""
-        **Si vous avez l'erreur "Email not confirmed" :**
-        1. Allez dans votre Dashboard Supabase
-        2. Authentication > Settings
-        3. Désactivez "Enable email confirmations"
-        4. Ou configurez un provider SMTP
-        """)
-    
     with st.form("login_form"):
         email = st.text_input("Email")
         password = st.text_input("Mot de passe", type="password")
@@ -129,16 +96,21 @@ if st.session_state.page == "login":
             user = verify_user(email, password)
             
             if user:
-                st.success(f"✅ Connexion réussie ! Bienvenue {user.email}")
+                # CORRECTION: Utiliser user.email au lieu de user['email']
+                st.success(f"Bienvenue {user.email} !")
                 st.session_state.logged_in = True
                 st.session_state.user = user
                 
-                # Afficher infos utilisateur
-                st.json({
-                    "user_id": user.id,
-                    "email": user.email,
-                    "créé_le": str(user.created_at) if user.created_at else "N/A"
-                })
+                # Afficher les informations utilisateur (optionnel)
+                with st.expander("ℹ️ Informations utilisateur"):
+                    st.write(f"**ID:** {user.id}")
+                    st.write(f"**Email:** {user.email}")
+                    st.write(f"**Créé le:** {user.created_at}")
+                    
+                    # Métadonnées si elles existent
+                    if hasattr(user, 'user_metadata') and user.user_metadata:
+                        st.write(f"**Nom:** {user.user_metadata.get('name', 'Non défini')}")
+                        st.write(f"**Nom complet:** {user.user_metadata.get('full_name', 'Non défini')}")
             else:
                 st.error("❌ Connexion échouée")
     
@@ -151,8 +123,6 @@ if st.session_state.page == "login":
 # --------------------------
 elif st.session_state.page == "register":
     st.title("📝 Créer un nouveau compte")
-    
-    st.info("💡 L'application essaiera deux méthodes de création pour assurer le succès.")
     
     with st.form("register_form"):
         new_email = st.text_input("Email")
@@ -169,16 +139,9 @@ elif st.session_state.page == "register":
                 user = create_user(new_email, new_password, new_name, new_fullname)
                 
                 if user:
-                    st.success(f"✅ Compte créé pour {new_email}!")
-                    st.balloons()
-                    
-                    # Auto-redirect après 3 secondes
-                    import time
-                    st.info("⏳ Redirection vers le login dans 3 secondes...")
-                    time.sleep(1)
-                    if st.button("Aller au login maintenant"):
-                        st.session_state.page = "login"
-                        st.rerun()
+                    # CORRECTION: Utiliser user.email au lieu de user['email']
+                    st.success(f"✅ Compte créé pour {user.email}!")
+                    st.success("🎉 Vous pouvez maintenant vous connecter!")
                 else:
                     st.error("❌ Erreur lors de la création du compte")
     
