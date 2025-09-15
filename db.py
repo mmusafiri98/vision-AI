@@ -40,7 +40,7 @@ st.markdown("""
     
     /* Background */
     .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: white !important;
         min-height: 100vh;
     }
     
@@ -85,26 +85,24 @@ st.markdown("""
         font-size: 16px !important;
         width: 100% !important;
         transition: all 0.3s ease !important;
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
     }
     
-    /* Bouton bleu pour création */
-    .create-account-btn button {
-        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%) !important;
-    }
-    
-    .create-account-btn button:hover {
+    .stButton > button:hover {
         transform: translateY(-1px) !important;
-        box-shadow: 0 8px 16px rgba(0, 123, 255, 0.3) !important;
+        box-shadow: 0 8px 16px rgba(40, 167, 69, 0.3) !important;
     }
     
-    /* Bouton orange pour connexion */
+    /* Tous les boutons sont maintenant verts */
+    .create-account-btn button,
     .login-btn button {
-        background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%) !important;
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
     }
     
+    .create-account-btn button:hover,
     .login-btn button:hover {
         transform: translateY(-1px) !important;
-        box-shadow: 0 8px 16px rgba(255, 107, 53, 0.3) !important;
+        box-shadow: 0 8px 16px rgba(40, 167, 69, 0.3) !important;
     }
     
     /* Bouton secondaire */
