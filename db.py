@@ -96,7 +96,7 @@ def logout_user():
 # --------------------------
 if "logged_in" in st.session_state and st.session_state.logged_in:
     try:
-        # ✅ CORRECTION PRINCIPALE: .email au lieu de ['email']
+        # ✅ CORRECTION: Utiliser .email au lieu de ['email']
         st.sidebar.success(f"Connecté en tant que {st.session_state.user.email}")
         
         # Informations utilisateur
