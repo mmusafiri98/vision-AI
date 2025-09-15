@@ -95,6 +95,9 @@ def go_to_register():
 def go_to_login():
     st.session_state.page = "login"
 
+def go_to_dashboard():
+    st.session_state.page = "dashboard"
+
 def logout_user():
     """Déconnecte l'utilisateur"""
     if "logged_in" in st.session_state:
@@ -108,7 +111,6 @@ def logout_user():
 # --------------------------
 if "logged_in" in st.session_state and st.session_state.logged_in:
     try:
-        # ✅ CORRECTION: Utiliser .email au lieu de ['email']
         st.sidebar.success(f"Connecté en tant que {st.session_state.user.email}")
         
         # Informations utilisateur
@@ -123,8 +125,14 @@ if "logged_in" in st.session_state and st.session_state.logged_in:
             if metadata.get('full_name'):
                 st.sidebar.write(f"**Nom complet:** {metadata['full_name']}")
         
-        # Bouton de déconnexion
+        # Navigation
         st.sidebar.markdown("---")
+        st.sidebar.subheader("🧭 Navigation")
+        
+        if st.sidebar.button("🏠 Dashboard"):
+            go_to_dashboard()
+            st.rerun()
+        
         if st.sidebar.button("🚪 Se déconnecter"):
             logout_user()
             st.rerun()
@@ -157,7 +165,6 @@ if st.session_state.page == "login":
                 user = verify_user(email, password)
                 
                 if user:
-                    # ✅ CORRECTION: .email au lieu de ['email']
                     st.success(f"✅ Bienvenue {user.email} !")
                     
                     # Sauvegarder dans la session
@@ -173,15 +180,22 @@ if st.session_state.page == "login":
                     if hasattr(user, 'user_metadata') and user.user_metadata:
                         st.write(f"**Métadonnées:** {user.user_metadata}")
                     
-                    # Redirection automatique
-                    st.info("Redirection en cours...")
+                    # Redirection automatique vers dashboard
+                    st.info("Redirection vers le dashboard...")
                     st.balloons()
+                    
+                    # Bouton pour aller au dashboard
+                    if st.button("Aller au Dashboard"):
+                        go_to_dashboard()
+                        st.rerun()
                 else:
                     st.error("❌ Connexion échouée")
     
     st.markdown("---")
-    if st.button("Créer un compte", on_click=go_to_register):
-        pass
+    st.write("Pas encore de compte ?")
+    if st.button("📝 Créer un compte"):
+        go_to_register()
+        st.rerun()
 
 # --------------------------
 # PAGE CREATION COMPTE
@@ -210,7 +224,6 @@ elif st.session_state.page == "register":
                 user = create_user(new_email, new_password, new_name, new_fullname)
                 
                 if user:
-                    # ✅ CORRECTION: .email au lieu de ['email']
                     st.success(f"✅ Compte créé pour {user.email}!")
                     st.balloons()
                     
@@ -222,82 +235,93 @@ elif st.session_state.page == "register":
                     st.success("🎉 Vous pouvez maintenant vous connecter!")
                     
                     # Bouton pour aller au login
-                    if st.button("Aller au login"):
+                    if st.button("🔑 Aller au login"):
                         go_to_login()
                         st.rerun()
                 # Si user est None, l'erreur a déjà été affichée dans create_user()
     
-    if st.button("Retour au login", on_click=go_to_login):
-        pass
+    st.markdown("---")
+    st.write("Déjà un compte ?")
+    if st.button("🔑 Retour au login"):
+        go_to_login()
+        st.rerun()
 
 # --------------------------
-# SECTION DASHBOARD (si connecté)
+# PAGE DASHBOARD
 # --------------------------
-if "logged_in" in st.session_state and st.session_state.logged_in:
-    st.markdown("---")
-    st.header("🏠 Dashboard")
-    
-    # ✅ CORRECTION: .email au lieu de ['email']
-    st.write(f"Bienvenue sur votre dashboard, {st.session_state.user.email}!")
-    
-    # Colonnes pour organiser le contenu
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("👤 Profil")
-        # ✅ CORRECTIONS: Tous les attributs utilisent . au lieu de []
-        st.write(f"**Email:** {st.session_state.user.email}")
-        st.write(f"**ID:** {st.session_state.user.id}")
-        st.write(f"**Créé:** {st.session_state.user.created_at}")
+elif st.session_state.page == "dashboard":
+    # Vérifier si l'utilisateur est connecté
+    if "logged_in" not in st.session_state or not st.session_state.logged_in:
+        st.warning("⚠️ Vous devez être connecté pour accéder au dashboard.")
+        go_to_login()
+        st.rerun()
+    else:
+        st.title("🏠 Dashboard")
+        st.write(f"Bienvenue sur votre dashboard, {st.session_state.user.email}!")
         
-        # Métadonnées
-        if hasattr(st.session_state.user, 'user_metadata') and st.session_state.user.user_metadata:
-            metadata = st.session_state.user.user_metadata
-            st.write("**Métadonnées:**")
-            if metadata.get('name'):
-                st.write(f"- Nom: {metadata['name']}")
-            if metadata.get('full_name'):
-                st.write(f"- Nom complet: {metadata['full_name']}")
-    
-    with col2:
-        st.subheader("🛠️ Actions")
+        # Colonnes pour organiser le contenu
+        col1, col2 = st.columns(2)
         
-        if st.button("🔄 Actualiser", use_container_width=True):
-            st.rerun()
+        with col1:
+            st.subheader("👤 Profil")
+            st.write(f"**Email:** {st.session_state.user.email}")
+            st.write(f"**ID:** {st.session_state.user.id}")
+            st.write(f"**Créé:** {st.session_state.user.created_at}")
+            
+            # Métadonnées
+            if hasattr(st.session_state.user, 'user_metadata') and st.session_state.user.user_metadata:
+                metadata = st.session_state.user.user_metadata
+                st.write("**Métadonnées:**")
+                if metadata.get('name'):
+                    st.write(f"- Nom: {metadata['name']}")
+                if metadata.get('full_name'):
+                    st.write(f"- Nom complet: {metadata['full_name']}")
         
-        if st.button("🚪 Se déconnecter", use_container_width=True):
-            logout_user()
-            st.rerun()
-    
-    # Contenu additionnel du dashboard
-    st.subheader("📊 Contenu principal")
-    
-    # Exemple de contenu
-    tab1, tab2, tab3 = st.tabs(["Données", "Statistiques", "Paramètres"])
-    
-    with tab1:
-        st.write("Ici vous pouvez afficher des données spécifiques à l'utilisateur.")
-        # ✅ CORRECTION: .email au lieu de ['email']
-        st.info(f"Données pour: {st.session_state.user.email}")
-    
-    with tab2:
-        st.write("Graphiques et statistiques basées sur votre profil.")
-        # ✅ CORRECTION: .id au lieu de ['id']
-        st.info(f"Utilisateur ID: {st.session_state.user.id}")
-    
-    with tab3:
-        st.write("Paramètres de compte et préférences.")
-        if st.button("Modifier le profil"):
-            st.info("Fonctionnalité de modification du profil à implémenter.")
+        with col2:
+            st.subheader("🛠️ Actions")
+            
+            if st.button("🔄 Actualiser", use_container_width=True):
+                st.rerun()
+            
+            if st.button("🚪 Se déconnecter", use_container_width=True):
+                logout_user()
+                st.rerun()
+        
+        # Contenu additionnel du dashboard
+        st.subheader("📊 Contenu principal")
+        
+        # Exemple de contenu
+        tab1, tab2, tab3 = st.tabs(["Données", "Statistiques", "Paramètres"])
+        
+        with tab1:
+            st.write("Ici vous pouvez afficher des données spécifiques à l'utilisateur.")
+            st.info(f"Données pour: {st.session_state.user.email}")
+        
+        with tab2:
+            st.write("Graphiques et statistiques basées sur votre profil.")
+            st.info(f"Utilisateur ID: {st.session_state.user.id}")
+        
+        with tab3:
+            st.write("Paramètres de compte et préférences.")
+            if st.button("Modifier le profil"):
+                st.info("Fonctionnalité de modification du profil à implémenter.")
+
+# --------------------------
+# PAGE PAR DÉFAUT (au cas où)
+# --------------------------
+else:
+    st.error("❌ Page inconnue. Redirection vers la page de connexion.")
+    go_to_login()
+    st.rerun()
 
 # --------------------------
 # FOOTER
 # --------------------------
 st.markdown("---")
 st.markdown(
-    """
+    f"""
     <div style='text-align: center; color: gray; font-size: 12px;'>
-    🔒 Application sécurisée avec Supabase • Authentification complète
+    🔒 Application sécurisée avec Supabase • Page actuelle: {st.session_state.page}
     </div>
     """, 
     unsafe_allow_html=True
