@@ -1,11 +1,15 @@
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 import logging
 
-# Charger les variables d'environnement
-load_dotenv()
+# Charger les variables d'environnement (dotenv optionnel)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv n'est pas installé, on continue sans
+    pass
 
 # Configuration de logging
 logging.basicConfig(level=logging.INFO)
@@ -16,16 +20,16 @@ class DatabaseConnection:
         """
         Initialise la connexion à la base de données Supabase
         """
-        # URL de connexion Supabase
+        # URL de connexion Supabase (remplacez par votre vraie URL avec mot de passe)
         self.database_url = os.getenv('DATABASE_URL') or \
-                           "postgresql://postgres:[8A%/pB7^Kt2@db.bhtpxckpzhsgstycjiwb.supabase.co:5432/postgres?sslmode=require"
+                           "postgresql://postgres:8A%/pB7^Kt2@db.bhtpxckpzhsgstycjiwb.supabase.co:5432/postgres?sslmode=require"
         
         # Paramètres de connexion alternatifs (si vous préférez séparer les paramètres)
         self.db_config = {
             'host': os.getenv('DB_HOST', 'db.bhtpxckpzhsgstycjiwb.supabase.co'),
             'database': os.getenv('DB_NAME', 'postgres'),
             'user': os.getenv('DB_USER', 'postgres'),
-            'password': os.getenv('DB_PASSWORD', 'VOTRE_MOT_DE_PASSE'),
+            'password': os.getenv('DB_PASSWORD', '8A%/pB7^Kt2'),
             'port': os.getenv('DB_PORT', '5432'),
             'sslmode': 'require'
         }
@@ -143,7 +147,200 @@ def test_connection():
     finally:
         close_connection()
 
-# Exemple d'utilisation
+# ========== FONCTIONS POUR GESTION DES UTILISATEURS ==========
+
+def create_users_table():
+    """
+    Crée la table users si elle n'existe pas
+    """
+    try:
+        query = """
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(50) UNIQUE NOT NULL,
+            email VARCHAR(100) UNIQUE NOT NULL,
+            password VARCHAR(255) NOT NULL,
+            full_name VARCHAR(100),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        db.execute_insert(query)
+        logger.info("✅ Table 'users' créée ou vérifiée")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la création de la table users: {e}")
+        return False
+
+def create_user(username, email, password, full_name=None):
+    """
+    Crée un nouvel utilisateur dans la base de données
+    
+    Args:
+        username (str): Nom d'utilisateur unique
+        email (str): Email de l'utilisateur
+        password (str): Mot de passe (vous devriez le hasher)
+        full_name (str): Nom complet (optionnel)
+    
+    Returns:
+        dict: Informations de l'utilisateur créé ou None si erreur
+    """
+    try:
+        query = """
+        INSERT INTO users (username, email, password, full_name, created_at) 
+        VALUES (%s, %s, %s, %s, NOW()) 
+        RETURNING id, username, email, full_name, created_at;
+        """
+        
+        result = db.execute_query(query, (username, email, password, full_name))
+        
+        if result:
+            logger.info(f"✅ Utilisateur créé: {username}")
+            return dict(result[0])  # Convertir en dictionnaire
+        return None
+        
+    except psycopg2.IntegrityError as e:
+        if "unique constraint" in str(e).lower():
+            logger.error(f"❌ Utilisateur ou email déjà existant: {username}")
+            raise ValueError("Nom d'utilisateur ou email déjà utilisé")
+        raise e
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la création de l'utilisateur: {e}")
+        raise e
+
+def get_user_by_email(email):
+    """
+    Récupère un utilisateur par son email
+    
+    Args:
+        email (str): Email de l'utilisateur
+    
+    Returns:
+        dict: Informations utilisateur ou None
+    """
+    try:
+        query = "SELECT id, username, email, full_name, created_at FROM users WHERE email = %s;"
+        result = db.execute_query(query, (email,))
+        return dict(result[0]) if result else None
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la récupération de l'utilisateur: {e}")
+        return None
+
+def get_user_by_username(username):
+    """
+    Récupère un utilisateur par son nom d'utilisateur
+    
+    Args:
+        username (str): Nom d'utilisateur
+    
+    Returns:
+        dict: Informations utilisateur ou None
+    """
+    try:
+        query = "SELECT id, username, email, full_name, created_at FROM users WHERE username = %s;"
+        result = db.execute_query(query, (username,))
+        return dict(result[0]) if result else None
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la récupération de l'utilisateur: {e}")
+        return None
+
+def authenticate_user(username_or_email, password):
+    """
+    Authentifie un utilisateur
+    
+    Args:
+        username_or_email (str): Nom d'utilisateur ou email
+        password (str): Mot de passe
+    
+    Returns:
+        dict: Informations utilisateur si authentification réussie, None sinon
+    """
+    try:
+        query = """
+        SELECT id, username, email, full_name, created_at 
+        FROM users 
+        WHERE (username = %s OR email = %s) AND password = %s;
+        """
+        result = db.execute_query(query, (username_or_email, username_or_email, password))
+        return dict(result[0]) if result else None
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de l'authentification: {e}")
+        return None
+
+def update_user(user_id, **kwargs):
+    """
+    Met à jour les informations d'un utilisateur
+    
+    Args:
+        user_id (int): ID de l'utilisateur
+        **kwargs: Champs à mettre à jour (username, email, full_name, etc.)
+    
+    Returns:
+        dict: Informations utilisateur mises à jour ou None
+    """
+    try:
+        # Construire la requête dynamiquement
+        fields = []
+        values = []
+        
+        for field, value in kwargs.items():
+            if field in ['username', 'email', 'full_name', 'password']:
+                fields.append(f"{field} = %s")
+                values.append(value)
+        
+        if not fields:
+            raise ValueError("Aucun champ valide à mettre à jour")
+        
+        values.append(user_id)  # Pour la clause WHERE
+        
+        query = f"""
+        UPDATE users 
+        SET {', '.join(fields)}, updated_at = NOW() 
+        WHERE id = %s 
+        RETURNING id, username, email, full_name, updated_at;
+        """
+        
+        result = db.execute_query(query, tuple(values))
+        return dict(result[0]) if result else None
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la mise à jour de l'utilisateur: {e}")
+        raise e
+
+def delete_user(user_id):
+    """
+    Supprime un utilisateur
+    
+    Args:
+        user_id (int): ID de l'utilisateur
+    
+    Returns:
+        bool: True si suppression réussie, False sinon
+    """
+    try:
+        query = "DELETE FROM users WHERE id = %s;"
+        rows_affected = db.execute_insert(query, (user_id,))
+        return rows_affected > 0
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la suppression de l'utilisateur: {e}")
+        return False
+
+def get_all_users():
+    """
+    Récupère tous les utilisateurs
+    
+    Returns:
+        list: Liste des utilisateurs
+    """
+    try:
+        query = "SELECT id, username, email, full_name, created_at FROM users ORDER BY created_at DESC;"
+        result = db.execute_query(query)
+        return [dict(row) for row in result] if result else []
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la récupération des utilisateurs: {e}")
+        return []
+
+# ========== EXEMPLE D'UTILISATION ==========
 if __name__ == "__main__":
     # Test de la connexion
     print("🔄 Test de connexion à Supabase...")
@@ -175,7 +372,6 @@ if __name__ == "__main__":
     
     # Lister les tables
     try:
-        # Lister les tables
         tables = db.execute_query("""
             SELECT table_name 
             FROM information_schema.tables 
