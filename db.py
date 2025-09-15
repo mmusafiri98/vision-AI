@@ -9,20 +9,28 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 
-supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)   # pour login
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # pour créer utilisateurs
+supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)   # Login
+supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # Création utilisateurs
 
 # --------------------------
-# Gestion simple des "pages"
+# Configuration page
+# --------------------------
+st.set_page_config(
+    page_title="Login / Création compte",
+    page_icon="🔑",
+    layout="centered"
+)
+
+# --------------------------
+# Gestion des pages via session_state
 # --------------------------
 if "page" not in st.session_state:
     st.session_state.page = "login"
 
 # --------------------------
-# Page Login
+# PAGE LOGIN
 # --------------------------
 if st.session_state.page == "login":
-    st.set_page_config(page_title="Login", page_icon="🔑", layout="centered")
     st.title("🔑 Connexion Utilisateur")
 
     login_email = st.text_input("Email")
@@ -47,13 +55,12 @@ if st.session_state.page == "login":
     st.markdown("---")
     if st.button("Créer un compte"):
         st.session_state.page = "register"
-        st.experimental_rerun()  # Recharge la page pour aller vers l'inscription
+        st.experimental_rerun()
 
 # --------------------------
-# Page Création compte
+# PAGE CREATION COMPTE
 # --------------------------
 elif st.session_state.page == "register":
-    st.set_page_config(page_title="Créer un compte", page_icon="📝", layout="centered")
     st.title("📝 Créer un nouveau compte")
 
     new_email = st.text_input("Email")
@@ -95,4 +102,3 @@ elif st.session_state.page == "register":
     if st.button("Retour au login"):
         st.session_state.page = "login"
         st.experimental_rerun()
-
