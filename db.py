@@ -86,7 +86,7 @@ def create_conversation(user_id, title):
             "title": title
         }
 
-        response = supabase.table("conversations").insert(data).execute()
+        response = supabase.table("conversations").insert(data).select("*").execute()
         print("DEBUG insert conversation:", response)
 
         if response.data and len(response.data) > 0:
@@ -148,7 +148,7 @@ def add_message(conversation_id, sender, content):
             "content": content
         }
 
-        response = supabase.table("messages").insert(data).execute()
+        response = supabase.table("messages").insert(data).select("*").execute()
         print("DEBUG insert message:", response)
 
         return len(response.data) > 0
