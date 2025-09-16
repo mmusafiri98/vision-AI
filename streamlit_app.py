@@ -4,7 +4,7 @@ from PIL import Image
 import torch
 from gradio_client import Client
 import time
-import db  # notre fichier db.py
+
 
 # === CONFIG ===
 st.set_page_config(page_title="Vision AI Chat", layout="wide")
