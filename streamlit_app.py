@@ -5,7 +5,7 @@ import torch
 from gradio_client import Client
 import uuid
 import time
-import db # notre fichier db.py
+import db  # notre fichier db.py
 
 # === CONFIG ===
 st.set_page_config(page_title="Vision AI Chat", layout="wide")
@@ -63,8 +63,7 @@ if st.session_state.user is None:
             user = db.verify_user(email, password)
             if user:
                 st.session_state.user = user
-                # CORRECTION: user.email
-                st.success(f"Bienvenue {user.email} !")
+                st.success(f"Bienvenue {user['email']} !")
                 st.rerun()
             else:
                 st.error("Email ou mot de passe invalide")
@@ -81,8 +80,7 @@ if st.session_state.user is None:
                 st.error(f"Erreur: {e}")
     st.stop()
 else:
-    # CORRECTION: st.session_state.user.email
-    st.sidebar.success(f"Connecté en tant que {st.session_state.user.email}")
+    st.sidebar.success(f"Connecté en tant que {st.session_state.user['email']}")
     if st.sidebar.button("Se déconnecter"):
         st.session_state.user = None
         st.session_state.conversation = None
@@ -91,11 +89,11 @@ else:
 # === SIDEBAR GESTION DES CHATS ===
 st.sidebar.title("Vos discussions")
 if st.sidebar.button("➕ Nouveau chat"):
-    conv = db.create_conversation(st.session_state.user.id, "Nouvelle discussion")
+    conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
     st.session_state.conversation = conv
     st.rerun()
 
-convs = db.get_conversations(st.session_state.user.id)
+convs = db.get_conversations(st.session_state.user["id"])
 if convs:
     titles = [f"{c['title']} ({c['created_at'].strftime('%d/%m %H:%M')})" for c in convs]
     selected = st.sidebar.selectbox("Sélectionnez une discussion :", titles)
