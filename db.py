@@ -1,267 +1,250 @@
-import streamlit as st
-from supabase import create_client
 import os
+from supabase import create_client
+from datetime import datetime
 
-# --------------------------
 # Configuration Supabase
-# --------------------------
-@st.cache_resource
-def init_supabase():
+def get_supabase_client():
+    """Initialise et retourne le client Supabase"""
     try:
-        supabase_url = os.environ["SUPABASE_URL"]
-        supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
-        supabase_service_key = os.environ["SUPABASE_SERVICE_KEY"]
-
-        client = create_client(supabase_url, supabase_anon_key)
-        admin = create_client(supabase_url, supabase_service_key)
-        return client, admin
-    except KeyError as e:
-        st.error(f"Erreur de configuration: la variable d'environnement {e} est manquante.")
-        st.stop()
-
-client, admin = init_supabase()
-
-# --------------------------
-# Configuration page
-# --------------------------
-st.set_page_config(
-    page_title="Connexion",
-    page_icon="🟠",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
-
-# CSS amélioré et simplifié
-st.markdown("""
-<style>
-    /* Cache le sidebar et header */
-    .css-1d391kg, .css-1rs6os, .css-17ziqus, [data-testid="stSidebar"], .css-1lcbmhc {display: none}
-    header[data-testid="stHeader"] {display: none}
-    
-    /* Background */
-    .stApp {
-        background: white !important;
-        min-height: 100vh;
-    }
-    
-    /* Container principal */
-    .main > div {
-        background: white;
-        padding: 2.5rem;
-        border-radius: 20px;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-        max-width: 400px;
-        margin: 2rem auto;
-    }
-    
-    /* Inputs */
-    .stTextInput > div > div > input {
-        border: 1px solid #e0e0e0 !important;
-        border-radius: 8px !important;
-        padding: 14px 16px !important;
-        font-size: 14px !important;
-        background: #fafafa !important;
-        margin-bottom: 8px !important;
-    }
-    
-    .stTextInput > div > div > input:focus {
-        border-color: #007bff !important;
-        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1) !important;
-        background: white !important;
-    }
-    
-    /* Cache les labels */
-    .stTextInput > label {
-        display: none !important;
-    }
-    
-    /* Boutons */
-    .stButton > button {
-        border: none !important;
-        border-radius: 8px !important;
-        padding: 12px 24px !important;
-        color: white !important;
-        font-weight: 600 !important;
-        font-size: 16px !important;
-        width: 100% !important;
-        transition: all 0.3s ease !important;
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-1px) !important;
-        box-shadow: 0 8px 16px rgba(40, 167, 69, 0.3) !important;
-    }
-    
-    /* Tous les boutons sont maintenant verts */
-    .create-account-btn button,
-    .login-btn button {
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
-    }
-    
-    .create-account-btn button:hover,
-    .login-btn button:hover {
-        transform: translateY(-1px) !important;
-        box-shadow: 0 8px 16px rgba(40, 167, 69, 0.3) !important;
-    }
-    
-    /* Bouton secondaire */
-    .secondary-btn button {
-        background: transparent !important;
-        border: 2px solid #666 !important;
-        color: #666 !important;
-    }
-    
-    /* Titre */
-    .page-title {
-        color: #333;
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin-bottom: 2rem;
-        text-align: left;
-    }
-    
-    /* Messages */
-    .stSuccess, .stError, .stWarning {
-        border-radius: 8px !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --------------------------
-# Fonctions utilitaires
-# --------------------------
-def verify_user(email, password):
-    try:
-        response = client.auth.sign_in_with_password({"email": email, "password": password})
-        return response.user
+        supabase_url = os.environ.get("SUPABASE_URL")
+        supabase_anon_key = os.environ.get("SUPABASE_ANON_KEY")
+        supabase_service_key = os.environ.get("SUPABASE_SERVICE_KEY")
+        
+        if not supabase_url or not supabase_service_key:
+            raise Exception("Variables d'environnement Supabase manquantes")
+            
+        # Utiliser la clé service pour avoir tous les droits
+        client = create_client(supabase_url, supabase_service_key)
+        return client
     except Exception as e:
-        msg = str(e)
-        if "Email not confirmed" in msg:
-            st.error("❌ Email non confirmé.")
-        elif "Invalid login credentials" in msg:
-            st.error("❌ Email ou mot de passe incorrect.")
-        else:
-            st.error(f"❌ Erreur connexion: {msg}")
+        print(f"Erreur connexion Supabase: {e}")
+        return None
+
+# Instance globale du client
+supabase = get_supabase_client()
+
+# ===== FONCTIONS UTILISATEUR =====
+
+def verify_user(email, password):
+    """
+    Vérifie les identifiants utilisateur
+    Retourne: dict avec {id, email, name} ou None si échec
+    """
+    try:
+        if not supabase:
+            return None
+            
+        # Authentification avec Supabase
+        response = supabase.auth.sign_in_with_password({
+            "email": email, 
+            "password": password
+        })
+        
+        if response.user:
+            user_data = {
+                'id': response.user.id,
+                'email': response.user.email,
+                'name': response.user.user_metadata.get('name', email.split('@')[0])
+            }
+            return user_data
+        return None
+        
+    except Exception as e:
+        print(f"Erreur verify_user: {e}")
         return None
 
 def create_user(email, password, name=None):
+    """
+    Crée un nouvel utilisateur
+    Retourne: True si succès, False sinon
+    """
     try:
-        response = admin.auth.admin.create_user({
+        if not supabase:
+            return False
+            
+        response = supabase.auth.admin.create_user({
             "email": email,
             "password": password,
             "email_confirm": True,
-            "user_metadata": {"name": name or "", "full_name": name or ""}
+            "user_metadata": {"name": name or email.split('@')[0]}
         })
-        if response.user:
-            return response.user
-        st.error("❌ Aucun utilisateur créé")
-        return None
+        
+        return response.user is not None
+        
     except Exception as e:
-        msg = str(e)
-        if "already registered" in msg.lower():
-            st.error("❌ Cette adresse email est déjà utilisée.")
-        else:
-            st.error(f"❌ Erreur création compte: {msg}")
+        print(f"Erreur create_user: {e}")
+        return False
+
+# ===== FONCTIONS CONVERSATIONS =====
+
+def create_conversation(user_id, title):
+    """
+    Crée une nouvelle conversation
+    Retourne: dict avec {id, title, created_at, user_id} ou None
+    """
+    try:
+        if not supabase:
+            return None
+            
+        data = {
+            "user_id": user_id,
+            "title": title,
+            "created_at": datetime.now().isoformat()
+        }
+        
+        response = supabase.table('conversations').insert(data).execute()
+        
+        if response.data and len(response.data) > 0:
+            conv = response.data[0]
+            return {
+                'id': conv['id'],
+                'title': conv['title'],
+                'created_at': datetime.fromisoformat(conv['created_at']),
+                'user_id': conv['user_id']
+            }
+        return None
+        
+    except Exception as e:
+        print(f"Erreur create_conversation: {e}")
         return None
 
-# --------------------------
-# LOGIQUE PRINCIPALE
-# --------------------------
-
-# Initialiser l'état de la page
-if "show_register" not in st.session_state:
-    st.session_state.show_register = False
-
-# Vérifier si l'utilisateur est déjà connecté
-if "logged_in" in st.session_state and st.session_state.logged_in:
-    # DASHBOARD
-    st.markdown('<h1 class="page-title">🏠 Dashboard</h1>', unsafe_allow_html=True)
-    st.write(f"Bienvenue, {st.session_state.user.email}!")
-    
-    st.subheader("👤 Profil")
-    st.write(f"**Email:** {st.session_state.user.email}")
-    st.write(f"**ID:** {st.session_state.user.id}")
-    
-    metadata = getattr(st.session_state.user, "user_metadata", {})
-    if metadata and metadata.get("name"):
-        st.write(f"**Nom:** {metadata['name']}")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔄 Actualiser", use_container_width=True):
-            st.rerun()
-    with col2:
-        if st.button("🚪 Déconnexion", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-
-else:
-    # PAGE UNIQUE - LOGIN + CRÉATION DE COMPTE
-    
-    # SECTION LOGIN
-    st.markdown("""
-    <div style="text-align: center; margin-bottom: 2rem;">
-        <h1 style="color: #333; font-size: 1.8rem; font-weight: 600; margin: 0;">Login</h1>
-        <p style="color: #666; font-size: 1rem; margin: 0.5rem 0;">Bon de vous revoir !</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    with st.form("login_form"):
-        login_email = st.text_input("Email", placeholder="votre@email.com")
-        login_password = st.text_input("Password", type="password", placeholder="••••••••")
+def get_conversations(user_id):
+    """
+    Récupère toutes les conversations d'un utilisateur
+    Retourne: liste de conversations ou []
+    """
+    try:
+        if not supabase:
+            return []
+            
+        response = supabase.table('conversations')\
+            .select('*')\
+            .eq('user_id', user_id)\
+            .order('created_at', desc=True)\
+            .execute()
         
-        st.markdown('<div class="login-btn">', unsafe_allow_html=True)
-        login_submitted = st.form_submit_button("Se connecter", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        if login_submitted:
-            if not login_email or not login_password:
-                st.warning("Merci d'entrer email et mot de passe.")
-            else:
-                with st.spinner("Connexion en cours..."):
-                    user = verify_user(login_email, login_password)
-                    if user:
-                        st.session_state.logged_in = True
-                        st.session_state.user = user
-                        st.success("✅ Connexion réussie!")
-                        st.rerun()
-
-    # SÉPARATEUR
-    st.markdown("""
-    <div style="text-align: center; margin: 2rem 0; position: relative;">
-        <div style="position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #e0e0e0;"></div>
-        <span style="background: white; padding: 0 1rem; color: #666; font-size: 14px;">ou</span>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # SECTION CREATE ACCOUNT
-    st.markdown('<h2 class="page-title" style="text-align: left;">Create Account</h2>', unsafe_allow_html=True)
-    
-    with st.form("register_form"):
-        reg_email = st.text_input("Email", placeholder="Email", label_visibility="collapsed", key="reg_email")
-        reg_password = st.text_input("Password", type="password", placeholder="Password", label_visibility="collapsed", key="reg_password")
-        reg_name = st.text_input("Full Name", placeholder="Full Name", label_visibility="collapsed", key="reg_name")
+        conversations = []
+        for conv in response.data:
+            conversations.append({
+                'id': conv['id'],
+                'title': conv['title'],
+                'created_at': datetime.fromisoformat(conv['created_at']),
+                'user_id': conv['user_id']
+            })
         
-        st.markdown('<div class="create-account-btn">', unsafe_allow_html=True)
-        register_submitted = st.form_submit_button("Create Account", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        return conversations
+        
+    except Exception as e:
+        print(f"Erreur get_conversations: {e}")
+        return []
 
-        if register_submitted:
-            if not reg_email or not reg_password:
-                st.warning("Email et mot de passe obligatoires.")
-            elif len(reg_password) < 6:
-                st.warning("Le mot de passe doit contenir au moins 6 caractères.")
-            else:
-                with st.spinner("Création du compte en cours..."):
-                    user = create_user(reg_email, reg_password, reg_name)
-                    if user:
-                        st.success(f"✅ Compte créé pour {user.email}!")
-                        st.balloons()
-                        st.info("Vous pouvez maintenant vous connecter avec vos identifiants ci-dessus.")
-                        # Optionnel : connecter automatiquement l'utilisateur
-                        # st.session_state.logged_in = True
-                        # st.session_state.user = user
-                        # st.rerun()
+# ===== FONCTIONS MESSAGES =====
+
+def add_message(conversation_id, sender, content):
+    """
+    Ajoute un message à une conversation
+    sender: 'user' ou 'assistant'
+    Retourne: True si succès, False sinon
+    """
+    try:
+        if not supabase:
+            return False
+            
+        data = {
+            "conversation_id": conversation_id,
+            "sender": sender,
+            "content": content,
+            "created_at": datetime.now().isoformat()
+        }
+        
+        response = supabase.table('messages').insert(data).execute()
+        return len(response.data) > 0
+        
+    except Exception as e:
+        print(f"Erreur add_message: {e}")
+        return False
+
+def get_messages(conversation_id):
+    """
+    Récupère tous les messages d'une conversation
+    Retourne: liste de messages [{sender, content, created_at}] ou []
+    """
+    try:
+        if not supabase:
+            return []
+            
+        response = supabase.table('messages')\
+            .select('*')\
+            .eq('conversation_id', conversation_id)\
+            .order('created_at', desc=False)\
+            .execute()
+        
+        messages = []
+        for msg in response.data:
+            messages.append({
+                'sender': msg['sender'],
+                'content': msg['content'],
+                'created_at': datetime.fromisoformat(msg['created_at'])
+            })
+        
+        return messages
+        
+    except Exception as e:
+        print(f"Erreur get_messages: {e}")
+        return []
+
+# ===== FONCTIONS DE TEST =====
+
+def test_connection():
+    """Test la connexion à Supabase"""
+    try:
+        if not supabase:
+            return False, "Client Supabase non initialisé"
+            
+        # Test simple avec une requête
+        response = supabase.table('conversations').select('id').limit(1).execute()
+        return True, "Connexion OK"
+        
+    except Exception as e:
+        return False, f"Erreur connexion: {e}"
+
+# ===== INITIALISATION DES TABLES (optionnel) =====
+
+def init_tables():
+    """
+    Crée les tables si elles n'existent pas
+    Note: Normalement fait dans l'interface Supabase
+    """
+    print("⚠️ Créez ces tables dans votre dashboard Supabase :")
+    print("""
+    -- Table conversations
+    CREATE TABLE conversations (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    -- Table messages  
+    CREATE TABLE messages (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER REFERENCES conversations(id),
+        sender TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    """)
+
+if __name__ == "__main__":
+    # Test du module
+    print("🧪 Test du module db.py...")
+    
+    success, message = test_connection()
+    print(f"Connexion Supabase: {'✅' if success else '❌'} {message}")
+    
+    if not success:
+        print("\n📋 Vérifiez vos variables d'environnement :")
+        print("- SUPABASE_URL")
+        print("- SUPABASE_SERVICE_KEY") 
+        
+        init_tables()
