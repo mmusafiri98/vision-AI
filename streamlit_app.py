@@ -5,6 +5,14 @@ import torch
 from gradio_client import Client
 import time
 
+# Tentative d'import du module DB
+try:
+    import db
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
+    st.error("❌ Module db.py introuvable - Mode sans base de données activé")
+
 # === CONFIG ===
 st.set_page_config(page_title="Vision AI Chat", layout="wide")
 
@@ -20,40 +28,191 @@ Always answer naturally as Vision AI.
 # === BLIP MODEL ===
 @st.cache_resource
 def load_blip():
-    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-    return processor, model
+    try:
+        processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+        model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+        return processor, model
+    except Exception as e:
+        st.error(f"Erreur chargement BLIP: {e}")
+        return None, None
 
 def generate_caption(image, processor, model):
-    inputs = processor(image, return_tensors="pt")
-    if torch.cuda.is_available():
-        inputs = inputs.to("cuda")
-        model = model.to("cuda")
-    with torch.no_grad():
-        out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
-    return processor.decode(out[0], skip_special_tokens=True)
+    if processor is None or model is None:
+        return "Description indisponible (erreur BLIP)"
+    
+    try:
+        inputs = processor(image, return_tensors="pt")
+        if torch.cuda.is_available():
+            inputs = inputs.to("cuda")
+            model = model.to("cuda")
+        with torch.no_grad():
+            out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
+        return processor.decode(out[0], skip_special_tokens=True)
+    except Exception as e:
+        return f"Erreur génération description: {e}"
 
 # === SESSION INIT ===
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+if "user" not in st.session_state:
+    st.session_state.user = None
+if "conversation" not in st.session_state:
+    st.session_state.conversation = None
+if "messages_memory" not in st.session_state:  # Pour mode sans DB
+    st.session_state.messages_memory = []
 if "processor" not in st.session_state or "model" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
 
 # === LLaMA CLIENT ===
 if "llama_client" not in st.session_state:
     try:
-        st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
-        st.success("✅ Vision AI est connecté et prêt !")
+        with st.spinner("🔄 Connexion à Vision AI..."):
+            st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
+        st.success("✅ Vision AI connecté avec succès !")
     except Exception as e:
-        st.error(f"❌ Erreur connexion LLaMA: {e}")
+        st.error(f"❌ Erreur connexion Vision AI: {e}")
         st.session_state.llama_client = None
+
+# === FONCTION DE RÉPONSE IA ===
+def get_ai_response(query):
+    try:
+        if not st.session_state.llama_client:
+            return "❌ Vision AI n'est pas disponible actuellement."
+            
+        with st.spinner("🤖 Vision AI réfléchit..."):
+            response = st.session_state.llama_client.predict(
+                message=query,
+                max_tokens=8192,
+                temperature=0.7,
+                top_p=0.95,
+                api_name="/chat"
+            )
+        return str(response)
+    except Exception as e:
+        return f"❌ Erreur: {str(e)}"
+
+# === AUTHENTIFICATION (SI DB DISPONIBLE) ===
+if DB_AVAILABLE:
+    st.sidebar.title("🔐 Authentification")
+    
+    user = st.session_state.user
+    is_logged_in = user is not None and isinstance(user, dict) and 'email' in user
+    
+    if not is_logged_in:
+        tab1, tab2 = st.sidebar.tabs(["Connexion", "Inscription"])
+        
+        with tab1:
+            st.markdown("### Se connecter")
+            email = st.text_input("📧 Email", key="login_email")
+            password = st.text_input("🔒 Mot de passe", type="password", key="login_password")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🚪 Se connecter", type="primary"):
+                    if email and password:
+                        try:
+                            user_result = db.verify_user(email, password)
+                            if user_result and isinstance(user_result, dict) and 'email' in user_result:
+                                st.session_state.user = user_result
+                                st.success(f"✅ Bienvenue {user_result['email']} !")
+                                st.rerun()
+                            else:
+                                st.error("❌ Email ou mot de passe invalide")
+                        except Exception as e:
+                            st.error(f"❌ Erreur de connexion: {e}")
+                    else:
+                        st.error("⚠️ Veuillez remplir tous les champs")
+            
+            with col2:
+                if st.button("👤 Mode invité"):
+                    st.session_state.user = {"email": "invité", "id": "guest"}
+                    st.success("✅ Mode invité activé")
+                    st.rerun()
+        
+        with tab2:
+            st.markdown("### Créer un compte")
+            email_reg = st.text_input("📧 Email", key="reg_email")
+            name_reg = st.text_input("👤 Nom complet", key="reg_name")
+            pass_reg = st.text_input("🔒 Mot de passe", type="password", key="reg_password")
+            
+            if st.button("✨ Créer mon compte", type="primary"):
+                if email_reg and name_reg and pass_reg:
+                    try:
+                        user_result = db.create_user(email_reg, pass_reg, name_reg)
+                        if user_result:
+                            st.success("✅ Compte créé ! Vous pouvez vous connecter.")
+                        else:
+                            st.error("❌ Erreur lors de la création du compte")
+                    except Exception as e:
+                        st.error(f"❌ Erreur: {e}")
+                else:
+                    st.error("⚠️ Veuillez remplir tous les champs")
+        
+        st.stop()  # Arrêter l'exécution si pas connecté
+    
+    else:
+        # Utilisateur connecté
+        user_email = user.get('email', 'Utilisateur')
+        st.sidebar.success(f"✅ Connecté: {user_email}")
+        
+        if st.sidebar.button("🚪 Se déconnecter"):
+            st.session_state.user = None
+            st.session_state.conversation = None
+            st.rerun()
+
+# === GESTION DES CONVERSATIONS (SI DB ET CONNECTÉ) ===
+if DB_AVAILABLE and st.session_state.user and st.session_state.user.get('id') != "guest":
+    st.sidebar.title("💬 Mes Conversations")
+    
+    # Nouveau chat
+    if st.sidebar.button("➕ Nouvelle conversation"):
+        try:
+            user_id = st.session_state.user.get('id')
+            conv = db.create_conversation(user_id, "Nouvelle discussion")
+            if conv and isinstance(conv, dict) and 'id' in conv:
+                st.session_state.conversation = conv
+                st.success("✅ Nouvelle conversation créée !")
+                st.rerun()
+        except Exception as e:
+            st.error(f"❌ Erreur: {e}")
+    
+    # Lister les conversations
+    try:
+        user_id = st.session_state.user.get('id')
+        convs = db.get_conversations(user_id)
+        
+        if convs:
+            conv_options = ["Choisir une conversation..."] + [
+                f"{c['title']} - {c['created_at'].strftime('%d/%m %H:%M')}" 
+                for c in convs
+            ]
+            
+            selected = st.sidebar.selectbox("📋 Vos conversations:", conv_options)
+            
+            if selected != "Choisir une conversation...":
+                selected_index = conv_options.index(selected) - 1
+                st.session_state.conversation = convs[selected_index]
+        else:
+            st.sidebar.info("Aucune conversation. Créez-en une !")
+            # Auto-créer première conversation
+            try:
+                user_id = st.session_state.user.get('id')
+                conv = db.create_conversation(user_id, "Ma première conversation")
+                if conv:
+                    st.session_state.conversation = conv
+            except Exception as e:
+                st.sidebar.error(f"Erreur auto-création: {e}")
+                
+    except Exception as e:
+        st.sidebar.error(f"Erreur chargement conversations: {e}")
 
 # === INTERFACE PRINCIPALE ===
 st.markdown("<h1 style='text-align:center; color:#2E8B57;'>🤖 Vision AI Chat</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center; color:#666;'>Votre assistant IA pour l'analyse d'images et les conversations</p>", unsafe_allow_html=True)
 
-# === SIDEBAR POUR UPLOAD D'IMAGES ===
+if DB_AVAILABLE and st.session_state.user:
+    st.markdown(f"<p style='text-align:center; color:#666;'>Connecté en tant que: <b>{st.session_state.user.get('email', 'Utilisateur')}</b></p>", unsafe_allow_html=True)
+
+# === SIDEBAR UPLOAD D'IMAGES ===
 with st.sidebar:
+    st.markdown("---")
     st.title("📷 Analyser une image")
     uploaded_file = st.file_uploader("Choisissez une image", type=['png', 'jpg', 'jpeg'])
     
@@ -63,97 +222,103 @@ with st.sidebar:
             st.image(image, caption="Image à analyser", use_column_width=True)
             
             if st.button("🔍 Analyser cette image", type="primary"):
-                with st.spinner("🤖 Analyse en cours..."):
-                    # Génération de la description avec BLIP
-                    caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+                # Génération de la description
+                caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+                image_message = f"[IMAGE] Analysez cette image: {caption}"
                 
-                # Ajouter le message d'image
-                image_message = f"[IMAGE UPLOADÉE] Voici une image à analyser: {caption}"
-                st.session_state.messages.append({"role": "user", "content": image_message})
-                
-                # Générer la réponse IA
-                enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {image_message}\n\nAnalysez cette image en détail."
-                
-                if st.session_state.llama_client:
+                # Sauvegarder le message
+                if DB_AVAILABLE and st.session_state.conversation:
                     try:
-                        with st.spinner("🤖 Vision AI analyse votre image..."):
-                            response = st.session_state.llama_client.predict(
-                                message=enhanced_query,
-                                max_tokens=8192,
-                                temperature=0.7,
-                                top_p=0.95,
-                                api_name="/chat"
-                            )
-                        st.session_state.messages.append({"role": "assistant", "content": str(response)})
-                        st.rerun()
+                        conv_id = st.session_state.conversation.get('id')
+                        db.add_message(conv_id, "user", image_message)
                     except Exception as e:
-                        st.error(f"Erreur lors de l'analyse: {e}")
+                        st.error(f"Erreur sauvegarde: {e}")
+                else:
+                    # Mode mémoire
+                    st.session_state.messages_memory.append({"role": "user", "content": image_message})
+                
+                # Générer réponse IA
+                enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {image_message}"
+                response = get_ai_response(enhanced_query)
+                
+                # Sauvegarder la réponse
+                if DB_AVAILABLE and st.session_state.conversation:
+                    try:
+                        conv_id = st.session_state.conversation.get('id')
+                        db.add_message(conv_id, "assistant", response)
+                    except Exception as e:
+                        st.error(f"Erreur sauvegarde réponse: {e}")
+                else:
+                    st.session_state.messages_memory.append({"role": "assistant", "content": response})
+                
+                st.rerun()
         except Exception as e:
-            st.error(f"Erreur traitement image: {e}")
-    
-    # Bouton pour effacer l'historique
-    if st.button("🗑️ Effacer l'historique"):
-        st.session_state.messages = []
-        st.rerun()
+            st.error(f"❌ Erreur image: {e}")
 
 # === AFFICHAGE DES MESSAGES ===
 chat_container = st.container()
 
 with chat_container:
-    # Message de bienvenue si pas d'historique
-    if not st.session_state.messages:
-        st.chat_message("assistant").write("👋 Bonjour ! Je suis Vision AI, votre assistant pour l'analyse d'images. Vous pouvez :")
-        st.chat_message("assistant").write("📸 Uploader une image dans la barre latérale pour que je l'analyse")
-        st.chat_message("assistant").write("💬 Me poser des questions sur l'analyse d'images ou tout autre sujet")
+    messages_to_display = []
     
-    # Affichage de l'historique des messages
-    for message in st.session_state.messages:
-        if message["role"] == "user":
-            st.chat_message("user").write(message["content"])
-        else:
-            st.chat_message("assistant").write(message["content"])
+    # Récupérer les messages selon le mode
+    if DB_AVAILABLE and st.session_state.conversation:
+        try:
+            conv_id = st.session_state.conversation.get('id')
+            db_messages = db.get_messages(conv_id)
+            messages_to_display = [
+                {"role": msg["sender"], "content": msg["content"]} 
+                for msg in db_messages
+            ]
+        except Exception as e:
+            st.error(f"Erreur chargement messages: {e}")
+    else:
+        messages_to_display = st.session_state.messages_memory
+    
+    # Message de bienvenue si pas de messages
+    if not messages_to_display:
+        st.chat_message("assistant").write("👋 Bonjour ! Je suis Vision AI. Comment puis-je vous aider ?")
+    
+    # Afficher tous les messages
+    for msg in messages_to_display:
+        role = "user" if msg["role"] in ["user"] else "assistant"
+        st.chat_message(role).write(msg["content"])
 
-# === FONCTION POUR RÉPONSES STREAMÉES ===
-def get_ai_response(query):
-    try:
-        if not st.session_state.llama_client:
-            return "❌ Erreur: Vision AI n'est pas connecté. Veuillez recharger la page."
-            
-        response = st.session_state.llama_client.predict(
-            message=query,
-            max_tokens=8192,
-            temperature=0.7,
-            top_p=0.95,
-            api_name="/chat"
-        )
-        return str(response)
-    except Exception as e:
-        return f"❌ Erreur technique: {str(e)}"
-
-# === INTERFACE DE CHAT ===
-user_input = st.chat_input("💭 Tapez votre message ici...")
+# === INPUT UTILISATEUR ===
+user_input = st.chat_input("💭 Tapez votre message...")
 
 if user_input:
-    # Afficher le message utilisateur
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    st.chat_message("user").write(user_input)
+    # Sauvegarder message utilisateur
+    if DB_AVAILABLE and st.session_state.conversation:
+        try:
+            conv_id = st.session_state.conversation.get('id')
+            db.add_message(conv_id, "user", user_input)
+        except Exception as e:
+            st.error(f"Erreur sauvegarde: {e}")
+    else:
+        st.session_state.messages_memory.append({"role": "user", "content": user_input})
     
-    # Générer la réponse
-    enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_input}\n\nRépondez de manière complète et utile."
+    # Générer réponse
+    enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_input}"
+    response = get_ai_response(enhanced_query)
     
-    with st.spinner("🤖 Vision AI réfléchit..."):
-        response = get_ai_response(enhanced_query)
+    # Sauvegarder réponse
+    if DB_AVAILABLE and st.session_state.conversation:
+        try:
+            conv_id = st.session_state.conversation.get('id')
+            db.add_message(conv_id, "assistant", response)
+        except Exception as e:
+            st.error(f"Erreur sauvegarde réponse: {e}")
+    else:
+        st.session_state.messages_memory.append({"role": "assistant", "content": response})
     
-    # Afficher et sauvegarder la réponse
-    st.session_state.messages.append({"role": "assistant", "content": response})
-    st.chat_message("assistant").write(response)
     st.rerun()
 
-# === INFORMATIONS EN BAS DE PAGE ===
+# === FOOTER ===
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #888; font-size: 0.8em;'>"
-    "Vision AI Chat - Créé par Pepe Musafiri | Propulsé par LLaMA 3.1 70B et BLIP"
+    f"Vision AI Chat - Mode {'Base de données' if DB_AVAILABLE else 'Mémoire'} | Créé par Pepe Musafiri"
     "</div>", 
     unsafe_allow_html=True
 )
