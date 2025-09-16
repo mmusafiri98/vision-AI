@@ -53,16 +53,20 @@ if "llama_client" not in st.session_state:
 # === AUTHENTIFICATION ===
 st.sidebar.title("Authentification")
 
-if st.session_state.user is None:
+# Vérification robuste de l'utilisateur connecté
+user = st.session_state.user
+is_logged_in = user is not None and isinstance(user, dict) and 'email' in user
+
+if not is_logged_in:
     tab1, tab2 = st.sidebar.tabs(["Se connecter", "S'inscrire"])
     with tab1:
         email = st.text_input("Email")
         password = st.text_input("Mot de passe", type="password")
         if st.button("Connexion"):
-            user = db.verify_user(email, password)
-            if user:
-                st.session_state.user = user  # dictionnaire
-                st.success(f"Bienvenue {user['email']} !")
+            user_result = db.verify_user(email, password)
+            if user_result and isinstance(user_result, dict) and 'email' in user_result:
+                st.session_state.user = user_result  # dictionnaire
+                st.success(f"Bienvenue {user_result['email']} !")
                 st.rerun()
             else:
                 st.error("Email ou mot de passe invalide")
@@ -73,30 +77,52 @@ if st.session_state.user is None:
         pass_reg = st.text_input("Mot de passe (inscription)", type="password")
         if st.button("Créer mon compte"):
             try:
-                user = db.create_user(email_reg, pass_reg, name_reg)
-                st.success("Compte créé ! Vous pouvez maintenant vous connecter.")
+                user_result = db.create_user(email_reg, pass_reg, name_reg)
+                if user_result:
+                    st.success("Compte créé ! Vous pouvez maintenant vous connecter.")
+                else:
+                    st.error("Erreur lors de la création du compte")
             except Exception as e:
                 st.error(f"Erreur: {e}")
     st.stop()
 else:
-    st.sidebar.success(f"Connecté en tant que {st.session_state.user['email']}")
-    if st.sidebar.button("Se déconnecter"):
+    # Utilisateur connecté - vérification supplémentaire
+    try:
+        user_email = user.get('email', 'Utilisateur inconnu')
+        st.sidebar.success(f"Connecté en tant que {user_email}")
+        if st.sidebar.button("Se déconnecter"):
+            st.session_state.user = None
+            st.session_state.conversation = None
+            st.rerun()
+    except Exception as e:
+        st.sidebar.error("Erreur avec les données utilisateur")
         st.session_state.user = None
-        st.session_state.conversation = None
         st.rerun()
 
 # === SIDEBAR GESTION DES CHATS ===
 st.sidebar.title("Vos discussions")
 if st.sidebar.button("➕ Nouveau chat"):
-    conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
-    st.session_state.conversation = conv
-    st.rerun()
+    try:
+        user_id = st.session_state.user.get('id')
+        if user_id:
+            conv = db.create_conversation(user_id, "Nouvelle discussion")
+            st.session_state.conversation = conv
+            st.rerun()
+        else:
+            st.error("Erreur: ID utilisateur manquant")
+    except Exception as e:
+        st.error(f"Erreur création conversation: {e}")
 
-convs = db.get_conversations(st.session_state.user["id"])
-if convs:
-    titles = [f"{c['title']} ({c['created_at'].strftime('%d/%m %H:%M')})" for c in convs]
-    selected = st.sidebar.selectbox("Sélectionnez une discussion :", titles)
-    st.session_state.conversation = convs[titles.index(selected)]
+try:
+    user_id = st.session_state.user.get('id')
+    if user_id:
+        convs = db.get_conversations(user_id)
+        if convs:
+            titles = [f"{c['title']} ({c['created_at'].strftime('%d/%m %H:%M')})" for c in convs]
+            selected = st.sidebar.selectbox("Sélectionnez une discussion :", titles)
+            st.session_state.conversation = convs[titles.index(selected)]
+except Exception as e:
+    st.sidebar.error(f"Erreur chargement conversations: {e}")
 
 if not st.session_state.conversation:
     st.warning("👉 Créez ou sélectionnez une conversation à gauche")
@@ -107,17 +133,26 @@ st.markdown("<h1 style='text-align:center'>Vision AI Chat</h1>", unsafe_allow_ht
 chat_container = st.container()
 
 with chat_container:
-    messages = db.get_messages(st.session_state.conversation["id"])
-    for msg in messages:
-        if msg["sender"] == "user":
-            st.chat_message("user").write(msg["content"])
-        else:
-            st.chat_message("assistant").write(msg["content"])
+    try:
+        conv_id = st.session_state.conversation.get('id')
+        if conv_id:
+            messages = db.get_messages(conv_id)
+            for msg in messages:
+                if msg["sender"] == "user":
+                    st.chat_message("user").write(msg["content"])
+                else:
+                    st.chat_message("assistant").write(msg["content"])
+    except Exception as e:
+        st.error(f"Erreur chargement messages: {e}")
+    
     response_placeholder = st.empty()
 
 # === LLaMA PREDICT STREAM ===
 def llama_predict_stream(query):
     try:
+        if not st.session_state.llama_client:
+            return "Erreur: Client LLaMA non initialisé"
+            
         with st.spinner("🤖 Vision AI réfléchit..."):
             full_response = st.session_state.llama_client.predict(
                 message=query,
@@ -142,9 +177,15 @@ def llama_predict_stream(query):
 user_message = st.chat_input("Votre message (ou upload une image dans le sidebar)")
 
 if user_message:
-    db.add_message(st.session_state.conversation["id"], "user", user_message)
-    enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_message}\n\nVeuillez répondre de manière complète et détaillée."
-    response = llama_predict_stream(enhanced_query)
-    db.add_message(st.session_state.conversation["id"], "assistant", response)
-    st.rerun()
-
+    try:
+        conv_id = st.session_state.conversation.get('id')
+        if conv_id:
+            db.add_message(conv_id, "user", user_message)
+            enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_message}\n\nVeuillez répondre de manière complète et détaillée."
+            response = llama_predict_stream(enhanced_query)
+            db.add_message(conv_id, "assistant", response)
+            st.rerun()
+        else:
+            st.error("Erreur: ID de conversation manquant")
+    except Exception as e:
+        st.error(f"Erreur envoi message: {e}")
