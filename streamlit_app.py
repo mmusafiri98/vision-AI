@@ -3,7 +3,6 @@ from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import torch
 from gradio_client import Client
-import uuid
 import time
 import db  # notre fichier db.py
 
@@ -63,7 +62,7 @@ if st.session_state.user is None:
             user = db.verify_user(email, password)
             if user:
                 st.session_state.user = user
-                st.success(f"Bienvenue {user['email']} !")
+                st.success(f"Bienvenue {user.email} !")
                 st.rerun()
             else:
                 st.error("Email ou mot de passe invalide")
@@ -80,7 +79,7 @@ if st.session_state.user is None:
                 st.error(f"Erreur: {e}")
     st.stop()
 else:
-    st.sidebar.success(f"Connecté en tant que {st.session_state.user['email']}")
+    st.sidebar.success(f"Connecté en tant que {st.session_state.user.email}")
     if st.sidebar.button("Se déconnecter"):
         st.session_state.user = None
         st.session_state.conversation = None
@@ -89,13 +88,13 @@ else:
 # === SIDEBAR GESTION DES CHATS ===
 st.sidebar.title("Vos discussions")
 if st.sidebar.button("➕ Nouveau chat"):
-    conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
+    conv = db.create_conversation(st.session_state.user.id, "Nouvelle discussion")
     st.session_state.conversation = conv
     st.rerun()
 
-convs = db.get_conversations(st.session_state.user["id"])
+convs = db.get_conversations(st.session_state.user.id)
 if convs:
-    titles = [f"{c['title']} ({c['created_at'].strftime('%d/%m %H:%M')})" for c in convs]
+    titles = [f"{c.title} ({c.created_at.strftime('%d/%m %H:%M')})" for c in convs]
     selected = st.sidebar.selectbox("Sélectionnez une discussion :", titles)
     st.session_state.conversation = convs[titles.index(selected)]
 
@@ -108,12 +107,12 @@ st.markdown("<h1 style='text-align:center'>Vision AI Chat</h1>", unsafe_allow_ht
 chat_container = st.container()
 
 with chat_container:
-    messages = db.get_messages(st.session_state.conversation["id"])
+    messages = db.get_messages(st.session_state.conversation.id)
     for msg in messages:
-        if msg["sender"] == "user":
-            st.chat_message("user").write(msg["content"])
+        if msg.sender == "user":
+            st.chat_message("user").write(msg.content)
         else:
-            st.chat_message("assistant").write(msg["content"])
+            st.chat_message("assistant").write(msg.content)
     response_placeholder = st.empty()
 
 # === LLaMA PREDICT STREAM ===
@@ -143,8 +142,8 @@ def llama_predict_stream(query):
 user_message = st.chat_input("Votre message (ou upload une image dans le sidebar)")
 
 if user_message:
-    db.add_message(st.session_state.conversation["id"], "user", user_message)
+    db.add_message(st.session_state.conversation.id, "user", user_message)
     enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_message}\n\nVeuillez répondre de manière complète et détaillée."
     response = llama_predict_stream(enhanced_query)
-    db.add_message(st.session_state.conversation["id"], "assistant", response)
+    db.add_message(st.session_state.conversation.id, "assistant", response)
     st.rerun()
