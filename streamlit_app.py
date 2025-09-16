@@ -89,6 +89,17 @@ def get_ai_response(query):
     except Exception as e:
         return f"❌ Erreur: {str(e)}"
 
+def stream_response(text, placeholder):
+    """Affiche le texte avec un effet de dactylographie"""
+    full_text = ""
+    for char in text:
+        full_text += char
+        placeholder.write(full_text + "▋")  # Curseur clignotant
+        time.sleep(0.03)  # Vitesse de frappe (ajustable)
+    
+    # Affichage final sans curseur
+    placeholder.write(full_text)
+
 # === AUTHENTIFICATION (SI DB DISPONIBLE) ===
 if DB_AVAILABLE:
     st.sidebar.title("🔐 Authentification")
@@ -239,7 +250,12 @@ with st.sidebar:
                 
                 # Générer réponse IA
                 enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {image_message}"
-                response = get_ai_response(enhanced_query)
+                
+                # Créer placeholder pour l'effet dactylographie
+                with st.chat_message("assistant"):
+                    response_placeholder = st.empty()
+                    response = get_ai_response(enhanced_query)
+                    stream_response(response, response_placeholder)
                 
                 # Sauvegarder la réponse
                 if DB_AVAILABLE and st.session_state.conversation:
@@ -288,6 +304,9 @@ with chat_container:
 user_input = st.chat_input("💭 Tapez votre message...")
 
 if user_input:
+    # Afficher immédiatement le message utilisateur
+    st.chat_message("user").write(user_input)
+    
     # Sauvegarder message utilisateur
     if DB_AVAILABLE and st.session_state.conversation:
         try:
@@ -298,9 +317,14 @@ if user_input:
     else:
         st.session_state.messages_memory.append({"role": "user", "content": user_input})
     
-    # Générer réponse
+    # Générer réponse avec effet dactylographie
     enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_input}"
-    response = get_ai_response(enhanced_query)
+    
+    # Créer le message assistant avec placeholder
+    with st.chat_message("assistant"):
+        response_placeholder = st.empty()
+        response = get_ai_response(enhanced_query)
+        stream_response(response, response_placeholder)
     
     # Sauvegarder réponse
     if DB_AVAILABLE and st.session_state.conversation:
