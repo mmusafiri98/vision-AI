@@ -60,7 +60,7 @@ if "user" not in st.session_state or not isinstance(st.session_state.user, dict)
 if "conversation" not in st.session_state:
     st.session_state.conversation = None
 if "messages_memory" not in st.session_state:
-    st.session_state.messages_memory = []  # list of dicts
+    st.session_state.messages_memory = []  # list of dicts: {"sender": "...", "content": "...", "created_at": ...}
 if "processor" not in st.session_state or "model" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
 
@@ -70,7 +70,7 @@ if "processor" not in st.session_state or "model" not in st.session_state:
 if "llama_client" not in st.session_state:
     try:
         st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
-    except Exception as e:
+    except Exception:
         st.session_state.llama_client = None
         st.warning("Impossible de connecter le modèle LLaMA (gradio client).")
 
@@ -189,14 +189,15 @@ with st.sidebar:
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             message_text = f"[IMAGE] {caption}"
 
-            # Ensure conversation exists
+            # Ensure conversation exists for logged user
             conv_id = None
             if DB_AVAILABLE and st.session_state.conversation:
                 conv_id = st.session_state.conversation.get("conversation_id")
                 ok = db.add_message(conv_id, "user_api_request", message_text)
                 if not ok:
-                    st.warning("Impossible d'ajouter le message user en DB.")
+                    st.warning("Impossible d'ajouter le message user en DB (voir logs).")
             else:
+                # memory fallback
                 st.session_state.messages_memory.append({"sender":"user_api_request","content":message_text,"created_at":None})
 
             prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_text}"
@@ -205,10 +206,11 @@ with st.sidebar:
                 resp = get_ai_response(prompt)
                 stream_response(resp, ph)
 
+            # Save assistant response
             if DB_AVAILABLE and conv_id:
                 ok = db.add_message(conv_id, "assistant", resp)
                 if not ok:
-                    st.warning("Impossible d'ajouter la réponse assistant en DB.")
+                    st.warning("Impossible d'ajouter la réponse assistant en DB (voir logs).")
             else:
                 st.session_state.messages_memory.append({"sender":"assistant","content":resp,"created_at":None})
 
@@ -219,7 +221,7 @@ st.markdown("<h1 style='text-align:center; color:#2E8B57;'>🤖 Vision AI Chat</
 if st.session_state.user:
     st.markdown(f"<p style='text-align:center; color:#666;'>Connecté en tant que: <b>{st.session_state.user.get('email','Utilisateur')}</b></p>", unsafe_allow_html=True)
 
-# Build display messages
+# Build display messages normalized (sender/content/created_at)
 display_msgs = []
 if DB_AVAILABLE and st.session_state.conversation:
     conv_id = st.session_state.conversation.get("conversation_id")
@@ -242,19 +244,27 @@ for m in display_msgs:
     role = "user" if m["sender"] in ["user","user_api_request"] else "assistant"
     st.chat_message(role).write(m["content"])
 
-# Export CSV
-if DB_AVAILABLE and st.session_state.conversation:
-    if st.button("💾 Exporter la conversation en CSV"):
-        df = pd.DataFrame(display_msgs)
-        conv_id = st.session_state.conversation.get("conversation_id")
-        csv_buffer = io.StringIO()
-        df.to_csv(csv_buffer, index=False)
-        st.download_button(
-            label="Télécharger le CSV",
-            data=csv_buffer.getvalue(),
-            file_name=f"conversation_{conv_id}.csv",
-            mime="text/csv"
-        )
+# -------------------------
+# Export CSV (nouveau bloc clair en bas)
+# -------------------------
+if display_msgs:  # seulement si conversation existe
+    st.markdown("---")
+    st.subheader("📂 Exporter la conversation")
+
+    df = pd.DataFrame(display_msgs)
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+
+    st.download_button(
+        label="💾 Télécharger la conversation (CSV)",
+        data=csv_buffer.getvalue(),
+        file_name=(
+            f"conversation_{st.session_state.conversation.get('conversation_id')}.csv"
+            if DB_AVAILABLE and st.session_state.conversation
+            else "conversation_invite.csv"
+        ),
+        mime="text/csv"
+    )
 
 # -------------------------
 # Input user
@@ -268,7 +278,7 @@ if user_input:
         conv_id = st.session_state.conversation.get("conversation_id")
         ok = db.add_message(conv_id, "user", user_input)
         if not ok:
-            st.warning("Impossible d'ajouter le message user en DB.")
+            st.warning("Impossible d'ajouter le message user en DB (voir logs).")
     else:
         st.session_state.messages_memory.append({"sender":"user","content":user_input,"created_at":None})
 
@@ -281,7 +291,7 @@ if user_input:
     if DB_AVAILABLE and conv_id:
         ok = db.add_message(conv_id, "assistant", resp)
         if not ok:
-            st.warning("Impossible d'ajouter la réponse assistant en DB.")
+            st.warning("Impossible d'ajouter la réponse assistant en DB (voir logs).")
     else:
         st.session_state.messages_memory.append({"sender":"assistant","content":resp,"created_at":None})
 
