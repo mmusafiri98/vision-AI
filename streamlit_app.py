@@ -131,7 +131,7 @@ else:
     st.sidebar.success(f"✅ Connecté: {st.session_state.user.get('email')}")
 
 # -------------------------
-# Conversations sidebar
+# Conversations
 # -------------------------
 if st.session_state.user["id"] != "guest":
     st.sidebar.title("💬 Mes Conversations")
@@ -159,7 +159,12 @@ if st.session_state.user["id"] != "guest":
 st.markdown("<h1 style='text-align:center; color:#2E8B57;'>🤖 Vision AI Chat</h1>", unsafe_allow_html=True)
 st.markdown(f"<p style='text-align:center; color:#666;'>Connecté en tant que: <b>{st.session_state.user.get('email')}</b></p>", unsafe_allow_html=True)
 
-# --- Afficher la conversation d'abord ---
+col_form, col_upload = st.columns([2,1])
+with col_form:
+    user_input = st.text_input("💭 Tapez votre message...")
+with col_upload:
+    uploaded_file = st.file_uploader("📷 Image", type=["png","jpg","jpeg"])
+
 display_msgs = []
 if st.session_state.conversation:
     conv_id = st.session_state.conversation.get("conversation_id")
@@ -172,13 +177,6 @@ else:
 for m in display_msgs:
     role = "user" if m["sender"] in ["user","user_api_request"] else "assistant"
     st.chat_message(role).write(m["content"])
-
-# --- Formulaire et upload en dessous ---
-col_form, col_upload = st.columns([2,1])
-with col_form:
-    user_input = st.text_input("💭 Tapez votre message...")
-with col_upload:
-    uploaded_file = st.file_uploader("📷 Image", type=["png","jpg","jpeg"])
 
 # -------------------------
 # Envoyer message ou image
@@ -237,6 +235,7 @@ if display_msgs:
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer, index=False)
 
+    # ✅ Correction: vérifier si conversation existe
     conv_id_for_file = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else "invite"
     st.download_button(
         "💾 Télécharger la conversation (CSV)",
@@ -244,3 +243,4 @@ if display_msgs:
         file_name=f"conversation_{conv_id_for_file}.csv",
         mime="text/csv"
     )
+
