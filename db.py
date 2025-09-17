@@ -20,35 +20,93 @@ def get_supabase_client():
 supabase = get_supabase_client()
 
 # =======================
+# UTILISATEURS
+# =======================
+def verify_user(email, password):
+    """
+    Vérifie l'utilisateur via Supabase Auth ou fallback table users
+    """
+    if not supabase:
+        return None
+    try:
+        resp = supabase.auth.sign_in_with_password(
+            {"email": email, "password": password}
+        )
+        if hasattr(resp, "user") and resp.user:
+            return {
+                "id": resp.user.id,
+                "email": resp.user.email,
+                "name": resp.user.user_metadata.get("name", email.split("@")[0])
+            }
+        # fallback table "users"
+        data = supabase.table("users").select("*").eq("email", email).execute()
+        if data.data and len(data.data) > 0:
+            user = data.data[0]
+            if user.get("password") == password:
+                return {
+                    "id": user["id"],
+                    "email": user["email"],
+                    "name": user.get("name", email.split("@")[0])
+                }
+        return None
+    except Exception as e:
+        print(f"❌ verify_user error: {e}")
+        return None
+
+def create_user(email, password, name=None):
+    """
+    Crée un utilisateur via Supabase Auth ou fallback table "users"
+    """
+    if not supabase:
+        return False
+    try:
+        resp = supabase.auth.admin.create_user({
+            "email": email,
+            "password": password,
+            "email_confirm": True,
+            "user_metadata": {"name": name or email.split("@")[0]}
+        })
+        return hasattr(resp, "user") and resp.user
+    except Exception as e:
+        print(f"❌ create_user auth error, fallback insert: {e}")
+        user_data = {
+            "id": str(uuid.uuid4()),
+            "email": email,
+            "password": password,
+            "name": name or email.split("@")[0],
+            "created_at": datetime.now().isoformat()
+        }
+        resp = supabase.table("users").insert(user_data).execute()
+        return bool(resp.data)
+
+# =======================
 # CONVERSATIONS
 # =======================
 def create_conversation(user_id=None, description=None):
     """
-    Génère un nouvel ID de conversation (UUID).
-    Pas de table dédiée, on utilise directement messager.
+    Génère un nouvel ID conversation (UUID). 
+    Pas de table conversation : on utilise messager.
     """
     conv_id = f"conv_{uuid.uuid4()}"
     return {
         "conversation_id": conv_id,
         "description": description or "Nouvelle discussion",
-        "created_at": datetime.now().isoformat()
+        "created_at": datetime.now().isoformat(),
+        "user_id": user_id
     }
 
 def get_conversations(user_id=None):
     """
-    Retourne la liste des conversations distinctes depuis messager.
+    Retourne la liste des conversations distinctes (depuis messager)
     """
     if not supabase:
         return []
     try:
-        resp = (
-            supabase.table("messager")
-            .select("conversation_id, created_at")
-            .order("created_at", desc=True)
-            .execute()
-        )
+        query = supabase.table("messager").select("conversation_id, created_at")
+        if user_id:
+            query = query.eq("sender", user_id)
+        resp = query.order("created_at", desc=True).execute()
         data = resp.data or []
-        # Grouper par conversation_id
         convs = {}
         for row in data:
             cid = row["conversation_id"]
@@ -68,7 +126,7 @@ def get_conversations(user_id=None):
 # =======================
 def add_message(conversation_id, sender, content, message_type="text", status="sent", created_at=None):
     """
-    Ajoute un message (user ou assistant) dans la table messager
+    Ajoute un message dans la table messager
     """
     if not supabase:
         return False
@@ -98,7 +156,7 @@ def get_messages(conversation_id):
             supabase.table("messager")
             .select("*")
             .eq("conversation_id", conversation_id)
-            .order("created_at", desc=False)
+            .order("created_at")
             .execute()
         )
         return resp.data or []
@@ -107,25 +165,16 @@ def get_messages(conversation_id):
         return []
 
 # =======================
-# TEST LOCAL (Exemple)
+# TEST
 # =======================
 if __name__ == "__main__":
-    # Création conversation
-    conv = create_conversation()
-    conv_id = conv["conversation_id"]
+    conv = create_conversation(user_id="test_user")
+    cid = conv["conversation_id"]
 
-    # Ajout messages exemple
-    add_message(conv_id, "user_api_request", "[IMAGE] the reception area in the lobby of the hotel", "image", created_at="2025-09-17 12:00:00")
-    add_message(conv_id, "assistant", "Voici la description détaillée du hall d’hôtel ...", "text", created_at="2025-09-17 12:01:00")
+    add_message(cid, "user", "Bonjour 👋", "text", created_at="2025-09-17 10:00:00")
+    add_message(cid, "assistant", "Salut ! Je suis Vision AI 😃", "text", created_at="2025-09-17 10:01:00")
 
-    # Autre conversation
-    conv2 = create_conversation()
-    conv2_id = conv2["conversation_id"]
-    add_message(conv2_id, "user", "come stai", "text", created_at="2025-09-17 12:05:00")
-    add_message(conv2_id, "assistant", "Ciao! Sono Vision AI, sto funzionando ottimamente!", "text", created_at="2025-09-17 12:06:00")
+    print(get_messages(cid))
+    print(get_conversations("test_user"))
 
-    # Vérif
-    print("Messages conv1:", get_messages(conv_id))
-    print("Messages conv2:", get_messages(conv2_id))
-    print("Toutes conversations:", get_conversations())
 
