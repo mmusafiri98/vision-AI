@@ -121,8 +121,8 @@ def get_conversations(user_id):
         conversations = []
         for conv in response.data:
             conversations.append({
-                "id": conv["id"],
-                "title": conv["title"],
+                "conversation_id": conv["conversation_id"],
+                "description": conv["descritpion"],
                 "created_at": datetime.fromisoformat(conv["created_at"]),
                 "user_id": conv["user_id"]
             })
