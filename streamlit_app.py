@@ -8,7 +8,7 @@ from PIL import Image
 import torch
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from gradio_client import Client
-import db  # module db.py que tu as déjà
+import db  # ton module db.py existant
 
 # -------------------------
 # CONFIGURATION PAGE
@@ -91,6 +91,7 @@ st.sidebar.title("🔐 Authentification")
 user = st.session_state.user
 logged_in = user.get("id") != "guest"
 
+login_action = None  # stocker action de login/guest/signup
 if not logged_in:
     tab1, tab2 = st.sidebar.tabs(["Connexion", "Inscription"])
     with tab1:
@@ -99,32 +100,40 @@ if not logged_in:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🚪 Se connecter"):
-                if email and password:
-                    user_result = db.verify_user(email, password)
-                    if user_result:
-                        st.session_state.user = user_result
-                        st.session_state.conversation = None
-                        st.session_state.messages_memory = []
-                        st.experimental_rerun()
-                    else:
-                        st.error("Email ou mot de passe invalide")
-                else:
-                    st.error("Merci de remplir tous les champs")
+                login_action = "login"
         with col2:
             if st.button("👤 Mode invité"):
-                st.session_state.user = {"id": "guest", "email": "Invité"}
-                st.experimental_rerun()
+                login_action = "guest"
     with tab2:
         email_reg = st.text_input("📧 Email", key="reg_email")
         name_reg = st.text_input("👤 Nom complet", key="reg_name")
         pass_reg = st.text_input("🔒 Mot de passe", type="password", key="reg_password")
         if st.button("✨ Créer mon compte"):
-            if email_reg and name_reg and pass_reg:
-                ok = db.create_user(email_reg, pass_reg, name_reg)
-                if ok:
-                    st.success("Compte créé, connecte-toi.")
-                else:
-                    st.error("Erreur création compte")
+            login_action = "signup"
+
+    # TRAITEMENT APRES INPUT
+    if login_action == "login":
+        if email and password:
+            user_result = db.verify_user(email, password)
+            if user_result:
+                st.session_state.user = user_result
+                st.session_state.conversation = None
+                st.session_state.messages_memory = []
+                st.experimental_rerun()
+            else:
+                st.error("Email ou mot de passe invalide")
+        else:
+            st.error("Merci de remplir tous les champs")
+    elif login_action == "guest":
+        st.session_state.user = {"id": "guest", "email": "Invité"}
+        st.experimental_rerun()
+    elif login_action == "signup":
+        if email_reg and name_reg and pass_reg:
+            ok = db.create_user(email_reg, pass_reg, name_reg)
+            if ok:
+                st.success("Compte créé, connecte-toi.")
+            else:
+                st.error("Erreur création compte")
     st.stop()
 else:
     st.sidebar.success(f"✅ Connecté: {st.session_state.user.get('email')}")
