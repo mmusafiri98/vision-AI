@@ -4,8 +4,8 @@ import io
 import db
 
 st.set_page_config(page_title="Vision AI Admin", layout="wide")
-ADMIN_EMAIL = "admin@visionai.com"
-ADMIN_PASSWORD = "Admin1234!"
+ADMIN_EMAIL = "admin@45.com"
+ADMIN_PASSWORD = "Admin1236!"
 
 if "admin_logged" not in st.session_state:
     st.session_state.admin_logged = False
