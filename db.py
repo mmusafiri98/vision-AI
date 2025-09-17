@@ -20,12 +20,26 @@ def get_supabase_client():
 supabase = get_supabase_client()
 
 # =======================
+# COMPTE ADMIN PRÉDÉFINI
+# =======================
+ADMIN_EMAIL = "admin@visionai.com"
+ADMIN_PASSWORD = "Admin1234!"  # à changer si besoin
+
+# =======================
 # UTILISATEURS
 # =======================
 def verify_user(email, password):
     """
-    Vérifie l'utilisateur via Supabase Auth ou fallback table users
+    Vérifie si l'utilisateur est admin ou user
     """
+    if email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
+        return {
+            "id": "admin",
+            "email": ADMIN_EMAIL,
+            "name": "Administrateur",
+            "role": "admin"
+        }
+
     if not supabase:
         return None
     try:
@@ -36,7 +50,8 @@ def verify_user(email, password):
             return {
                 "id": resp.user.id,
                 "email": resp.user.email,
-                "name": resp.user.user_metadata.get("name", email.split("@")[0])
+                "name": resp.user.user_metadata.get("name", email.split("@")[0]),
+                "role": "user"
             }
         # fallback table "users"
         data = supabase.table("users").select("*").eq("email", email).execute()
@@ -46,7 +61,8 @@ def verify_user(email, password):
                 return {
                     "id": user["id"],
                     "email": user["email"],
-                    "name": user.get("name", email.split("@")[0])
+                    "name": user.get("name", email.split("@")[0]),
+                    "role": "user"
                 }
         return None
     except Exception as e:
@@ -83,10 +99,6 @@ def create_user(email, password, name=None):
 # CONVERSATIONS
 # =======================
 def create_conversation(user_id=None, description=None):
-    """
-    Génère un nouvel ID conversation (UUID). 
-    Pas de table conversation : on utilise messager.
-    """
     conv_id = f"conv_{uuid.uuid4()}"
     return {
         "conversation_id": conv_id,
@@ -96,14 +108,11 @@ def create_conversation(user_id=None, description=None):
     }
 
 def get_conversations(user_id=None):
-    """
-    Retourne la liste des conversations distinctes (depuis messager)
-    """
     if not supabase:
         return []
     try:
         query = supabase.table("messager").select("conversation_id, created_at")
-        if user_id:
+        if user_id and user_id != "admin":
             query = query.eq("sender", user_id)
         resp = query.order("created_at", desc=True).execute()
         data = resp.data or []
@@ -125,9 +134,6 @@ def get_conversations(user_id=None):
 # MESSAGES
 # =======================
 def add_message(conversation_id, sender, content, message_type="text", status="sent", created_at=None):
-    """
-    Ajoute un message dans la table messager
-    """
     if not supabase:
         return False
     try:
@@ -146,9 +152,6 @@ def add_message(conversation_id, sender, content, message_type="text", status="s
         return False
 
 def get_messages(conversation_id):
-    """
-    Récupère tous les messages d'une conversation donnée
-    """
     if not supabase:
         return []
     try:
@@ -163,18 +166,4 @@ def get_messages(conversation_id):
     except Exception as e:
         print(f"❌ get_messages error: {e}")
         return []
-
-# =======================
-# TEST
-# =======================
-if __name__ == "__main__":
-    conv = create_conversation(user_id="test_user")
-    cid = conv["conversation_id"]
-
-    add_message(cid, "user", "Bonjour 👋", "text", created_at="2025-09-17 10:00:00")
-    add_message(cid, "assistant", "Salut ! Je suis Vision AI 😃", "text", created_at="2025-09-17 10:01:00")
-
-    print(get_messages(cid))
-    print(get_conversations("test_user"))
-
 
