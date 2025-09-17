@@ -1,6 +1,7 @@
 import os
 from supabase import create_client
 from datetime import datetime
+from dateutil import parser
 
 # ===================================================
 # CONFIGURATION SUPABASE
@@ -92,9 +93,9 @@ def create_conversation(user_id, description):
         if response.data and len(response.data) > 0:
             conv = response.data[0]
             return {
-                "conversation_d": conv["conversation_id"],
+                "conversation_id": conv["conversation_id"],  # ✅ correction
                 "description": conv["description"],
-                "created_at": datetime.fromisoformat(conv["created_at"]),
+                "created_at": parser.isoparse(conv["created_at"]),  # ✅ plus robuste
                 "user_id": conv["user_id"]
             }
         return None
@@ -122,8 +123,8 @@ def get_conversations(user_id):
         for conv in response.data:
             conversations.append({
                 "conversation_id": conv["conversation_id"],
-                "description": conv["descritpion"],
-                "created_at": datetime.fromisoformat(conv["created_at"]),
+                "description": conv["description"],  # ✅ correction orthographe
+                "created_at": parser.isoparse(conv["created_at"]),
                 "user_id": conv["user_id"]
             })
         return conversations
@@ -177,7 +178,7 @@ def get_messages(conversation_id):
             messages.append({
                 "sender": msg["sender"],
                 "content": msg["content"],
-                "created_at": datetime.fromisoformat(msg["created_at"])
+                "created_at": parser.isoparse(msg["created_at"])
             })
         return messages
 
@@ -200,7 +201,7 @@ if __name__ == "__main__":
         if conv:
             print("✅ Conversation créée:", conv)
 
-            msg_ok = add_message(conv["id"], "user", "Bonjour, ceci est un test")
+            msg_ok = add_message(conv["conversation_id"], "user", "Bonjour, ceci est un test")  # ✅ clé corrigée
             if msg_ok:
                 print("✅ Message ajouté avec succès")
 
