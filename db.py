@@ -75,14 +75,14 @@ def create_conversation(user_id, description):
     if not supabase:
         return None
     try:
-        data = {"user_id": user_id, "description": description}
+        data = {"user_id": user_id,}
         resp = supabase.table("conversations").insert(data).execute()
         if resp.data and len(resp.data) > 0:
             conv = resp.data[0]
             conv.setdefault("conversation_id", str(uuid.uuid4()))
             return {
                 "conversation_id": conv["conversation_id"],
-                "description": conv["description"],
+              
                 "created_at": parser.isoparse(conv.get("created_at", datetime.now().isoformat())),
                 "user_id": conv["user_id"]
             }
@@ -100,7 +100,7 @@ def get_conversations(user_id):
         for c in resp.data:
             conversations.append({
                 "conversation_id": c.get("conversation_id", str(uuid.uuid4())),
-                "description": c["description"],
+          
                 "created_at": parser.isoparse(c.get("created_at", datetime.now().isoformat())),
                 "user_id": c["user_id"]
             })
