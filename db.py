@@ -75,7 +75,7 @@ def create_user(email, password, name=None):
 # CONVERSATIONS
 # ===================================================
 
-def create_conversation(user_id, title):
+def create_conversation(user_id, description):
     """Crée une nouvelle conversation"""
     try:
         if not supabase:
@@ -83,7 +83,7 @@ def create_conversation(user_id, title):
 
         data = {
             "user_id": user_id,
-            "title": title
+            "description": description
         }
 
         response = supabase.table("conversations").insert(data).select("*").execute()
@@ -92,8 +92,8 @@ def create_conversation(user_id, title):
         if response.data and len(response.data) > 0:
             conv = response.data[0]
             return {
-                "id": conv["id"],
-                "title": conv["title"],
+                "conversation_d": conv["conversation_id"],
+                "description": conv["description"],
                 "created_at": datetime.fromisoformat(conv["created_at"]),
                 "user_id": conv["user_id"]
             }
@@ -204,7 +204,7 @@ if __name__ == "__main__":
             if msg_ok:
                 print("✅ Message ajouté avec succès")
 
-                msgs = get_messages(conv["id"])
+                msgs = get_messages(conv["conversation_id"])
                 print("📩 Messages récupérés:", msgs)
             else:
                 print("❌ Erreur ajout message")
