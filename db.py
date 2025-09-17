@@ -20,59 +20,27 @@ def get_supabase_client():
 supabase = get_supabase_client()
 
 # =======================
-# COMPTE ADMIN PRÉDÉFINI
-# =======================
-ADMIN_EMAIL = "admin@visionai.com"
-ADMIN_PASSWORD = "Admin1234!"  # à changer si besoin
-
-# =======================
 # UTILISATEURS
 # =======================
 def verify_user(email, password):
-    """
-    Vérifie si l'utilisateur est admin ou user
-    """
-    if email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
-        return {
-            "id": "admin",
-            "email": ADMIN_EMAIL,
-            "name": "Administrateur",
-            "role": "admin"
-        }
-
     if not supabase:
         return None
     try:
-        resp = supabase.auth.sign_in_with_password(
-            {"email": email, "password": password}
-        )
+        resp = supabase.auth.sign_in_with_password({"email": email, "password": password})
         if hasattr(resp, "user") and resp.user:
-            return {
-                "id": resp.user.id,
-                "email": resp.user.email,
-                "name": resp.user.user_metadata.get("name", email.split("@")[0]),
-                "role": "user"
-            }
-        # fallback table "users"
+            return {"id": resp.user.id, "email": resp.user.email, "name": resp.user.user_metadata.get("name", email.split("@")[0])}
+        # fallback table users
         data = supabase.table("users").select("*").eq("email", email).execute()
         if data.data and len(data.data) > 0:
             user = data.data[0]
             if user.get("password") == password:
-                return {
-                    "id": user["id"],
-                    "email": user["email"],
-                    "name": user.get("name", email.split("@")[0]),
-                    "role": "user"
-                }
+                return {"id": user["id"], "email": user["email"], "name": user.get("name", email.split("@")[0])}
         return None
     except Exception as e:
         print(f"❌ verify_user error: {e}")
         return None
 
 def create_user(email, password, name=None):
-    """
-    Crée un utilisateur via Supabase Auth ou fallback table "users"
-    """
     if not supabase:
         return False
     try:
@@ -85,66 +53,41 @@ def create_user(email, password, name=None):
         return hasattr(resp, "user") and resp.user
     except Exception as e:
         print(f"❌ create_user auth error, fallback insert: {e}")
-        user_data = {
-            "id": str(uuid.uuid4()),
-            "email": email,
-            "password": password,
-            "name": name or email.split("@")[0],
-            "created_at": datetime.now().isoformat()
-        }
+        user_data = {"id": str(uuid.uuid4()), "email": email, "password": password, "name": name or email.split("@")[0], "created_at": datetime.now().isoformat()}
         resp = supabase.table("users").insert(user_data).execute()
         return bool(resp.data)
 
 # =======================
-# CONVERSATIONS
+# CONVERSATIONS & MESSAGES
 # =======================
 def create_conversation(user_id=None, description=None):
     conv_id = f"conv_{uuid.uuid4()}"
-    return {
-        "conversation_id": conv_id,
-        "description": description or "Nouvelle discussion",
-        "created_at": datetime.now().isoformat(),
-        "user_id": user_id
-    }
+    return {"conversation_id": conv_id, "description": description or "Nouvelle discussion", "created_at": datetime.now().isoformat(), "user_id": user_id}
 
 def get_conversations(user_id=None):
     if not supabase:
         return []
     try:
-        query = supabase.table("messager").select("conversation_id, created_at")
-        if user_id and user_id != "admin":
+        query = supabase.table("messager").select("conversation_id, created_at, sender").order("created_at", desc=True)
+        if user_id:
             query = query.eq("sender", user_id)
-        resp = query.order("created_at", desc=True).execute()
+        resp = query.execute()
         data = resp.data or []
         convs = {}
         for row in data:
             cid = row["conversation_id"]
             if cid not in convs:
-                convs[cid] = {
-                    "conversation_id": cid,
-                    "description": f"Conversation {cid}",
-                    "created_at": row["created_at"]
-                }
+                convs[cid] = {"conversation_id": cid, "description": f"Conversation {cid}", "created_at": row["created_at"]}
         return list(convs.values())
     except Exception as e:
         print(f"❌ get_conversations error: {e}")
         return []
 
-# =======================
-# MESSAGES
-# =======================
 def add_message(conversation_id, sender, content, message_type="text", status="sent", created_at=None):
     if not supabase:
         return False
     try:
-        data = {
-            "conversation_id": conversation_id,
-            "sender": sender,
-            "content": content,
-            "message_type": message_type,
-            "status": status,
-            "created_at": created_at or datetime.now().isoformat()
-        }
+        data = {"conversation_id": conversation_id, "sender": sender, "content": content, "message_type": message_type, "status": status, "created_at": created_at or datetime.now().isoformat()}
         resp = supabase.table("messager").insert(data).execute()
         return bool(resp.data)
     except Exception as e:
@@ -155,15 +98,8 @@ def get_messages(conversation_id):
     if not supabase:
         return []
     try:
-        resp = (
-            supabase.table("messager")
-            .select("*")
-            .eq("conversation_id", conversation_id)
-            .order("created_at")
-            .execute()
-        )
+        resp = supabase.table("messager").select("*").eq("conversation_id", conversation_id).order("created_at").execute()
         return resp.data or []
     except Exception as e:
         print(f"❌ get_messages error: {e}")
         return []
-
