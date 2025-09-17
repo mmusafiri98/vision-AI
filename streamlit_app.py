@@ -167,21 +167,23 @@ with st.sidebar:
         if st.button("🔍 Analyser cette image"):
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             image_message = f"[IMAGE] Analysez cette image: {caption}"
+            sender_type = "user_api_request"
             # Stocker la requête
             if st.session_state.user.get('id') != "guest" and st.session_state.conversation:
-                db.add_message(st.session_state.conversation.get('conversation_id'), "user_api_request", image_message)
+                db.add_message(st.session_state.conversation.get('conversation_id'), sender_type, image_message)
             else:
-                st.session_state.messages_memory.append({"role":"user_api_request","content":image_message})
+                st.session_state.messages_memory.append({"sender": sender_type, "content": image_message})
             enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {image_message}"
+            # Récupérer réponse
             with st.chat_message("assistant"):
                 placeholder = st.empty()
                 response = get_ai_response(enhanced_query)
                 stream_response(response, placeholder)
-            # Stocker la réponse
+            # Stocker réponse
             if st.session_state.user.get('id') != "guest" and st.session_state.conversation:
                 db.add_message(st.session_state.conversation.get('conversation_id'), "assistant", response)
             else:
-                st.session_state.messages_memory.append({"role":"assistant","content":response})
+                st.session_state.messages_memory.append({"sender": "assistant", "content": response})
             st.rerun()
 
 # === AFFICHAGE MESSAGES ===
@@ -196,7 +198,8 @@ with chat_container:
     if not messages_to_display:
         st.chat_message("assistant").write("👋 Bonjour ! Je suis Vision AI. Comment puis-je vous aider ?")
     for msg in messages_to_display:
-        role = "user" if msg["sender"] in ["user","user_api_request"] else "assistant"
+        sender = msg.get("sender") or "user"
+        role = "user" if sender in ["user","user_api_request"] else "assistant"
         st.chat_message(role).write(msg["content"])
 
 # === INPUT UTILISATEUR ===
@@ -204,22 +207,5 @@ user_input = st.chat_input("💭 Tapez votre message...")
 if user_input:
     st.chat_message("user").write(user_input)
     # Stocker requête
-    if st.session_state.user.get('id') != "guest" and st.session_state.conversation:
-        db.add_message(st.session_state.conversation.get('conversation_id'), "user_api_request", user_input)
-    else:
-        st.session_state.messages_memory.append({"role":"user_api_request","content":user_input})
-    enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_input}"
-    with st.chat_message("assistant"):
-        placeholder = st.empty()
-        response = get_ai_response(enhanced_query)
-        stream_response(response, placeholder)
-    # Stocker réponse
-    if st.session_state.user.get('id') != "guest" and st.session_state.conversation:
-        db.add_message(st.session_state.conversation.get('conversation_id'), "assistant", response)
-    else:
-        st.session_state.messages_memory.append({"role":"assistant","content":response})
-    st.rerun()
+    sender_type = "user_api
 
-# === FOOTER ===
-st.markdown("---")
-st.markdown("<div style='text-align: center; color: #888; font-size: 0.8em;'>Vision AI Chat - Mode Base de données/Mémoire | Créé par Pepe Musafiri</div>", unsafe_allow_html=True)
