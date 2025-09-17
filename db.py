@@ -36,22 +36,48 @@ def verify_user(email, password):
         if not supabase:
             return None
 
-        # Recherche directe dans la table users (RLS désactivé)
-        response = supabase.table("users").select("*").eq("email", email).execute()
-        
-        print(f"🔍 Debug verify_user - email: {email}")
-        print(f"🔍 Debug verify_user - response: {response.data}")
-        
-        if response.data and len(response.data) > 0:
-            user = response.data[0]
-            # Note: Ici vous devriez vérifier le mot de passe hashé
-            # Pour les tests, on fait simple
-            return {
-                "id": user["id"],
-                "email": user["email"],
-                "name": user.get("name", email.split("@")[0])
-            }
-        return None
+        # Option 1: Utiliser l'authentification Supabase (recommandé)
+        try:
+            response = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+
+            print(f"🔍 Debug verify_user - email: {email}")
+            print(f"🔍 Debug verify_user - auth response: {response}")
+
+            if response.user:
+                return {
+                    "id": response.user.id,
+                    "email": response.user.email,
+                    "name": response.user.user_metadata.get("name", email.split("@")[0])
+                }
+            return None
+            
+        except Exception as auth_error:
+            print(f"🔍 Debug - Erreur auth Supabase: {auth_error}")
+            
+            # Option 2: Fallback - vérification directe en base (pour les tests)
+            response = supabase.table("users").select("*").eq("email", email).execute()
+            
+            print(f"🔍 Debug verify_user - table response: {response.data}")
+            
+            if response.data and len(response.data) > 0:
+                user = response.data[0]
+                # ATTENTION: Comparaison en texte brut pour les tests uniquement!
+                # En production, utilisez bcrypt ou équivalent
+                stored_password = user.get("password", "")
+                
+                if stored_password == password:
+                    print("✅ Mot de passe correct (comparaison directe)")
+                    return {
+                        "id": user["id"],
+                        "email": user["email"],
+                        "name": user.get("name", email.split("@")[0])
+                    }
+                else:
+                    print(f"❌ Mot de passe incorrect. Stocké: '{stored_password}', Fourni: '{password}'")
+            return None
 
     except Exception as e:
         print(f"❌ Erreur verify_user: {e}")
@@ -59,23 +85,40 @@ def verify_user(email, password):
 
 
 def create_user(email, password, name=None):
-    """Crée un nouvel utilisateur directement dans la table"""
+    """Crée un nouvel utilisateur"""
     try:
         if not supabase:
             return False
 
-        user_data = {
-            "id": str(uuid.uuid4()),
-            "email": email,
-            "name": name or email.split("@")[0],
-            "created_at": datetime.now().isoformat()
-        }
+        # Option 1: Utiliser l'authentification Supabase (recommandé)
+        try:
+            response = supabase.auth.admin.create_user({
+                "email": email,
+                "password": password,
+                "email_confirm": True,
+                "user_metadata": {"name": name or email.split("@")[0]}
+            })
 
-        print(f"🔍 Debug create_user - data: {user_data}")
-        response = supabase.table("users").insert(user_data).execute()
-        print(f"🔍 Debug create_user - response: {response}")
-        
-        return len(response.data) > 0 if response.data else False
+            print(f"🔍 Debug create_user - auth response: {response}")
+            return response.user is not None
+            
+        except Exception as auth_error:
+            print(f"🔍 Debug - Erreur auth create: {auth_error}")
+            
+            # Option 2: Fallback - insertion directe en base (pour les tests)
+            user_data = {
+                "id": str(uuid.uuid4()),
+                "email": email,
+                "password": password,  # ATTENTION: En production, hashez le mot de passe!
+                "name": name or email.split("@")[0],
+                "created_at": datetime.now().isoformat()
+            }
+
+            print(f"🔍 Debug create_user - data directe: {user_data}")
+            response = supabase.table("users").insert(user_data).execute()
+            print(f"🔍 Debug create_user - response directe: {response}")
+            
+            return len(response.data) > 0 if response.data else False
 
     except Exception as e:
         print(f"❌ Erreur create_user: {e}")
@@ -293,6 +336,7 @@ def test_connection():
 def create_test_user():
     """Crée un utilisateur de test"""
     test_email = "test@example.com"
+    test_password = "password123"  # Mot de passe en dur pour les tests
     test_name = "Utilisateur Test"
     
     print(f"🔍 Création/vérification utilisateur test: {test_email}")
@@ -302,11 +346,21 @@ def create_test_user():
     if existing.data:
         user_id = existing.data[0]['id']
         print(f"✅ Utilisateur test existe déjà: {user_id}")
-        return user_id
+        
+        # Vérifier la connexion avec le mot de passe
+        user_verified = verify_user(test_email, test_password)
+        if user_verified:
+            print("✅ Connexion utilisateur test OK")
+            return user_id
+        else:
+            print("⚠️ Utilisateur existe mais connexion échoue, mise à jour du mot de passe...")
+            # Mettre à jour le mot de passe dans la table pour les tests
+            supabase.table("users").update({"password": test_password}).eq("email", test_email).execute()
+            return user_id
     
     # Créer nouveau
     print("🔍 Création nouvel utilisateur test...")
-    if create_user(test_email, "password123", test_name):
+    if create_user(test_email, test_password, test_name):
         user = supabase.table("users").select("*").eq("email", test_email).execute()
         if user.data:
             user_id = user.data[0]['id']
