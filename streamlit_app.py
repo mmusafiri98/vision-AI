@@ -60,7 +60,7 @@ if "user" not in st.session_state or not isinstance(st.session_state.user, dict)
 if "conversation" not in st.session_state:
     st.session_state.conversation = None
 if "messages_memory" not in st.session_state:
-    st.session_state.messages_memory = []  # list of dicts: {"sender": "...", "content": "...", "created_at": ...}
+    st.session_state.messages_memory = []
 if "processor" not in st.session_state or "model" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
 
@@ -98,7 +98,7 @@ def stream_response(text, placeholder):
     placeholder.write(full)
 
 # -------------------------
-# Sidebar: auth (DB_AVAILABLE)
+# Sidebar: auth
 # -------------------------
 st.sidebar.title("🔐 Authentification")
 if DB_AVAILABLE:
@@ -155,7 +155,7 @@ if DB_AVAILABLE and st.session_state.user and st.session_state.user.get("id") !=
     if st.sidebar.button("➕ Nouvelle conversation"):
         conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
         if conv:
-            st.session_state.conversation = conv
+            st.session_state.conversation = {"conversation_id": conv}
             st.rerun()
         else:
             st.sidebar.error("Impossible de créer la conversation (voir logs).")
@@ -164,7 +164,7 @@ if DB_AVAILABLE and st.session_state.user and st.session_state.user.get("id") !=
         convs = db.get_conversations(st.session_state.user["id"])
         if convs:
             options = ["Choisir une conversation..."] + [
-                f"{c['description']} - {c['created_at'].strftime('%d/%m %H:%M')}" for c in convs
+                f"{c.get('description','')} - {c['created_at'].strftime('%d/%m %H:%M')}" for c in convs
             ]
             sel = st.sidebar.selectbox("📋 Vos conversations:", options)
             if sel != "Choisir une conversation...":
@@ -189,15 +189,13 @@ with st.sidebar:
             caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             message_text = f"[IMAGE] {caption}"
 
-            # Ensure conversation exists for logged user
             conv_id = None
             if DB_AVAILABLE and st.session_state.conversation:
                 conv_id = st.session_state.conversation.get("conversation_id")
-                ok = db.add_message(conv_id, "user_api_request", message_text)
+                ok = db.add_message(conv_id, "user_api_request", message_text, "image")
                 if not ok:
                     st.warning("Impossible d'ajouter le message user en DB (voir logs).")
             else:
-                # memory fallback
                 st.session_state.messages_memory.append({"sender":"user_api_request","content":message_text,"created_at":None})
 
             prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_text}"
@@ -206,9 +204,8 @@ with st.sidebar:
                 resp = get_ai_response(prompt)
                 stream_response(resp, ph)
 
-            # Save assistant response
             if DB_AVAILABLE and conv_id:
-                ok = db.add_message(conv_id, "assistant", resp)
+                ok = db.add_message(conv_id, "assistant", resp, "text")
                 if not ok:
                     st.warning("Impossible d'ajouter la réponse assistant en DB (voir logs).")
             else:
@@ -221,14 +218,17 @@ st.markdown("<h1 style='text-align:center; color:#2E8B57;'>🤖 Vision AI Chat</
 if st.session_state.user:
     st.markdown(f"<p style='text-align:center; color:#666;'>Connecté en tant que: <b>{st.session_state.user.get('email','Utilisateur')}</b></p>", unsafe_allow_html=True)
 
-# Build display messages normalized (sender/content/created_at)
 display_msgs = []
 if DB_AVAILABLE and st.session_state.conversation:
     conv_id = st.session_state.conversation.get("conversation_id")
     try:
         db_msgs = db.get_messages(conv_id) or []
         for m in db_msgs:
-            display_msgs.append({"sender": m.get("sender","assistant"), "content": m.get("content",""), "created_at": m.get("created_at")})
+            display_msgs.append({
+                "sender": m.get("sender","assistant"),
+                "content": m.get("content",""),
+                "created_at": m.get("created_at")
+            })
     except Exception:
         st.error("Erreur en chargeant les messages depuis la DB.")
         display_msgs = st.session_state.messages_memory.copy()
@@ -237,7 +237,6 @@ else:
         sender = m.get("sender") or m.get("role") or "user"
         display_msgs.append({"sender": sender, "content": m.get("content",""), "created_at": m.get("created_at")})
 
-# Show messages
 if not display_msgs:
     st.chat_message("assistant").write("👋 Bonjour ! Je suis Vision AI. Comment puis-je vous aider ?")
 for m in display_msgs:
@@ -245,9 +244,9 @@ for m in display_msgs:
     st.chat_message(role).write(m["content"])
 
 # -------------------------
-# Export CSV (nouveau bloc clair en bas)
+# Export CSV
 # -------------------------
-if display_msgs:  # seulement si conversation existe
+if display_msgs:
     st.markdown("---")
     st.subheader("📂 Exporter la conversation")
 
@@ -258,11 +257,9 @@ if display_msgs:  # seulement si conversation existe
     st.download_button(
         label="💾 Télécharger la conversation (CSV)",
         data=csv_buffer.getvalue(),
-        file_name=(
-            f"conversation_{st.session_state.conversation.get('conversation_id')}.csv"
-            if DB_AVAILABLE and st.session_state.conversation
-            else "conversation_invite.csv"
-        ),
+        file_name=(f"conversation_{st.session_state.conversation.get('conversation_id')}.csv"
+                   if DB_AVAILABLE and st.session_state.conversation
+                   else "conversation_invite.csv"),
         mime="text/csv"
     )
 
@@ -276,7 +273,7 @@ if user_input:
     conv_id = None
     if DB_AVAILABLE and st.session_state.conversation:
         conv_id = st.session_state.conversation.get("conversation_id")
-        ok = db.add_message(conv_id, "user", user_input)
+        ok = db.add_message(conv_id, "user", user_input, "text")
         if not ok:
             st.warning("Impossible d'ajouter le message user en DB (voir logs).")
     else:
@@ -289,7 +286,7 @@ if user_input:
         stream_response(resp, ph)
 
     if DB_AVAILABLE and conv_id:
-        ok = db.add_message(conv_id, "assistant", resp)
+        ok = db.add_message(conv_id, "assistant", resp, "text")
         if not ok:
             st.warning("Impossible d'ajouter la réponse assistant en DB (voir logs).")
     else:
