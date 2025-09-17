@@ -69,7 +69,13 @@ def get_ai_response(query: str) -> str:
     if not st.session_state.llama_client:
         return "❌ Vision AI non disponible."
     try:
-        resp = st.session_state.llama_client.predict(message=query, max_tokens=8192, temperature=0.7, top_p=0.95, api_name="/chat")
+        resp = st.session_state.llama_client.predict(
+            message=query,
+            max_tokens=8192,
+            temperature=0.7,
+            top_p=0.95,
+            api_name="/chat"
+        )
         return str(resp)
     except Exception as e:
         return f"❌ Erreur modèle: {e}"
@@ -177,9 +183,8 @@ for m in display_msgs:
 # -------------------------
 if user_input:
     st.chat_message("user").write(user_input)
-    conv_id = None
-    if st.session_state.conversation:
-        conv_id = st.session_state.conversation.get("conversation_id")
+    conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+    if conv_id:
         db.add_message(conv_id, "user", user_input, "text")
     else:
         st.session_state.messages_memory.append({"sender":"user","content":user_input,"created_at":None})
@@ -202,9 +207,8 @@ if uploaded_file is not None:
     caption = generate_caption(image, st.session_state.processor, st.session_state.model)
     message_text = f"[IMAGE] {caption}"
 
-    conv_id = None
-    if st.session_state.conversation:
-        conv_id = st.session_state.conversation.get("conversation_id")
+    conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+    if conv_id:
         db.add_message(conv_id, "user_api_request", message_text, "image")
     else:
         st.session_state.messages_memory.append({"sender":"user_api_request","content":message_text,"created_at":None})
@@ -230,10 +234,12 @@ if display_msgs:
     df = pd.DataFrame(display_msgs)
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer, index=False)
+
+    # ✅ Correction: vérifier si conversation existe
+    conv_id_for_file = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else "invite"
     st.download_button(
         "💾 Télécharger la conversation (CSV)",
         csv_buffer.getvalue(),
-        file_name=f"conversation_{st.session_state.conversation.get('conversation_id','invite')}.csv",
+        file_name=f"conversation_{conv_id_for_file}.csv",
         mime="text/csv"
     )
-
