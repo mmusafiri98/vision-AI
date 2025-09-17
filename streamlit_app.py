@@ -207,5 +207,24 @@ user_input = st.chat_input("💭 Tapez votre message...")
 if user_input:
     st.chat_message("user").write(user_input)
     # Stocker requête
-    sender_type = "user_api
+    sender_type = "user_api_request"
+    if st.session_state.user.get('id') != "guest" and st.session_state.conversation:
+        db.add_message(st.session_state.conversation.get('conversation_id'), sender_type, user_input)
+    else:
+        st.session_state.messages_memory.append({"sender": sender_type, "content": user_input})
+    enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_input}"
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
+        response = get_ai_response(enhanced_query)
+        stream_response(response, placeholder)
+    # Stocker réponse
+    if st.session_state.user.get('id') != "guest" and st.session_state.conversation:
+        db.add_message(st.session_state.conversation.get('conversation_id'), "assistant", response)
+    else:
+        st.session_state.messages_memory.append({"sender": "assistant", "content": response})
+    st.rerun()
+
+# === FOOTER ===
+st.markdown("---")
+st.markdown("<div style='text-align: center; color: #888; font-size: 0.8em;'>Vision AI Chat - Mode Base de données/Mémoire | Créé par Pepe Musafiri</div>", unsafe_allow_html=True)
 
