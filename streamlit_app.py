@@ -94,10 +94,8 @@ def stream_response(text, placeholder):
     full_text = ""
     for char in text:
         full_text += char
-        placeholder.write(full_text + "▋")  # Curseur clignotant
-        time.sleep(0.03)  # Vitesse de frappe (ajustable)
-    
-    # Affichage final sans curseur
+        placeholder.write(full_text + "▋")
+        time.sleep(0.03)
     placeholder.write(full_text)
 
 # === AUTHENTIFICATION (SI DB DISPONIBLE) ===
@@ -157,10 +155,9 @@ if DB_AVAILABLE:
                 else:
                     st.error("⚠️ Veuillez remplir tous les champs")
         
-        st.stop()  # Arrêter l'exécution si pas connecté
+        st.stop()
     
     else:
-        # Utilisateur connecté
         user_email = user.get('email', 'Utilisateur')
         st.sidebar.success(f"✅ Connecté: {user_email}")
         
@@ -169,30 +166,28 @@ if DB_AVAILABLE:
             st.session_state.conversation = None
             st.rerun()
 
-# === GESTION DES CONVERSATIONS (SI DB ET CONNECTÉ) ===
+# === GESTION DES CONVERSATIONS ===
 if DB_AVAILABLE and st.session_state.user and st.session_state.user.get('id') != "guest":
     st.sidebar.title("💬 Mes Conversations")
     
-    # Nouveau chat
     if st.sidebar.button("➕ Nouvelle conversation"):
         try:
             user_id = st.session_state.user.get('id')
             conv = db.create_conversation(user_id, "Nouvelle discussion")
-            if conv and isinstance(conv, dict) and 'id' in conv:
+            if conv and isinstance(conv, dict) and 'conversation_id' in conv:  # ✅ fix
                 st.session_state.conversation = conv
                 st.success("✅ Nouvelle conversation créée !")
                 st.rerun()
         except Exception as e:
             st.error(f"❌ Erreur: {e}")
     
-    # Lister les conversations
     try:
         user_id = st.session_state.user.get('id')
         convs = db.get_conversations(user_id)
         
         if convs:
             conv_options = ["Choisir une conversation..."] + [
-                f"{c['title']} - {c['created_at'].strftime('%d/%m %H:%M')}" 
+                f"{c['description']} - {c['created_at'].strftime('%d/%m %H:%M')}" 
                 for c in convs
             ]
             
@@ -203,7 +198,6 @@ if DB_AVAILABLE and st.session_state.user and st.session_state.user.get('id') !=
                 st.session_state.conversation = convs[selected_index]
         else:
             st.sidebar.info("Aucune conversation. Créez-en une !")
-            # Auto-créer première conversation
             try:
                 user_id = st.session_state.user.get('id')
                 conv = db.create_conversation(user_id, "Ma première conversation")
@@ -233,34 +227,28 @@ with st.sidebar:
             st.image(image, caption="Image à analyser", use_column_width=True)
             
             if st.button("🔍 Analyser cette image", type="primary"):
-                # Génération de la description
                 caption = generate_caption(image, st.session_state.processor, st.session_state.model)
                 image_message = f"[IMAGE] Analysez cette image: {caption}"
                 
-                # Sauvegarder le message
                 if DB_AVAILABLE and st.session_state.conversation:
                     try:
-                        conv_id = st.session_state.conversation.get('id')
+                        conv_id = st.session_state.conversation.get('conversation_id')  # ✅ fix
                         db.add_message(conv_id, "user", image_message)
                     except Exception as e:
                         st.error(f"Erreur sauvegarde: {e}")
                 else:
-                    # Mode mémoire
                     st.session_state.messages_memory.append({"role": "user", "content": image_message})
                 
-                # Générer réponse IA
                 enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {image_message}"
                 
-                # Créer placeholder pour l'effet dactylographie
                 with st.chat_message("assistant"):
                     response_placeholder = st.empty()
                     response = get_ai_response(enhanced_query)
                     stream_response(response, response_placeholder)
                 
-                # Sauvegarder la réponse
                 if DB_AVAILABLE and st.session_state.conversation:
                     try:
-                        conv_id = st.session_state.conversation.get('id')
+                        conv_id = st.session_state.conversation.get('conversation_id')  # ✅ fix
                         db.add_message(conv_id, "assistant", response)
                     except Exception as e:
                         st.error(f"Erreur sauvegarde réponse: {e}")
@@ -277,10 +265,9 @@ chat_container = st.container()
 with chat_container:
     messages_to_display = []
     
-    # Récupérer les messages selon le mode
     if DB_AVAILABLE and st.session_state.conversation:
         try:
-            conv_id = st.session_state.conversation.get('id')
+            conv_id = st.session_state.conversation.get('conversation_id')  # ✅ fix
             db_messages = db.get_messages(conv_id)
             messages_to_display = [
                 {"role": msg["sender"], "content": msg["content"]} 
@@ -291,11 +278,9 @@ with chat_container:
     else:
         messages_to_display = st.session_state.messages_memory
     
-    # Message de bienvenue si pas de messages
     if not messages_to_display:
         st.chat_message("assistant").write("👋 Bonjour ! Je suis Vision AI. Comment puis-je vous aider ?")
     
-    # Afficher tous les messages
     for msg in messages_to_display:
         role = "user" if msg["role"] in ["user"] else "assistant"
         st.chat_message(role).write(msg["content"])
@@ -304,32 +289,27 @@ with chat_container:
 user_input = st.chat_input("💭 Tapez votre message...")
 
 if user_input:
-    # Afficher immédiatement le message utilisateur
     st.chat_message("user").write(user_input)
     
-    # Sauvegarder message utilisateur
     if DB_AVAILABLE and st.session_state.conversation:
         try:
-            conv_id = st.session_state.conversation.get('id')
+            conv_id = st.session_state.conversation.get('conversation_id')  # ✅ fix
             db.add_message(conv_id, "user", user_input)
         except Exception as e:
             st.error(f"Erreur sauvegarde: {e}")
     else:
         st.session_state.messages_memory.append({"role": "user", "content": user_input})
     
-    # Générer réponse avec effet dactylographie
     enhanced_query = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_input}"
     
-    # Créer le message assistant avec placeholder
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
         response = get_ai_response(enhanced_query)
         stream_response(response, response_placeholder)
     
-    # Sauvegarder réponse
     if DB_AVAILABLE and st.session_state.conversation:
         try:
-            conv_id = st.session_state.conversation.get('id')
+            conv_id = st.session_state.conversation.get('conversation_id')  # ✅ fix
             db.add_message(conv_id, "assistant", response)
         except Exception as e:
             st.error(f"Erreur sauvegarde réponse: {e}")
