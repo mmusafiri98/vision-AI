@@ -89,12 +89,40 @@ def get_ai_response(query: str) -> str:
         return f"❌ Erreur modèle: {e}"
 
 def stream_response(text, placeholder):
-    full = ""
-    for ch in str(text):
-        full += ch
-        placeholder.write(full + "▋")
-        time.sleep(0.01)
-    placeholder.write(full)
+    """Animation de frappe pour afficher le texte caractère par caractère"""
+    full_text = ""
+    text_str = str(text)
+    
+    # Phases d'animation
+    # 1. Afficher "En train d'écrire..."
+    thinking_messages = ["🤔 Vision AI réfléchit", "💭 Vision AI analyse", "✨ Vision AI génère une réponse"]
+    for msg in thinking_messages:
+        placeholder.markdown(f"*{msg}...*")
+        time.sleep(0.3)
+    
+    # 2. Animation de frappe caractère par caractère
+    for i, char in enumerate(text_str):
+        full_text += char
+        # Afficher avec curseur clignotant stylisé
+        display_text = full_text + "**█**"
+        placeholder.markdown(display_text)
+        
+        # Vitesse variable : plus rapide pour les espaces, plus lent pour la ponctuation
+        if char == ' ':
+            time.sleep(0.01)
+        elif char in '.,!?;:':
+            time.sleep(0.1)
+        else:
+            time.sleep(0.03)
+    
+    # 3. Afficher le texte final proprement
+    placeholder.markdown(full_text)
+    
+    # 4. Petit effet de fin
+    time.sleep(0.2)
+    placeholder.markdown(full_text + " ✅")
+    time.sleep(0.5)
+    placeholder.markdown(full_text)
 
 # -------------------------
 # Auth
@@ -206,7 +234,8 @@ for m in display_msgs:
             description = m["content"].replace("[IMAGE] ", "")
             st.write(f"*Description automatique: {description}*")
         else:
-            st.write(m["content"])
+            # Utiliser markdown pour un meilleur rendu des messages historiques
+            st.markdown(m["content"])
 
 # -------------------------
 # Conteneur pour les nouveaux messages
@@ -282,7 +311,7 @@ if submit_button and (user_input or uploaded_file is not None):
         # Afficher le message utilisateur
         with message_container:
             with st.chat_message("user"):
-                st.write(user_input)
+                st.markdown(user_input)
         
         # Sauvegarder le message texte
         conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
@@ -302,9 +331,15 @@ if submit_button and (user_input or uploaded_file is not None):
         
         with message_container:
             with st.chat_message("assistant"):
-                with st.spinner("Vision AI analyse et répond..."):
-                    resp = get_ai_response(prompt)
-                st.write(resp)
+                # Créer un placeholder pour l'animation
+                response_placeholder = st.empty()
+                response_placeholder.write("Vision AI réfléchit... 🤔")
+                
+                # Obtenir la réponse
+                resp = get_ai_response(prompt)
+                
+                # Animer la réponse caractère par caractère
+                stream_response(resp, response_placeholder)
 
         # Sauvegarder la réponse
         conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
