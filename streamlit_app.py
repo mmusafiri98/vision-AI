@@ -48,29 +48,24 @@ def base64_to_image(img_str):
         return None
 
 def load_user_last_conversation(user_id):
-    """Charger la dernière conversation active de l'utilisateur"""
+    """Charger la dernière conversation de l'utilisateur"""
     try:
         if user_id != "guest":
-            # Récupérer la dernière conversation ou la conversation active
-            last_conv = db.get_last_active_conversation(user_id)
-            if last_conv:
-                return last_conv
-            # Si pas de conversation active, prendre la plus récente
+            # Utiliser les fonctions DB existantes
             convs = db.get_conversations(user_id)
             if convs:
-                return convs[0]  # La plus récente
+                # Prendre la plus récente (première dans la liste)
+                return convs[0]
         return None
     except Exception as e:
         st.error(f"Erreur chargement conversation: {e}")
         return None
 
 def save_active_conversation(user_id, conv_id):
-    """Marquer une conversation comme active pour cet utilisateur"""
-    try:
-        if user_id != "guest" and conv_id:
-            db.set_active_conversation(user_id, conv_id)
-    except Exception as e:
-        st.error(f"Erreur sauvegarde conversation active: {e}")
+    """Fonction placeholder - à implémenter plus tard si nécessaire"""
+    # Cette fonction peut être implémentée plus tard
+    # Pour l'instant, on utilise simplement get_conversations() qui retourne par ordre de date
+    pass
 
 # -------------------------
 # BLIP loader
@@ -235,16 +230,15 @@ else:
         st.rerun()
 
 # -------------------------
-# Auto-chargement de la dernière conversation
+# Auto-chargement de la dernière conversation (simplifié)
 # -------------------------
 if (st.session_state.user["id"] != "guest" and 
-    not st.session_state.conversation_loaded and 
-    not st.session_state.conversation):
+    not st.session_state.conversation_loaded):
     
     last_conv = load_user_last_conversation(st.session_state.user["id"])
     if last_conv:
         st.session_state.conversation = last_conv
-        st.info(f"📂 Conversation restaurée: {last_conv.get('description', 'Sans titre')}")
+        st.info(f"📂 Dernière conversation chargée: {last_conv.get('description', 'Sans titre')}")
     st.session_state.conversation_loaded = True
 
 # -------------------------
