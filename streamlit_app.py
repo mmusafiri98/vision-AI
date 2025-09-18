@@ -17,7 +17,13 @@ You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
 with contributions from Meta AI.
 Your role is to help users with any task they need, from image analysis
 and editing to answering questions clearly and helpfully.
-Always answer naturally as Vision AI."""
+Always answer naturally as Vision AI.
+
+When you receive an image description starting with [IMAGE], you should:
+1. Acknowledge that you can see and analyze the image
+2. Provide detailed analysis of what you observe
+3. Answer any specific questions about the image
+4. Be helpful and descriptive in your analysis"""
 
 # -------------------------
 # BLIP loader
@@ -183,7 +189,7 @@ if st.session_state.conversation:
     try:
         db_msgs = db.get_messages(conv_id)
         for m in db_msgs:
-            display_msgs.append({"sender": m["sender"], "content": m["content"], "created_at": m["created_at"]})
+            display_msgs.append({"sender": m["sender"], "content": m["content"], "created_at": m["created_at"], "type": m.get("type", "text")})
     except Exception as e:
         st.error(f"Erreur chargement messages: {e}")
 else:
@@ -193,7 +199,14 @@ else:
 for m in display_msgs:
     role = "user" if m["sender"] in ["user","user_api_request"] else "assistant"
     with st.chat_message(role):
-        st.write(m["content"])
+        # Si c'est un message image, afficher l'image si elle existe dans le contenu
+        if m.get("type") == "image" and "[IMAGE]" in m["content"]:
+            st.write("📷 Image uploadée pour analyse")
+            # Afficher la description de l'image
+            description = m["content"].replace("[IMAGE] ", "")
+            st.write(f"*Description automatique: {description}*")
+        else:
+            st.write(m["content"])
 
 # -------------------------
 # Conteneur pour les nouveaux messages
@@ -201,101 +214,118 @@ for m in display_msgs:
 message_container = st.container()
 
 # -------------------------
-# Formulaire de saisie
+# Formulaire de saisie unifié
 # -------------------------
 with st.form(key="chat_form", clear_on_submit=True):
-    col_input, col_upload = st.columns([3, 1])
+    # Upload d'image (optionnel)
+    uploaded_file = st.file_uploader("📷 Ajouter une image (optionnel)", type=["png","jpg","jpeg"], key="image_upload")
     
-    with col_input:
-        user_input = st.text_input("💭 Tapez votre message...", key="user_message", placeholder="Posez votre question...")
+    # Champ de texte principal
+    user_input = st.text_area(
+        "💭 Tapez votre message...", 
+        key="user_message", 
+        placeholder="Posez votre question ou décrivez ce que vous voulez que j'analyse dans l'image...",
+        height=80
+    )
     
-    with col_upload:
-        uploaded_file = st.file_uploader("📷 Image", type=["png","jpg","jpeg"], key="image_upload")
-    
-    # Boutons d'envoi
-    col_send1, col_send2 = st.columns([1, 1])
-    with col_send1:
-        submit_text = st.form_submit_button("📤 Envoyer message", use_container_width=True)
-    with col_send2:
-        submit_image = st.form_submit_button("🖼️ Analyser image", use_container_width=True)
+    # Bouton d'envoi unique
+    submit_button = st.form_submit_button("📤 Envoyer", use_container_width=True)
 
 # -------------------------
-# Traitement message texte
+# Traitement unifié
 # -------------------------
-if submit_text and user_input:
-    # Afficher le message utilisateur
-    with message_container:
-        with st.chat_message("user"):
-            st.write(user_input)
+if submit_button and (user_input or uploaded_file is not None):
     
-    # Sauvegarder le message utilisateur
-    conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
-    if conv_id:
-        db.add_message(conv_id, "user", user_input, "text")
-    else:
-        st.session_state.messages_memory.append({"sender":"user","content":user_input,"created_at":None})
-
-    # Générer et afficher la réponse
-    prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {user_input}"
+    # Variables pour construire le message complet
+    full_message = ""
+    image_caption = ""
     
-    with message_container:
-        with st.chat_message("assistant"):
-            with st.spinner("Vision AI réfléchit..."):
-                resp = get_ai_response(prompt)
-            st.write(resp)
-
-    # Sauvegarder la réponse
-    if conv_id:
-        db.add_message(conv_id, "assistant", resp, "text")
-    else:
-        st.session_state.messages_memory.append({"sender":"assistant","content":resp,"created_at":None})
+    # Traitement de l'image si présente
+    if uploaded_file is not None:
+        try:
+            image = Image.open(uploaded_file)
+            
+            # Afficher l'image uploadée dans le chat
+            with message_container:
+                with st.chat_message("user"):
+                    st.image(image, caption="Image uploadée pour analyse", width=300)
+            
+            # Générer la description de l'image
+            with st.spinner("Analyse de l'image en cours..."):
+                image_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+            
+            # Construire le message avec image
+            full_message = f"[IMAGE] {image_caption}"
+            if user_input.strip():
+                full_message += f"\n\nQuestion/Demande de l'utilisateur: {user_input}"
+            
+            # Sauvegarder le message image avec texte
+            conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+            if conv_id:
+                db.add_message(conv_id, "user", full_message, "image")
+            else:
+                st.session_state.messages_memory.append({
+                    "sender": "user", 
+                    "content": full_message, 
+                    "created_at": None,
+                    "type": "image"
+                })
+                
+        except Exception as e:
+            st.error(f"Erreur lors du traitement de l'image: {e}")
+            full_message = user_input if user_input else ""
     
-    st.rerun()
-
-# -------------------------
-# Traitement image
-# -------------------------
-if submit_image and uploaded_file is not None:
-    try:
-        image = Image.open(uploaded_file)
+    # Si pas d'image, juste le texte
+    elif user_input.strip():
+        full_message = user_input
         
-        # Afficher l'image uploadée
+        # Afficher le message utilisateur
         with message_container:
             with st.chat_message("user"):
-                st.image(image, caption="Image à analyser", width=300)
+                st.write(user_input)
         
-        # Générer la description
-        with st.spinner("Analyse de l'image en cours..."):
-            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        
-        message_text = f"[IMAGE] {caption}"
-
-        # Sauvegarder le message image
+        # Sauvegarder le message texte
         conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
         if conv_id:
-            db.add_message(conv_id, "user_api_request", message_text, "image")
+            db.add_message(conv_id, "user", user_input, "text")
         else:
-            st.session_state.messages_memory.append({"sender":"user_api_request","content":message_text,"created_at":None})
+            st.session_state.messages_memory.append({
+                "sender": "user", 
+                "content": user_input, 
+                "created_at": None,
+                "type": "text"
+            })
 
-        # Générer et afficher la réponse
-        prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_text}"
+    # Générer la réponse AI si on a un message
+    if full_message:
+        prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
         
         with message_container:
             with st.chat_message("assistant"):
-                with st.spinner("Vision AI analyse l'image..."):
+                with st.spinner("Vision AI analyse et répond..."):
                     resp = get_ai_response(prompt)
                 st.write(resp)
 
         # Sauvegarder la réponse
+        conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
         if conv_id:
             db.add_message(conv_id, "assistant", resp, "text")
         else:
-            st.session_state.messages_memory.append({"sender":"assistant","content":resp,"created_at":None})
+            st.session_state.messages_memory.append({
+                "sender": "assistant", 
+                "content": resp, 
+                "created_at": None,
+                "type": "text"
+            })
         
         st.rerun()
-        
-    except Exception as e:
-        st.error(f"Erreur lors du traitement de l'image: {e}")
+
+# Message d'aide
+st.markdown("---")
+st.info("💡 **Comment utiliser Vision AI:**\n"
+        "• **Texte seul:** Posez vos questions normalement\n"
+        "• **Image seule:** Uploadez une image, elle sera analysée automatiquement\n"
+        "• **Image + Texte:** Uploadez une image ET écrivez votre question pour une analyse ciblée")
 
 # -------------------------
 # Export CSV
