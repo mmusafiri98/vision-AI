@@ -51,14 +51,22 @@ def load_user_last_conversation(user_id):
     """Charger la dernière conversation de l'utilisateur"""
     try:
         if user_id != "guest":
+            st.write(f"DEBUG load_user_last_conversation: user_id = {user_id}")  # Debug
             # Utiliser les fonctions DB existantes
             convs = db.get_conversations(user_id)
+            st.write(f"DEBUG load_user_last_conversation: conversations récupérées = {convs}")  # Debug
             if convs:
                 # Prendre la plus récente (première dans la liste)
+                st.write(f"DEBUG load_user_last_conversation: Retourne conversation = {convs[0]}")  # Debug
                 return convs[0]
+            else:
+                st.write("DEBUG load_user_last_conversation: Aucune conversation trouvée")  # Debug
+        else:
+            st.write("DEBUG load_user_last_conversation: user_id est guest")  # Debug
         return None
     except Exception as e:
         st.error(f"Erreur chargement conversation: {e}")
+        st.write(f"DEBUG load_user_last_conversation: Exception = {str(e)}")  # Debug
         return None
 
 def save_active_conversation(user_id, conv_id):
