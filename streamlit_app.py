@@ -6,6 +6,7 @@ from gradio_client import Client
 import time
 import pandas as pd
 import io
+import base64
 import db  # ton module DB
 
 # -------------------------
@@ -24,6 +25,27 @@ When you receive an image description starting with [IMAGE], you should:
 2. Provide detailed analysis of what you observe
 3. Answer any specific questions about the image
 4. Be helpful and descriptive in your analysis"""
+
+# -------------------------
+# Utility functions
+# -------------------------
+def image_to_base64(image):
+    """Convertir une image PIL en base64 pour la stockage"""
+    try:
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        img_str = base64.b64encode(buffer.getvalue()).decode()
+        return img_str
+    except:
+        return None
+
+def base64_to_image(img_str):
+    """Convertir base64 en image PIL"""
+    try:
+        img_bytes = base64.b64decode(img_str)
+        return Image.open(io.BytesIO(img_bytes))
+    except:
+        return None
 
 # -------------------------
 # BLIP loader
@@ -217,7 +239,13 @@ if st.session_state.conversation:
     try:
         db_msgs = db.get_messages(conv_id)
         for m in db_msgs:
-            display_msgs.append({"sender": m["sender"], "content": m["content"], "created_at": m["created_at"], "type": m.get("type", "text")})
+            display_msgs.append({
+                "sender": m["sender"], 
+                "content": m["content"], 
+                "created_at": m["created_at"], 
+                "type": m.get("type", "text"),
+                "image_data": m.get("image_data", None)
+            })
     except Exception as e:
         st.error(f"Erreur chargement messages: {e}")
 else:
@@ -227,14 +255,33 @@ else:
 for m in display_msgs:
     role = "user" if m["sender"] in ["user","user_api_request"] else "assistant"
     with st.chat_message(role):
-        # Si c'est un message image, afficher l'image si elle existe dans le contenu
-        if m.get("type") == "image" and "[IMAGE]" in m["content"]:
-            st.write("📷 Image uploadée pour analyse")
-            # Afficher la description de l'image
-            description = m["content"].replace("[IMAGE] ", "")
-            st.write(f"*Description automatique: {description}*")
+        # Si c'est un message avec image
+        if m.get("type") == "image":
+            # Afficher l'image si elle existe
+            if m.get("image_data"):
+                try:
+                    # Reconstituer l'image depuis base64
+                    img = base64_to_image(m["image_data"])
+                    if img:
+                        st.image(img, caption="Image analysée", width=300)
+                    else:
+                        st.write("📷 Image (non disponible)")
+                except:
+                    st.write("📷 Image (erreur d'affichage)")
+            else:
+                st.write("📷 Image uploadée")
+            
+            # Afficher la description si elle existe dans le contenu
+            if "[IMAGE]" in m["content"]:
+                description = m["content"].replace("[IMAGE] ", "").split("\n\nQuestion/Demande")[0]
+                st.write(f"*Description automatique: {description}*")
+                
+                # Afficher la question utilisateur si elle existe
+                if "Question/Demande de l'utilisateur:" in m["content"]:
+                    user_question = m["content"].split("Question/Demande de l'utilisateur: ")[1]
+                    st.write(f"**Question:** {user_question}")
         else:
-            # Utiliser markdown pour un meilleur rendu des messages historiques
+            # Message texte normal
             st.markdown(m["content"])
 
 # -------------------------
@@ -268,11 +315,15 @@ if submit_button and (user_input or uploaded_file is not None):
     # Variables pour construire le message complet
     full_message = ""
     image_caption = ""
+    image_base64 = None
     
     # Traitement de l'image si présente
     if uploaded_file is not None:
         try:
             image = Image.open(uploaded_file)
+            
+            # Convertir l'image en base64 pour stockage
+            image_base64 = image_to_base64(image)
             
             # Afficher l'image uploadée dans le chat
             with message_container:
@@ -287,17 +338,28 @@ if submit_button and (user_input or uploaded_file is not None):
             full_message = f"[IMAGE] {image_caption}"
             if user_input.strip():
                 full_message += f"\n\nQuestion/Demande de l'utilisateur: {user_input}"
+                # Afficher aussi la question dans le chat
+                with message_container:
+                    with st.chat_message("user"):
+                        st.write(f"**Question:** {user_input}")
             
             # Sauvegarder le message image avec texte
             conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
             if conv_id:
-                db.add_message(conv_id, "user", full_message, "image")
+                # Supposons que votre fonction db.add_message accepte un paramètre image_data
+                # Si ce n'est pas le cas, vous devrez modifier votre base de données
+                try:
+                    db.add_message(conv_id, "user", full_message, "image", image_data=image_base64)
+                except:
+                    # Fallback si la DB ne supporte pas image_data
+                    db.add_message(conv_id, "user", full_message, "image")
             else:
                 st.session_state.messages_memory.append({
                     "sender": "user", 
                     "content": full_message, 
                     "created_at": None,
-                    "type": "image"
+                    "type": "image",
+                    "image_data": image_base64
                 })
                 
         except Exception as e:
@@ -368,7 +430,19 @@ st.info("💡 **Comment utiliser Vision AI:**\n"
 if display_msgs:
     st.markdown("---")
     with st.expander("📂 Exporter la conversation"):
-        df = pd.DataFrame(display_msgs)
+        # Créer une version propre pour l'export (sans les données image base64)
+        export_msgs = []
+        for m in display_msgs:
+            export_msg = {
+                "sender": m["sender"],
+                "content": m["content"],
+                "created_at": m["created_at"],
+                "type": m.get("type", "text"),
+                "has_image": "Oui" if m.get("image_data") else "Non"
+            }
+            export_msgs.append(export_msg)
+        
+        df = pd.DataFrame(export_msgs)
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
 
