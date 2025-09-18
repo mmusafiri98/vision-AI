@@ -1,3 +1,4 @@
+# Importation des bibliothèques nécessaires
 import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
@@ -6,12 +7,12 @@ from gradio_client import Client
 import time
 import pandas as pd
 import io
-import db  # ton module DB
+import db  # Module pour la base de données (non fourni, supposé existant)
 
-# -------------------------
-# Config
-# -------------------------
+# Configuration de la page Streamlit
 st.set_page_config(page_title="Vision AI Chat", layout="wide")
+
+# Prompt système pour moi (Vision AI)
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
 with contributions from Meta AI.
@@ -25,9 +26,7 @@ When you receive an image description starting with [IMAGE], you should:
 3. Answer any specific questions about the image
 4. Be helpful and descriptive in your analysis"""
 
-# -------------------------
-# BLIP loader
-# -------------------------
+# Chargement du modèle BLIP pour l'analyse d'images
 @st.cache_resource
 def load_blip():
     try:
@@ -38,6 +37,7 @@ def load_blip():
         st.error(f"Erreur BLIP: {e}")
         return None, None
 
+# Génération de légendes pour les images
 def generate_caption(image, processor, model):
     if processor is None or model is None:
         return "Description indisponible"
@@ -52,9 +52,7 @@ def generate_caption(image, processor, model):
     except Exception as e:
         return f"Erreur génération: {e}"
 
-# -------------------------
-# Session init
-# -------------------------
+# Initialisation de la session
 if "user" not in st.session_state:
     st.session_state.user = {"id": "guest", "email": "Invité"}
 if "conversation" not in st.session_state:
@@ -70,9 +68,7 @@ if "llama_client" not in st.session_state:
         st.session_state.llama_client = None
         st.warning("Impossible de connecter LLaMA.")
 
-# -------------------------
-# AI functions
-# -------------------------
+# Fonctions pour interagir avec le modèle de langage
 def get_ai_response(query: str) -> str:
     if not st.session_state.llama_client:
         return "❌ Vision AI non disponible."
@@ -92,21 +88,21 @@ def stream_response(text, placeholder):
     """Animation de frappe pour afficher le texte caractère par caractère"""
     full_text = ""
     text_str = str(text)
-    
+
     # Phases d'animation
     # 1. Afficher "En train d'écrire..."
     thinking_messages = ["🤔 Vision AI réfléchit", "💭 Vision AI analyse", "✨ Vision AI génère une réponse"]
     for msg in thinking_messages:
         placeholder.markdown(f"*{msg}...*")
         time.sleep(0.3)
-    
+
     # 2. Animation de frappe caractère par caractère
     for i, char in enumerate(text_str):
         full_text += char
         # Afficher avec curseur clignotant stylisé
         display_text = full_text + "**█**"
         placeholder.markdown(display_text)
-        
+
         # Vitesse variable : plus rapide pour les espaces, plus lent pour la ponctuation
         if char == ' ':
             time.sleep(0.01)
@@ -114,26 +110,24 @@ def stream_response(text, placeholder):
             time.sleep(0.1)
         else:
             time.sleep(0.03)
-    
+
     # 3. Afficher le texte final proprement
     placeholder.markdown(full_text)
-    
+
     # 4. Petit effet de fin
     time.sleep(0.2)
     placeholder.markdown(full_text + " ✅")
     time.sleep(0.5)
     placeholder.markdown(full_text)
 
-# -------------------------
-# Auth
-# -------------------------
+# Authentification
 st.sidebar.title("🔐 Authentification")
 if st.session_state.user["id"] == "guest":
     tab1, tab2 = st.sidebar.tabs(["Connexion", "Inscription"])
     with tab1:
         email = st.text_input("📧 Email")
         password = st.text_input("🔒 Mot de passe", type="password")
-        col1, col2 = st.columns(2)
+        col1, col2 = st.sidebar.columns(2)
         with col1:
             if st.button("🚪 Se connecter"):
                 user_result = db.verify_user(email, password)
@@ -165,7 +159,7 @@ if st.session_state.user["id"] == "guest":
     st.stop()
 else:
     st.sidebar.success(f"✅ Connecté: {st.session_state.user.get('email')}")
-    
+
     # Bouton déconnexion
     if st.sidebar.button("🚪 Se déconnecter"):
         st.session_state.user = {"id": "guest", "email": "Invité"}
@@ -173,11 +167,9 @@ else:
         st.session_state.messages_memory = []
         st.rerun()
 
-# -------------------------
 # Conversations
-# -------------------------
+st.sidebar.title("💬 Mes Conversations")
 if st.session_state.user["id"] != "guest":
-    st.sidebar.title("💬 Mes Conversations")
     if st.sidebar.button("➕ Nouvelle conversation"):
         conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
         st.session_state.conversation = conv
@@ -201,16 +193,12 @@ if st.session_state.user["id"] != "guest":
     except Exception as e:
         st.sidebar.error(f"Erreur chargement conversations: {e}")
 
-# -------------------------
 # Header
-# -------------------------
 st.markdown("<h1 style='text-align:center; color:#2E8B57;'>🤖 Vision AI Chat</h1>", unsafe_allow_html=True)
 st.markdown(f"<p style='text-align:center; color:#666;'>Créé par <b>Pepe Musafiri</b> (Ingénieur IA) avec la contribution de <b>Meta AI</b></p>", unsafe_allow_html=True)
 st.markdown(f"<p style='text-align:center; color:#666;'>Connecté en tant que: <b>{st.session_state.user.get('email')}</b></p>", unsafe_allow_html=True)
 
-# -------------------------
 # Afficher les messages existants
-# -------------------------
 display_msgs = []
 if st.session_state.conversation:
     conv_id = st.session_state.conversation.get("conversation_id")
@@ -237,18 +225,14 @@ for m in display_msgs:
             # Utiliser markdown pour un meilleur rendu des messages historiques
             st.markdown(m["content"])
 
-# -------------------------
 # Conteneur pour les nouveaux messages
-# -------------------------
 message_container = st.container()
 
-# -------------------------
 # Formulaire de saisie unifié
-# -------------------------
 with st.form(key="chat_form", clear_on_submit=True):
     # Upload d'image (optionnel)
     uploaded_file = st.file_uploader("📷 Ajouter une image (optionnel)", type=["png","jpg","jpeg"], key="image_upload")
-    
+
     # Champ de texte principal
     user_input = st.text_area(
         "💭 Tapez votre message...", 
@@ -256,38 +240,38 @@ with st.form(key="chat_form", clear_on_submit=True):
         placeholder="Posez votre question ou décrivez ce que vous voulez que j'analyse dans l'image...",
         height=80
     )
-    
+
     # Bouton d'envoi unique
     submit_button = st.form_submit_button("📤 Envoyer", use_container_width=True)
 
-# -------------------------
 # Traitement unifié
-# -------------------------
 if submit_button and (user_input or uploaded_file is not None):
-    
+
     # Variables pour construire le message complet
     full_message = ""
     image_caption = ""
-    
+
     # Traitement de l'image si présente
     if uploaded_file is not None:
         try:
             image = Image.open(uploaded_file)
-            
-            # Afficher l'image uploadée dans le chat
+
+            # Afficher l'image et sa description dans le chat
             with message_container:
                 with st.chat_message("user"):
-                    st.image(image, caption="Image uploadée pour analyse", width=300)
-            
-            # Générer la description de l'image
-            with st.spinner("Analyse de l'image en cours..."):
-                image_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.image(image, caption="Image uploadée pour analyse", width=250)
+                    with col2:
+                        with st.spinner("Analyse de l'image en cours..."):
+                            image_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+                        st.write(f"**Description automatique :**\n{image_caption}")
+
             # Construire le message avec image
             full_message = f"[IMAGE] {image_caption}"
             if user_input.strip():
                 full_message += f"\n\nQuestion/Demande de l'utilisateur: {user_input}"
-            
+
             # Sauvegarder le message image avec texte
             conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
             if conv_id:
@@ -299,20 +283,20 @@ if submit_button and (user_input or uploaded_file is not None):
                     "created_at": None,
                     "type": "image"
                 })
-                
+
         except Exception as e:
             st.error(f"Erreur lors du traitement de l'image: {e}")
             full_message = user_input if user_input else ""
-    
+
     # Si pas d'image, juste le texte
     elif user_input.strip():
         full_message = user_input
-        
+
         # Afficher le message utilisateur
         with message_container:
             with st.chat_message("user"):
                 st.markdown(user_input)
-        
+
         # Sauvegarder le message texte
         conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
         if conv_id:
@@ -328,16 +312,16 @@ if submit_button and (user_input or uploaded_file is not None):
     # Générer la réponse AI si on a un message
     if full_message:
         prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
-        
+
         with message_container:
             with st.chat_message("assistant"):
                 # Créer un placeholder pour l'animation
                 response_placeholder = st.empty()
                 response_placeholder.write("Vision AI réfléchit... 🤔")
-                
+
                 # Obtenir la réponse
                 resp = get_ai_response(prompt)
-                
+
                 # Animer la réponse caractère par caractère
                 stream_response(resp, response_placeholder)
 
@@ -352,7 +336,7 @@ if submit_button and (user_input or uploaded_file is not None):
                 "created_at": None,
                 "type": "text"
             })
-        
+
         st.rerun()
 
 # Message d'aide
@@ -362,9 +346,7 @@ st.info("💡 **Comment utiliser Vision AI:**\n"
         "• **Image seule:** Uploadez une image, elle sera analysée automatiquement\n"
         "• **Image + Texte:** Uploadez une image ET écrivez votre question pour une analyse ciblée")
 
-# -------------------------
 # Export CSV
-# -------------------------
 if display_msgs:
     st.markdown("---")
     with st.expander("📂 Exporter la conversation"):
