@@ -48,29 +48,55 @@ def base64_to_image(img_str):
         return None
 
 def load_user_last_conversation(user_id):
-    """Charger la dernière conversation active de l'utilisateur"""
+    """Charger la dernière conversation de l'utilisateur"""
     try:
         if user_id != "guest":
-            # Récupérer la dernière conversation ou la conversation active
-            last_conv = db.get_last_active_conversation(user_id)
-            if last_conv:
-                return last_conv
-            # Si pas de conversation active, prendre la plus récente
+            st.write(f"DEBUG load_user_last_conversation: user_id = {user_id}")
             convs = db.get_conversations(user_id)
-            if convs:
-                return convs[0]  # La plus récente
+            st.write(f"DEBUG load_user_last_conversation: conversations récupérées = {convs}")
+            if convs and len(convs) > 0:
+                st.write(f"DEBUG load_user_last_conversation: Retourne conversation = {convs[0]}")
+                return convs[0]
+            else:
+                st.write("DEBUG load_user_last_conversation: Aucune conversation trouvée")
+        else:
+            st.write("DEBUG load_user_last_conversation: user_id est guest")
         return None
     except Exception as e:
         st.error(f"Erreur chargement conversation: {e}")
+        st.write(f"DEBUG load_user_last_conversation: Exception = {str(e)}")
+        return None
+
+def safe_create_conversation(user_id, description):
+    """Créer une conversation avec gestion d'erreur"""
+    try:
+        st.write(f"DEBUG safe_create_conversation: user_id={user_id}, description={description}")
+        conv = db.create_conversation(user_id, description)
+        st.write(f"DEBUG safe_create_conversation: résultat brut = {conv}")
+        
+        # Vérifier le format retourné
+        if conv is None:
+            st.error("Erreur: create_conversation a retourné None")
+            return None
+            
+        # Si c'est un dictionnaire, le retourner tel quel
+        if isinstance(conv, dict):
+            return conv
+            
+        # Si c'est autre chose, essayer de le convertir
+        st.write(f"DEBUG safe_create_conversation: type non-dict détecté: {type(conv)}")
+        return None
+        
+    except Exception as e:
+        st.error(f"Erreur création conversation: {e}")
+        st.write(f"DEBUG safe_create_conversation: Exception = {str(e)}")
         return None
 
 def save_active_conversation(user_id, conv_id):
-    """Marquer une conversation comme active pour cet utilisateur"""
-    try:
-        if user_id != "guest" and conv_id:
-            db.set_active_conversation(user_id, conv_id)
-    except Exception as e:
-        st.error(f"Erreur sauvegarde conversation active: {e}")
+    """Fonction placeholder - pas d'erreur si conv_id est None"""
+    if user_id and conv_id:
+        st.write(f"DEBUG save_active_conversation: user_id={user_id}, conv_id={conv_id}")
+    pass
 
 # -------------------------
 # BLIP loader
@@ -184,16 +210,19 @@ if st.session_state.user["id"] == "guest":
         password = st.text_input("🔒 Mot de passe", type="password")
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🚪 Se connecter"):
+            if st.button("Se connecter"):
+                st.write(f"DEBUG: Tentative de connexion avec email: {email}")
                 user_result = db.verify_user(email, password)
+                st.write(f"DEBUG: Résultat verify_user: {user_result}")
                 if user_result:
                     st.session_state.user = user_result
+                    st.write(f"DEBUG: User connecté: {st.session_state.user}")
                     # Charger automatiquement la dernière conversation active
                     last_conv = load_user_last_conversation(user_result["id"])
                     st.session_state.conversation = last_conv
                     st.session_state.messages_memory = []
                     st.session_state.conversation_loaded = False
-                    st.success("Connexion réussie ! Conversation restaurée.")
+                    st.success("Connexion réussie !")
                     st.rerun()
                 else:
                     st.error("Email ou mot de passe invalide")
@@ -220,14 +249,7 @@ else:
     st.sidebar.success(f"✅ Connecté: {st.session_state.user.get('email')}")
     
     # Bouton déconnexion
-    if st.sidebar.button("🚪 Se déconnecter"):
-        # Sauvegarder la conversation active avant déconnexion
-        if st.session_state.conversation:
-            save_active_conversation(
-                st.session_state.user["id"], 
-                st.session_state.conversation.get("conversation_id")
-            )
-        
+    if st.sidebar.button("Se déconnecter"):
         st.session_state.user = {"id": "guest", "email": "Invité"}
         st.session_state.conversation = None
         st.session_state.messages_memory = []
@@ -235,16 +257,19 @@ else:
         st.rerun()
 
 # -------------------------
-# Auto-chargement de la dernière conversation
+# Auto-chargement de la dernière conversation avec debug
 # -------------------------
 if (st.session_state.user["id"] != "guest" and 
-    not st.session_state.conversation_loaded and 
-    not st.session_state.conversation):
+    not st.session_state.conversation_loaded):
     
+    st.write(f"DEBUG: Tentative de chargement pour user_id: {st.session_state.user['id']}")
     last_conv = load_user_last_conversation(st.session_state.user["id"])
     if last_conv:
         st.session_state.conversation = last_conv
-        st.info(f"📂 Conversation restaurée: {last_conv.get('description', 'Sans titre')}")
+        st.write(f"DEBUG: Conversation chargée: {last_conv}")
+        st.info(f"Dernière conversation chargée: {last_conv.get('description', 'Sans titre')}")
+    else:
+        st.write("DEBUG: Aucune conversation trouvée")
     st.session_state.conversation_loaded = True
 
 # -------------------------
@@ -253,20 +278,15 @@ if (st.session_state.user["id"] != "guest" and
 if st.session_state.user["id"] != "guest":
     st.sidebar.title("💬 Mes Conversations")
     if st.sidebar.button("➕ Nouvelle conversation"):
-        # Sauvegarder la conversation actuelle comme active
-        if st.session_state.conversation:
-            save_active_conversation(
-                st.session_state.user["id"], 
-                st.session_state.conversation.get("conversation_id")
-            )
-        
-        conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
-        st.session_state.conversation = conv
-        st.session_state.messages_memory = []
-        
-        # Marquer cette nouvelle conversation comme active
-        save_active_conversation(st.session_state.user["id"], conv.get("conversation_id"))
-        st.rerun()
+        conv = safe_create_conversation(st.session_state.user["id"], "Nouvelle discussion")
+        if conv:
+            st.session_state.conversation = conv
+            st.session_state.messages_memory = []
+            safe_create_conversation_id = conv.get("conversation_id") if conv else None
+            save_active_conversation(st.session_state.user["id"], safe_create_conversation_id)
+            st.rerun()
+        else:
+            st.error("Impossible de créer une nouvelle conversation")
 
     try:
         convs = db.get_conversations(st.session_state.user["id"])
@@ -278,29 +298,16 @@ if st.session_state.user["id"] != "guest":
             for c in convs:
                 title = f"{c['description']} - {c['created_at']}"
                 if c.get('conversation_id') == current_conv_id:
-                    title += " ⭐ (Actuelle)"
+                    title += " (Actuelle)"
                 options.append(title)
             
-            sel = st.sidebar.selectbox("📋 Vos conversations:", options)
-            if sel != "Choisir une conversation..." and not sel.endswith(" ⭐ (Actuelle)"):
+            sel = st.sidebar.selectbox("Vos conversations:", options)
+            if sel != "Choisir une conversation..." and not sel.endswith(" (Actuelle)"):
                 idx = options.index(sel) - 1
                 selected_conv = convs[idx]
                 if st.session_state.conversation != selected_conv:
-                    # Sauvegarder l'ancienne conversation comme active
-                    if st.session_state.conversation:
-                        save_active_conversation(
-                            st.session_state.user["id"], 
-                            st.session_state.conversation.get("conversation_id")
-                        )
-                    
                     st.session_state.conversation = selected_conv
                     st.session_state.messages_memory = []
-                    
-                    # Marquer la nouvelle conversation comme active
-                    save_active_conversation(
-                        st.session_state.user["id"], 
-                        selected_conv.get("conversation_id")
-                    )
                     st.rerun()
         else:
             st.sidebar.info("Aucune conversation. Créez-en une.")
@@ -320,26 +327,35 @@ if st.session_state.conversation:
     st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>📝 {conv_title}</p>", unsafe_allow_html=True)
 
 # -------------------------
-# Afficher les messages existants avec persistance
+# Afficher les messages existants avec debug
 # -------------------------
 display_msgs = []
 if st.session_state.conversation:
     conv_id = st.session_state.conversation.get("conversation_id")
+    st.write(f"DEBUG: Chargement conversation ID: {conv_id}")
     try:
         db_msgs = db.get_messages(conv_id)
-        for m in db_msgs:
-            display_msgs.append({
-                "sender": m["sender"], 
-                "content": m["content"], 
-                "created_at": m["created_at"], 
-                "type": m.get("type", "text"),
-                "image_data": m.get("image_data", None)
-            })
+        st.write(f"DEBUG: Nombre de messages récupérés: {len(db_msgs) if db_msgs else 0}")
+        
+        if db_msgs:
+            for i, m in enumerate(db_msgs):
+                st.write(f"DEBUG Message {i}: {m}")
+                display_msgs.append({
+                    "sender": m["sender"], 
+                    "content": m["content"], 
+                    "created_at": m["created_at"], 
+                    "type": m.get("type", "text"),
+                    "image_data": m.get("image_data", None)
+                })
     except Exception as e:
         st.error(f"Erreur chargement messages: {e}")
+        st.write(f"DEBUG: Erreur détaillée: {str(e)}")
 else:
+    st.write("DEBUG: Aucune conversation active, utilisation mémoire session")
     # Pour les invités, utiliser la mémoire de session (non persistante)
     display_msgs = st.session_state.messages_memory.copy()
+
+st.write(f"DEBUG: Nombre total de messages à afficher: {len(display_msgs)}")
 
 # Afficher l'historique des messages
 for m in display_msgs:
@@ -398,15 +414,21 @@ with st.form(key="chat_form", clear_on_submit=True):
     submit_button = st.form_submit_button("📤 Envoyer", use_container_width=True)
 
 # -------------------------
-# Traitement unifié avec persistance automatique
+# Traitement unifié avec gestion d'erreur améliorée
 # -------------------------
 if submit_button and (user_input or uploaded_file is not None):
     
     # Si utilisateur connecté mais pas de conversation, en créer une automatiquement
     if st.session_state.user["id"] != "guest" and not st.session_state.conversation:
-        conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
-        st.session_state.conversation = conv
-        save_active_conversation(st.session_state.user["id"], conv.get("conversation_id"))
+        st.write(f"DEBUG: Création auto conversation pour user_id: {st.session_state.user['id']}")
+        conv = safe_create_conversation(st.session_state.user["id"], "Nouvelle discussion")
+        if conv:
+            st.write(f"DEBUG: Conversation créée: {conv}")
+            st.session_state.conversation = conv
+            conv_id_for_save = conv.get("conversation_id") if conv else None
+            save_active_conversation(st.session_state.user["id"], conv_id_for_save)
+        else:
+            st.error("Impossible de créer une conversation automatiquement")
     
     # Variables pour construire le message complet
     full_message = ""
@@ -439,14 +461,25 @@ if submit_button and (user_input or uploaded_file is not None):
                     with st.chat_message("user"):
                         st.write(f"**Question:** {user_input}")
             
-            # Sauvegarder le message image avec texte (TOUJOURS persistant si connecté)
+            # Sauvegarder le message image avec texte
             conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
             if conv_id:
                 try:
-                    db.add_message(conv_id, "user", full_message, "image", image_data=image_base64)
-                except:
-                    # Fallback si la DB ne supporte pas image_data
-                    db.add_message(conv_id, "user", full_message, "image")
+                    # Vérifier si votre fonction db.add_message supporte image_data
+                    if hasattr(db, 'add_message') and 'image_data' in db.add_message.__code__.co_varnames:
+                        db.add_message(conv_id, "user", full_message, "image", image_data=image_base64)
+                    else:
+                        db.add_message(conv_id, "user", full_message, "image")
+                except Exception as e:
+                    st.error(f"Erreur sauvegarde message image: {e}")
+                    # Fallback en mémoire
+                    st.session_state.messages_memory.append({
+                        "sender": "user", 
+                        "content": full_message, 
+                        "created_at": None,
+                        "type": "image",
+                        "image_data": image_base64
+                    })
             else:
                 # Mode invité - mémoire temporaire
                 st.session_state.messages_memory.append({
@@ -470,10 +503,23 @@ if submit_button and (user_input or uploaded_file is not None):
             with st.chat_message("user"):
                 st.markdown(user_input)
         
-        # Sauvegarder le message texte (TOUJOURS persistant si connecté)
+        # Sauvegarder le message texte
         conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+        st.write(f"DEBUG: Sauvegarde message texte - conv_id: {conv_id}")
         if conv_id:
-            db.add_message(conv_id, "user", user_input, "text")
+            try:
+                result = db.add_message(conv_id, "user", user_input, "text")
+                st.write(f"DEBUG: Message texte sauvé - résultat: {result}")
+            except Exception as e:
+                st.error(f"Erreur sauvegarde message texte: {e}")
+                st.write(f"DEBUG: Erreur sauvegarde texte: {str(e)}")
+                # Fallback en mémoire
+                st.session_state.messages_memory.append({
+                    "sender": "user", 
+                    "content": user_input, 
+                    "created_at": None,
+                    "type": "text"
+                })
         else:
             # Mode invité - mémoire temporaire
             st.session_state.messages_memory.append({
@@ -499,16 +545,20 @@ if submit_button and (user_input or uploaded_file is not None):
                 # Animer la réponse caractère par caractère
                 stream_response(resp, response_placeholder)
 
-        # Sauvegarder la réponse (TOUJOURS persistant si connecté)
+        # Sauvegarder la réponse
         conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
         if conv_id:
-            db.add_message(conv_id, "assistant", resp, "text")
-            # Mettre à jour le titre de conversation si c'est le premier message
-            if len(display_msgs) == 0:
-                # Générer un titre basé sur le premier message
-                short_title = user_input[:50] + "..." if len(user_input) > 50 else user_input
-                db.update_conversation_title(conv_id, short_title)
-                st.session_state.conversation['description'] = short_title
+            try:
+                db.add_message(conv_id, "assistant", resp, "text")
+            except Exception as e:
+                st.error(f"Erreur sauvegarde réponse: {e}")
+                # Fallback en mémoire
+                st.session_state.messages_memory.append({
+                    "sender": "assistant", 
+                    "content": resp, 
+                    "created_at": None,
+                    "type": "text"
+                })
         else:
             # Mode invité - mémoire temporaire
             st.session_state.messages_memory.append({
@@ -517,10 +567,6 @@ if submit_button and (user_input or uploaded_file is not None):
                 "created_at": None,
                 "type": "text"
             })
-        
-        # Marquer la conversation comme active après chaque message
-        if st.session_state.user["id"] != "guest" and conv_id:
-            save_active_conversation(st.session_state.user["id"], conv_id)
         
         st.rerun()
 
