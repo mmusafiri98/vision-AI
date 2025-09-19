@@ -23,6 +23,7 @@ supabase = get_supabase_client()
 # UTILISATEURS
 # =======================
 def verify_user(email, password):
+    """Vérifie l'utilisateur avec Supabase Auth"""
     if not supabase:
         return None
     try:
@@ -39,16 +40,29 @@ def verify_user(email, password):
         return None
 
 def create_user(email, password, name=None):
+    """Crée un utilisateur Supabase + entrée dans users_public"""
     if not supabase:
         return False
     try:
+        # Création côté Auth
         resp = supabase.auth.admin.create_user({
             "email": email,
             "password": password,
             "email_confirm": True,
             "user_metadata": {"name": name or email.split("@")[0]}
         })
-        return hasattr(resp, "user") and resp.user
+        if not hasattr(resp, "user") or not resp.user:
+            return False
+
+        # Sauvegarde côté table users_public
+        user_data = {
+            "id": resp.user.id,
+            "email": email,
+            "name": name or email.split("@")[0],
+            "created_at": datetime.now().isoformat()
+        }
+        supabase.table("users_public").insert(user_data).execute()
+        return True
     except Exception as e:
         print(f"Erreur create_user: {e}")
         return False
@@ -57,38 +71,35 @@ def create_user(email, password, name=None):
 # CONVERSATIONS
 # =======================
 def create_conversation(user_id=None, description=None):
-    conv_id = f"conv_{uuid.uuid4()}"
-    return {
-        "conversation_id": conv_id,
-        "description": description or "Nouvelle discussion",
-        "created_at": datetime.now().isoformat(),
-        "user_id": user_id
-    }
+    """Crée une nouvelle conversation et la sauvegarde en base"""
+    if not supabase:
+        return None
+    try:
+        conv_id = str(uuid.uuid4())
+        data = {
+            "id": conv_id,
+            "description": description or "Nouvelle discussion",
+            "created_at": datetime.now().isoformat(),
+            "user_id": user_id
+        }
+        resp = supabase.table("conversations").insert(data).execute()
+        if resp.data:
+            return resp.data[0]
+        return None
+    except Exception as e:
+        print(f"Erreur create_conversation: {e}")
+        return None
 
 def get_conversations(user_id=None):
+    """Récupère les conversations d'un utilisateur (ou toutes si admin)"""
     if not supabase:
         return []
     try:
-        query = (
-            supabase.table("messager")
-            .select("conversation_id, created_at, sender")
-            .order("created_at", desc=True)
-        )
+        query = supabase.table("conversations").select("*").order("created_at", desc=True)
         if user_id:
-            query = query.eq("sender", user_id)
+            query = query.eq("user_id", user_id)
         resp = query.execute()
-        data = resp.data or []
-
-        convs = {}
-        for row in data:
-            cid = row["conversation_id"]
-            if cid not in convs:
-                convs[cid] = {
-                    "conversation_id": cid,
-                    "description": f"Conversation {cid}",
-                    "created_at": row["created_at"]
-                }
-        return list(convs.values())
+        return resp.data or []
     except Exception as e:
         print(f"Erreur get_conversations: {e}")
         return []
@@ -99,7 +110,7 @@ def get_conversations(user_id=None):
 def add_message(conversation_id, sender, content,
                 message_type="text", status="sent",
                 created_at=None, image_data=None):
-    """Ajoute un message (texte ou image) dans la table messager"""
+    """Ajoute un message (texte ou image) lié à une conversation"""
     if not supabase:
         return False
     try:
@@ -111,7 +122,7 @@ def add_message(conversation_id, sender, content,
             "status": status,
             "created_at": created_at or datetime.now().isoformat()
         }
-        if image_data:  # ✅ ajout du support d'image
+        if image_data:
             data["image_data"] = image_data
 
         resp = supabase.table("messager").insert(data).execute()
@@ -121,7 +132,7 @@ def add_message(conversation_id, sender, content,
         return False
 
 def get_messages(conversation_id):
-    """Récupère tous les messages d'une conversation donnée"""
+    """Récupère tous les messages d'une conversation"""
     if not supabase:
         return []
     try:
