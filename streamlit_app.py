@@ -8,7 +8,6 @@ import pandas as pd
 import io
 import base64
 import db  # ton module DB
-
 # -------------------------
 # Config
 # -------------------------
