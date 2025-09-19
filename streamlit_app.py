@@ -52,19 +52,28 @@ def load_user_last_conversation(user_id):
     try:
         if user_id != "guest":
             st.write(f"DEBUG load_user_last_conversation: user_id = {user_id}")
+            st.write(f"DEBUG: Appel de db.get_conversations({user_id})")
             convs = db.get_conversations(user_id)
+            st.write(f"DEBUG load_user_last_conversation: type de convs = {type(convs)}")
             st.write(f"DEBUG load_user_last_conversation: conversations récupérées = {convs}")
+            
             if convs and len(convs) > 0:
-                st.write(f"DEBUG load_user_last_conversation: Retourne conversation = {convs[0]}")
+                st.write(f"DEBUG load_user_last_conversation: Première conversation = {convs[0]}")
+                st.write(f"DEBUG load_user_last_conversation: Type première conversation = {type(convs[0])}")
+                # Vérifier la structure
+                if isinstance(convs[0], dict):
+                    st.write(f"DEBUG load_user_last_conversation: Clés disponibles = {list(convs[0].keys())}")
                 return convs[0]
             else:
-                st.write("DEBUG load_user_last_conversation: Aucune conversation trouvée")
+                st.write("DEBUG load_user_last_conversation: Liste vide ou None")
         else:
             st.write("DEBUG load_user_last_conversation: user_id est guest")
         return None
     except Exception as e:
         st.error(f"Erreur chargement conversation: {e}")
         st.write(f"DEBUG load_user_last_conversation: Exception = {str(e)}")
+        import traceback
+        st.write(f"DEBUG load_user_last_conversation: Traceback = {traceback.format_exc()}")
         return None
 
 def safe_create_conversation(user_id, description):
