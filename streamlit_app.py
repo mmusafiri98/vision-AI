@@ -7,12 +7,12 @@ import time
 import pandas as pd
 import io
 import base64
-import db  # ton module DB
+import db  # tuo modulo DB
+
 # -------------------------
 # Config
 # -------------------------
 st.set_page_config(page_title="Vision AI Chat", layout="wide")
-
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
 with contributions from Meta AI.
@@ -27,7 +27,7 @@ When you receive an image description starting with [IMAGE], you should:
 4. Be helpful and descriptive in your analysis"""
 
 # -------------------------
-# Utilitaires
+# Utility functions
 # -------------------------
 def image_to_base64(image):
     try:
@@ -55,11 +55,11 @@ def load_user_last_conversation(user_id):
         return None
 
 def save_active_conversation(user_id, conv_id):
-    # placeholder
+    # placeholder se necessario
     pass
 
 # -------------------------
-# BLIP Loader
+# BLIP loader
 # -------------------------
 @st.cache_resource
 def load_blip():
@@ -84,7 +84,7 @@ def generate_caption(image, processor, model):
 # -------------------------
 def get_ai_response(query: str) -> str:
     if not st.session_state.llama_client:
-        return "❌ Vision AI non disponible."
+        return "❌ Vision AI non disponibile."
     try:
         resp = st.session_state.llama_client.predict(
             message=query,
@@ -104,10 +104,9 @@ def stream_response(text, placeholder):
     for msg in thinking_messages:
         placeholder.markdown(f"*{msg}...*")
         time.sleep(0.3)
-    for i, char in enumerate(text_str):
+    for char in text_str:
         full_text += char
-        display_text = full_text + "**█**"
-        placeholder.markdown(display_text)
+        placeholder.markdown(full_text + "**█**")
         if char == ' ':
             time.sleep(0.01)
         elif char in '.,!?;:':
@@ -129,8 +128,6 @@ if "conversation" not in st.session_state:
     st.session_state.conversation = None
 if "messages_memory" not in st.session_state:
     st.session_state.messages_memory = []
-if "conversation_loaded" not in st.session_state:
-    st.session_state.conversation_loaded = False
 if "processor" not in st.session_state or "model" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
 if "llama_client" not in st.session_state:
@@ -155,15 +152,13 @@ if st.session_state.user["id"] == "guest":
                 user_result = db.verify_user(email, password)
                 if user_result:
                     st.session_state.user = user_result
-                    # Charger conversation et messages
                     last_conv = load_user_last_conversation(user_result["id"])
+                    st.session_state.conversation = last_conv
+                    # Carica messaggi dal DB subito
                     if last_conv:
-                        st.session_state.conversation = last_conv
                         conv_id = last_conv.get("conversation_id")
                         if conv_id:
-                            msgs = db.get_messages(conv_id)
-                            st.session_state.messages_memory = msgs if msgs else []
-                    st.session_state.conversation_loaded = True
+                            st.session_state.messages_memory = db.get_messages(conv_id) or []
                     st.success("Connexion réussie !")
                     st.rerun()
                 else:
@@ -173,7 +168,6 @@ if st.session_state.user["id"] == "guest":
                 st.session_state.user = {"id": "guest", "email": "Invité"}
                 st.session_state.conversation = None
                 st.session_state.messages_memory = []
-                st.session_state.conversation_loaded = False
                 st.rerun()
     with tab2:
         email_reg = st.text_input("📧 Email", key="reg_email")
@@ -193,7 +187,6 @@ else:
         st.session_state.user = {"id": "guest", "email": "Invité"}
         st.session_state.conversation = None
         st.session_state.messages_memory = []
-        st.session_state.conversation_loaded = False
         st.rerun()
 
 # -------------------------
@@ -240,7 +233,7 @@ if st.session_state.conversation:
     st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>📝 {conv_title}</p>", unsafe_allow_html=True)
 
 # -------------------------
-# Affichage des messages
+# Affichage messages
 # -------------------------
 display_msgs = st.session_state.messages_memory.copy() if st.session_state.messages_memory else []
 for m in display_msgs:
@@ -249,7 +242,7 @@ for m in display_msgs:
         if m.get("type") == "image" and m.get("image_data"):
             img = base64_to_image(m["image_data"])
             if img:
-                st.image(img, caption="Image analysée", width=300)
+                st.image(img, width=300)
             st.write(m["content"])
         else:
             st.markdown(m["content"])
@@ -303,7 +296,7 @@ if submit_button and (user_input or uploaded_file):
             with st.chat_message("user"):
                 st.markdown(user_input)
 
-    # Sauvegarde message
+    # Salvataggio messaggio
     conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
     if conv_id:
         db.add_message(conv_id, "user", full_message, "image" if image_base64 else "text", image_data=image_base64)
@@ -315,7 +308,7 @@ if submit_button and (user_input or uploaded_file):
         "image_data": image_base64
     })
 
-    # Générer réponse AI
+    # Generare risposta AI
     if full_message:
         prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
         with message_container:
