@@ -27,31 +27,22 @@ When you receive an image description starting with [IMAGE], you should:
 4. Be helpful and descriptive in your analysis"""
 
 # -------------------------
-# Utility functions
+# Utilitaires image
 # -------------------------
-def image_to_base64(image):
+def image_to_base64(image: Image.Image) -> str:
     try:
         buffer = io.BytesIO()
         image.save(buffer, format="PNG")
-        return base64.b64encode(buffer.getvalue()).decode()
-    except:
+        img_str = base64.b64encode(buffer.getvalue()).decode()
+        return img_str
+    except Exception:
         return None
 
-def base64_to_image(img_str):
+def base64_to_image(img_str: str) -> Image.Image:
     try:
         img_bytes = base64.b64decode(img_str)
         return Image.open(io.BytesIO(img_bytes))
-    except:
-        return None
-
-def load_user_last_conversation(user_id):
-    try:
-        if user_id != "guest":
-            convs = db.get_conversations(user_id)
-            if convs:
-                return convs[0]  # la plus récente
-        return None
-    except:
+    except Exception:
         return None
 
 # -------------------------
@@ -102,8 +93,19 @@ if "llama_client" not in st.session_state:
         st.warning("Impossible de connecter LLaMA.")
 
 # -------------------------
-# AI functions
+# Fonctions DB + AI
 # -------------------------
+def load_user_last_conversation(user_id):
+    if user_id == "guest" or not user_id:
+        return None
+    try:
+        convs = db.get_conversations(user_id)
+        if convs:
+            return convs[0]  # la plus récente
+    except Exception as e:
+        st.error(f"Erreur chargement conversation: {e}")
+    return None
+
 def get_ai_response(query: str) -> str:
     if not st.session_state.llama_client:
         return "❌ Vision AI non disponible."
@@ -119,8 +121,24 @@ def get_ai_response(query: str) -> str:
     except Exception as e:
         return f"❌ Erreur modèle: {e}"
 
+def stream_response(text, placeholder):
+    full_text = ""
+    text_str = str(text)
+    thinking_messages = ["🤔 Vision AI réfléchit", "💭 Vision AI analyse", "✨ Vision AI génère une réponse"]
+    for msg in thinking_messages:
+        placeholder.markdown(f"*{msg}...*")
+        time.sleep(0.3)
+    for char in text_str:
+        full_text += char
+        display_text = full_text + "**█**"
+        placeholder.markdown(display_text)
+        time.sleep(0.01 if char==' ' else 0.03)
+    placeholder.markdown(full_text + " ✅")
+    time.sleep(0.2)
+    placeholder.markdown(full_text)
+
 # -------------------------
-# Auth
+# Authentification
 # -------------------------
 st.sidebar.title("🔐 Authentification")
 if st.session_state.user["id"] == "guest":
@@ -128,23 +146,26 @@ if st.session_state.user["id"] == "guest":
     with tab1:
         email = st.text_input("📧 Email")
         password = st.text_input("🔒 Mot de passe", type="password")
-        if st.button("🚪 Se connecter"):
-            user_result = db.verify_user(email, password)
-            if user_result:
-                st.session_state.user = user_result
-                st.session_state.conversation = load_user_last_conversation(user_result["id"])
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🚪 Se connecter"):
+                user_result = db.verify_user(email, password)
+                if user_result:
+                    st.session_state.user = user_result
+                    st.session_state.conversation = load_user_last_conversation(user_result["id"])
+                    st.session_state.messages_memory = []
+                    st.session_state.conversation_loaded = True
+                    st.success("Connexion réussie !")
+                    st.rerun()
+                else:
+                    st.error("Email ou mot de passe invalide")
+        with col2:
+            if st.button("👤 Mode invité"):
+                st.session_state.user = {"id": "guest", "email": "Invité"}
+                st.session_state.conversation = None
                 st.session_state.messages_memory = []
                 st.session_state.conversation_loaded = False
-                st.success("Connexion réussie ! Conversation restaurée.")
                 st.rerun()
-            else:
-                st.error("Email ou mot de passe invalide")
-        if st.button("👤 Mode invité"):
-            st.session_state.user = {"id": "guest", "email": "Invité"}
-            st.session_state.conversation = None
-            st.session_state.messages_memory = []
-            st.session_state.conversation_loaded = False
-            st.rerun()
     with tab2:
         email_reg = st.text_input("📧 Email", key="reg_email")
         name_reg = st.text_input("👤 Nom complet", key="reg_name")
@@ -167,44 +188,44 @@ else:
         st.rerun()
 
 # -------------------------
-# Conversations
+# Auto-chargement conversation
+# -------------------------
+if st.session_state.user["id"] != "guest" and not st.session_state.conversation_loaded:
+    st.session_state.conversation = load_user_last_conversation(st.session_state.user["id"])
+    st.session_state.conversation_loaded = True
+
+# -------------------------
+# Conversations côté sidebar
 # -------------------------
 if st.session_state.user["id"] != "guest":
     st.sidebar.title("💬 Mes Conversations")
     if st.sidebar.button("➕ Nouvelle conversation"):
         conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
-        if conv:
-            st.session_state.conversation = conv
-            st.session_state.messages_memory = []
-            st.rerun()
-
+        st.session_state.conversation = conv
+        st.session_state.messages_memory = []
+        st.rerun()
     convs = db.get_conversations(st.session_state.user["id"])
     if convs:
         current_conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
-        options = [f"{c['description']} - {c['created_at']}" + (" (Actuelle)" if c['conversation_id']==current_conv_id else "") for c in convs]
-        sel = st.sidebar.selectbox("Vos conversations:", ["Choisir..."]+options)
-        if sel != "Choisir...":
-            idx = options.index(sel)
+        options = ["Choisir une conversation..."] + [f"{c['description']} - {c['created_at']}" + (" (Actuelle)" if c['conversation_id']==current_conv_id else "") for c in convs]
+        sel = st.sidebar.selectbox("Vos conversations:", options)
+        if sel != "Choisir une conversation..." and not sel.endswith(" (Actuelle)"):
+            idx = options.index(sel)-1
             selected_conv = convs[idx]
-            if st.session_state.conversation != selected_conv:
-                st.session_state.conversation = selected_conv
-                st.session_state.messages_memory = []
-                st.rerun()
-    else:
-        st.sidebar.info("Aucune conversation. Créez-en une.")
+            st.session_state.conversation = selected_conv
+            st.session_state.messages_memory = []
+            st.rerun()
 
 # -------------------------
 # Header
 # -------------------------
-st.title("🤖 Vision AI Chat")
-st.caption(f"Connecté en tant que: {st.session_state.user.get('email')}")
-
+st.markdown("<h1 style='text-align:center; color:#2E8B57;'>🤖 Vision AI Chat</h1>", unsafe_allow_html=True)
+st.markdown(f"<p style='text-align:center; color:#666;'>Connecté en tant que: <b>{st.session_state.user.get('email')}</b></p>", unsafe_allow_html=True)
 if st.session_state.conversation:
-    conv_title = st.session_state.conversation.get('description', 'Conversation sans titre')
-    st.subheader(f"📝 {conv_title}")
+    st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>📝 {st.session_state.conversation.get('description', 'Sans titre')}</p>", unsafe_allow_html=True)
 
 # -------------------------
-# Messages existants
+# Affichage messages
 # -------------------------
 display_msgs = []
 if st.session_state.conversation:
@@ -216,63 +237,87 @@ if st.session_state.conversation:
                 "sender": m["sender"],
                 "content": m["content"],
                 "created_at": m["created_at"],
-                "type": m.get("message_type", "text"),
+                "type": m.get("message_type","text"),
                 "image_data": m.get("image_data")
             })
 else:
     display_msgs = st.session_state.messages_memory.copy()
 
 for m in display_msgs:
-    role = "user" if m["sender"] == "user" else "assistant"
+    role = "user" if m["sender"] in ["user","user_api_request"] else "assistant"
     with st.chat_message(role):
-        if m.get("type") == "image" and m.get("image_data"):
-            img = base64_to_image(m["image_data"])
-            if img:
-                st.image(img, width=300)
-        st.markdown(m["content"])
+        if m.get("type") == "image":
+            if m.get("image_data"):
+                img = base64_to_image(m["image_data"])
+                if img: st.image(img, caption="Image analysée", width=300)
+            st.write(m["content"])
+        else:
+            st.markdown(m["content"])
 
 # -------------------------
-# Nouveau message
+# Formulaire envoi messages
 # -------------------------
+message_container = st.container()
 with st.form("chat_form", clear_on_submit=True):
     uploaded_file = st.file_uploader("📷 Ajouter une image (optionnel)", type=["png","jpg","jpeg"])
-    user_input = st.text_area("💭 Tapez votre message...")
-    submit = st.form_submit_button("📤 Envoyer")
+    user_input = st.text_area("💭 Tapez votre message...", height=80)
+    submit_button = st.form_submit_button("📤 Envoyer")
 
-if submit and (user_input or uploaded_file):
-    conv_id = None
-    if st.session_state.user["id"] != "guest":
-        if not st.session_state.conversation:
-            conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
-            st.session_state.conversation = conv
-        conv_id = st.session_state.conversation["conversation_id"]
-
-    full_message = user_input.strip()
+if submit_button and (user_input or uploaded_file):
+    conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+    if not conv_id and st.session_state.user["id"] != "guest":
+        # Création automatique si nécessaire
+        conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
+        st.session_state.conversation = conv
+        conv_id = conv.get("conversation_id")
+    
+    full_message = ""
     image_base64 = None
+    image_caption = ""
 
     if uploaded_file:
         image = Image.open(uploaded_file)
         image_base64 = image_to_base64(image)
-        caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        full_message = f"[IMAGE] {caption}\n\nQuestion: {user_input}" if user_input else f"[IMAGE] {caption}"
-
-    with st.chat_message("user"):
-        if uploaded_file:
-            st.image(Image.open(uploaded_file), width=300)
-        if user_input:
-            st.markdown(user_input)
-
-    if conv_id:
-        db.add_message(conv_id, "user", full_message, "image" if uploaded_file else "text", image_data=image_base64)
-    else:
-        st.session_state.messages_memory.append({"sender": "user", "content": full_message, "type": "image" if uploaded_file else "text", "image_data": image_base64})
-
-    prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
-    with st.chat_message("assistant"):
-        resp = get_ai_response(prompt)
-        st.markdown(resp)
-    if conv_id:
-        db.add_message(conv_id, "assistant", resp, "text")
-    else:
-        st.session_state.messages_memory.append({"sender": "assistant", "content": resp, "type": "text"})
-    st.rerun()
+        with message_container:
+            with st.chat_message("user"):
+                st.image(image, caption="Image uploadée", width=300)
+        image_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+        full_message = f"[IMAGE] {image_caption}"
+        if user_input.strip():
+            full_message += f"\n\nQuestion/Demande: {user_input}"
+            with message_container:
+                with st.chat_message("user"):
+                    st.write(f"**Question:** {user_input}")
+        if conv_id:
+            db.add_message(conv_id, "user", full_message, "image", image_data=image_base64)
+        else:
+            st.session_state.messages_memory.append({
+                "sender":"user","content":full_message,"created_at":None,"type":"image","image_data":image_base64
+            })
+    elif user_input.strip():
+        full_message = user_input
+        with message_container:
+            with st.chat_message("user"):
+                st.markdown(user_input)
+        if conv_id:
+            db.add_message(conv_id, "user", full_message, "text")
+        else:
+            st.session_state.messages_memory.append({
+                "sender":"user","content":full_message,"created_at":None,"type":"text"
+            })
+    
+    # Réponse AI
+    if full_message:
+        prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
+        with message_container:
+            with st.chat_message("assistant"):
+                placeholder = st.empty()
+                resp = get_ai_response(prompt)
+                stream_response(resp, placeholder)
+        if conv_id:
+            db.add_message(conv_id, "assistant", resp, "text")
+        else:
+            st.session_state.messages_memory.append({
+                "sender":"assistant","content":resp,"created_at":None,"type":"text"
+            })
+        st.rerun()
