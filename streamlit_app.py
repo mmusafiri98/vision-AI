@@ -7,7 +7,7 @@ import time
 import pandas as pd
 import io
 import base64
-import db  # ton module DB mis à jour avec add_message corrigé
+import db  # ton module DB
 
 # -------------------------
 # Config
@@ -73,13 +73,20 @@ def safe_create_conversation(user_id, description):
         st.write(f"DEBUG safe_create_conversation: user_id={user_id}, description={description}")
         conv = db.create_conversation(user_id, description)
         st.write(f"DEBUG safe_create_conversation: résultat brut = {conv}")
+        
+        # Vérifier le format retourné
         if conv is None:
             st.error("Erreur: create_conversation a retourné None")
             return None
+            
+        # Si c'est un dictionnaire, le retourner tel quel
         if isinstance(conv, dict):
             return conv
+            
+        # Si c'est autre chose, essayer de le convertir
         st.write(f"DEBUG safe_create_conversation: type non-dict détecté: {type(conv)}")
         return None
+        
     except Exception as e:
         st.error(f"Erreur création conversation: {e}")
         st.write(f"DEBUG safe_create_conversation: Exception = {str(e)}")
@@ -157,23 +164,36 @@ def get_ai_response(query: str) -> str:
         return f"❌ Erreur modèle: {e}"
 
 def stream_response(text, placeholder):
+    """Animation de frappe pour afficher le texte caractère par caractère"""
     full_text = ""
     text_str = str(text)
+    
+    # Phases d'animation
+    # 1. Afficher "En train d'écrire..."
     thinking_messages = ["🤔 Vision AI réfléchit", "💭 Vision AI analyse", "✨ Vision AI génère une réponse"]
     for msg in thinking_messages:
         placeholder.markdown(f"*{msg}...*")
         time.sleep(0.3)
+    
+    # 2. Animation de frappe caractère par caractère
     for i, char in enumerate(text_str):
         full_text += char
+        # Afficher avec curseur clignotant stylisé
         display_text = full_text + "**█**"
         placeholder.markdown(display_text)
+        
+        # Vitesse variable : plus rapide pour les espaces, plus lent pour la ponctuation
         if char == ' ':
             time.sleep(0.01)
         elif char in '.,!?;:':
             time.sleep(0.1)
         else:
             time.sleep(0.03)
+    
+    # 3. Afficher le texte final proprement
     placeholder.markdown(full_text)
+    
+    # 4. Petit effet de fin
     time.sleep(0.2)
     placeholder.markdown(full_text + " ✅")
     time.sleep(0.5)
@@ -196,6 +216,8 @@ if st.session_state.user["id"] == "guest":
                 st.write(f"DEBUG: Résultat verify_user: {user_result}")
                 if user_result:
                     st.session_state.user = user_result
+                    st.write(f"DEBUG: User connecté: {st.session_state.user}")
+                    # Charger automatiquement la dernière conversation active
                     last_conv = load_user_last_conversation(user_result["id"])
                     st.session_state.conversation = last_conv
                     st.session_state.messages_memory = []
@@ -225,6 +247,8 @@ if st.session_state.user["id"] == "guest":
     st.stop()
 else:
     st.sidebar.success(f"✅ Connecté: {st.session_state.user.get('email')}")
+    
+    # Bouton déconnexion
     if st.sidebar.button("Se déconnecter"):
         st.session_state.user = {"id": "guest", "email": "Invité"}
         st.session_state.conversation = None
@@ -235,11 +259,17 @@ else:
 # -------------------------
 # Auto-chargement de la dernière conversation avec debug
 # -------------------------
-if st.session_state.user["id"] != "guest" and not st.session_state.conversation_loaded:
+if (st.session_state.user["id"] != "guest" and 
+    not st.session_state.conversation_loaded):
+    
+    st.write(f"DEBUG: Tentative de chargement pour user_id: {st.session_state.user['id']}")
     last_conv = load_user_last_conversation(st.session_state.user["id"])
     if last_conv:
         st.session_state.conversation = last_conv
+        st.write(f"DEBUG: Conversation chargée: {last_conv}")
         st.info(f"Dernière conversation chargée: {last_conv.get('description', 'Sans titre')}")
+    else:
+        st.write("DEBUG: Aucune conversation trouvée")
     st.session_state.conversation_loaded = True
 
 # -------------------------
@@ -252,21 +282,25 @@ if st.session_state.user["id"] != "guest":
         if conv:
             st.session_state.conversation = conv
             st.session_state.messages_memory = []
-            conv_id_for_save = conv.get("conversation_id")
-            save_active_conversation(st.session_state.user["id"], conv_id_for_save)
+            safe_create_conversation_id = conv.get("conversation_id") if conv else None
+            save_active_conversation(st.session_state.user["id"], safe_create_conversation_id)
             st.rerun()
         else:
             st.error("Impossible de créer une nouvelle conversation")
+
     try:
         convs = db.get_conversations(st.session_state.user["id"])
         if convs:
+            # Marquer la conversation actuelle dans la liste
             current_conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
             options = ["Choisir une conversation..."]
+            
             for c in convs:
                 title = f"{c['description']} - {c['created_at']}"
                 if c.get('conversation_id') == current_conv_id:
                     title += " (Actuelle)"
                 options.append(title)
+            
             sel = st.sidebar.selectbox("Vos conversations:", options)
             if sel != "Choisir une conversation..." and not sel.endswith(" (Actuelle)"):
                 idx = options.index(sel) - 1
@@ -284,22 +318,28 @@ if st.session_state.user["id"] != "guest":
 # Header
 # -------------------------
 st.markdown("<h1 style='text-align:center; color:#2E8B57;'>🤖 Vision AI Chat</h1>", unsafe_allow_html=True)
-st.markdown(f"<p style='text-align:center; color:#666;'>Créé par <b>Pepe Musafiri</b></p>", unsafe_allow_html=True)
+st.markdown(f"<p style='text-align:center; color:#666;'>Créé par <b>Pepe Musafiri</b> (Ingénieur IA) avec la contribution de <b>Meta AI</b></p>", unsafe_allow_html=True)
 st.markdown(f"<p style='text-align:center; color:#666;'>Connecté en tant que: <b>{st.session_state.user.get('email')}</b></p>", unsafe_allow_html=True)
+
+# Afficher le titre de la conversation actuelle
 if st.session_state.conversation:
     conv_title = st.session_state.conversation.get('description', 'Conversation sans titre')
     st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>📝 {conv_title}</p>", unsafe_allow_html=True)
 
 # -------------------------
-# Affichage des messages existants
+# Afficher les messages existants avec debug
 # -------------------------
 display_msgs = []
 if st.session_state.conversation:
     conv_id = st.session_state.conversation.get("conversation_id")
+    st.write(f"DEBUG: Chargement conversation ID: {conv_id}")
     try:
         db_msgs = db.get_messages(conv_id)
+        st.write(f"DEBUG: Nombre de messages récupérés: {len(db_msgs) if db_msgs else 0}")
+        
         if db_msgs:
-            for m in db_msgs:
+            for i, m in enumerate(db_msgs):
+                st.write(f"DEBUG Message {i}: {m}")
                 display_msgs.append({
                     "sender": m["sender"], 
                     "content": m["content"], 
@@ -309,29 +349,45 @@ if st.session_state.conversation:
                 })
     except Exception as e:
         st.error(f"Erreur chargement messages: {e}")
+        st.write(f"DEBUG: Erreur détaillée: {str(e)}")
 else:
+    st.write("DEBUG: Aucune conversation active, utilisation mémoire session")
+    # Pour les invités, utiliser la mémoire de session (non persistante)
     display_msgs = st.session_state.messages_memory.copy()
 
-# Afficher l'historique
+st.write(f"DEBUG: Nombre total de messages à afficher: {len(display_msgs)}")
+
+# Afficher l'historique des messages
 for m in display_msgs:
     role = "user" if m["sender"] in ["user","user_api_request"] else "assistant"
     with st.chat_message(role):
+        # Si c'est un message avec image
         if m.get("type") == "image":
+            # Afficher l'image si elle existe
             if m.get("image_data"):
-                img = base64_to_image(m["image_data"])
-                if img:
-                    st.image(img, caption="Image analysée", width=300)
-                else:
-                    st.write("📷 Image (non disponible)")
+                try:
+                    # Reconstituer l'image depuis base64
+                    img = base64_to_image(m["image_data"])
+                    if img:
+                        st.image(img, caption="Image analysée", width=300)
+                    else:
+                        st.write("📷 Image (non disponible)")
+                except:
+                    st.write("📷 Image (erreur d'affichage)")
             else:
                 st.write("📷 Image uploadée")
+            
+            # Afficher la description si elle existe dans le contenu
             if "[IMAGE]" in m["content"]:
                 description = m["content"].replace("[IMAGE] ", "").split("\n\nQuestion/Demande")[0]
                 st.write(f"*Description automatique: {description}*")
+                
+                # Afficher la question utilisateur si elle existe
                 if "Question/Demande de l'utilisateur:" in m["content"]:
                     user_question = m["content"].split("Question/Demande de l'utilisateur: ")[1]
                     st.write(f"**Question:** {user_question}")
         else:
+            # Message texte normal
             st.markdown(m["content"])
 
 # -------------------------
@@ -340,52 +396,215 @@ for m in display_msgs:
 message_container = st.container()
 
 # -------------------------
-# Formulaire de saisie
+# Formulaire de saisie unifié
 # -------------------------
 with st.form(key="chat_form", clear_on_submit=True):
+    # Upload d'image (optionnel)
     uploaded_file = st.file_uploader("📷 Ajouter une image (optionnel)", type=["png","jpg","jpeg"], key="image_upload")
-    user_input = st.text_area("💭 Tapez votre message...", key="user_message", placeholder="Posez votre question ou décrivez ce que vous voulez que j'analyse dans l'image...", height=80)
+    
+    # Champ de texte principal
+    user_input = st.text_area(
+        "💭 Tapez votre message...", 
+        key="user_message", 
+        placeholder="Posez votre question ou décrivez ce que vous voulez que j'analyse dans l'image...",
+        height=80
+    )
+    
+    # Bouton d'envoi unique
     submit_button = st.form_submit_button("📤 Envoyer", use_container_width=True)
 
 # -------------------------
-# Traitement message
+# Traitement unifié avec gestion d'erreur améliorée
 # -------------------------
-if submit_button and (user_input or uploaded_file):
+if submit_button and (user_input or uploaded_file is not None):
+    
+    # Si utilisateur connecté mais pas de conversation, en créer une automatiquement
     if st.session_state.user["id"] != "guest" and not st.session_state.conversation:
+        st.write(f"DEBUG: Création auto conversation pour user_id: {st.session_state.user['id']}")
         conv = safe_create_conversation(st.session_state.user["id"], "Nouvelle discussion")
         if conv:
+            st.write(f"DEBUG: Conversation créée: {conv}")
             st.session_state.conversation = conv
-            conv_id = conv.get("conversation_id")
+            conv_id_for_save = conv.get("conversation_id") if conv else None
+            save_active_conversation(st.session_state.user["id"], conv_id_for_save)
         else:
-            st.error("Impossible de créer une conversation")
-            st.stop()
-    else:
-        conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
-
-    img_base64 = None
-    if uploaded_file:
+            st.error("Impossible de créer une conversation automatiquement")
+    
+    # Variables pour construire le message complet
+    full_message = ""
+    image_caption = ""
+    image_base64 = None
+    
+    # Traitement de l'image si présente
+    if uploaded_file is not None:
         try:
-            img = Image.open(uploaded_file).convert("RGB")
-            img_base64 = image_to_base64(img)
-            caption = generate_caption(img, st.session_state.processor, st.session_state.model)
-            user_input = f"[IMAGE] {caption}\n\nQuestion/Demande de l'utilisateur: {user_input}" if user_input else f"[IMAGE] {caption}"
+            image = Image.open(uploaded_file)
+            
+            # Convertir l'image en base64 pour stockage
+            image_base64 = image_to_base64(image)
+            
+            # Afficher l'image uploadée dans le chat
+            with message_container:
+                with st.chat_message("user"):
+                    st.image(image, caption="Image uploadée pour analyse", width=300)
+            
+            # Générer la description de l'image
+            with st.spinner("Analyse de l'image en cours..."):
+                image_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+            
+            # Construire le message avec image
+            full_message = f"[IMAGE] {image_caption}"
+            if user_input.strip():
+                full_message += f"\n\nQuestion/Demande de l'utilisateur: {user_input}"
+                # Afficher aussi la question dans le chat
+                with message_container:
+                    with st.chat_message("user"):
+                        st.write(f"**Question:** {user_input}")
+            
+            # Sauvegarder le message image avec texte
+            conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+            if conv_id:
+                try:
+                    # Vérifier si votre fonction db.add_message supporte image_data
+                    if hasattr(db, 'add_message') and 'image_data' in db.add_message.__code__.co_varnames:
+                        db.add_message(conv_id, "user", full_message, "image", image_data=image_base64)
+                    else:
+                        db.add_message(conv_id, "user", full_message, "image")
+                except Exception as e:
+                    st.error(f"Erreur sauvegarde message image: {e}")
+                    # Fallback en mémoire
+                    st.session_state.messages_memory.append({
+                        "sender": "user", 
+                        "content": full_message, 
+                        "created_at": None,
+                        "type": "image",
+                        "image_data": image_base64
+                    })
+            else:
+                # Mode invité - mémoire temporaire
+                st.session_state.messages_memory.append({
+                    "sender": "user", 
+                    "content": full_message, 
+                    "created_at": None,
+                    "type": "image",
+                    "image_data": image_base64
+                })
+                
         except Exception as e:
-            st.error(f"Erreur traitement image: {e}")
+            st.error(f"Erreur lors du traitement de l'image: {e}")
+            full_message = user_input if user_input else ""
+    
+    # Si pas d'image, juste le texte
+    elif user_input.strip():
+        full_message = user_input
+        
+        # Afficher le message utilisateur
+        with message_container:
+            with st.chat_message("user"):
+                st.markdown(user_input)
+        
+        # Sauvegarder le message texte
+        conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+        st.write(f"DEBUG: Sauvegarde message texte - conv_id: {conv_id}")
+        if conv_id:
+            try:
+                result = db.add_message(conv_id, "user", user_input, "text")
+                st.write(f"DEBUG: Message texte sauvé - résultat: {result}")
+            except Exception as e:
+                st.error(f"Erreur sauvegarde message texte: {e}")
+                st.write(f"DEBUG: Erreur sauvegarde texte: {str(e)}")
+                # Fallback en mémoire
+                st.session_state.messages_memory.append({
+                    "sender": "user", 
+                    "content": user_input, 
+                    "created_at": None,
+                    "type": "text"
+                })
+        else:
+            # Mode invité - mémoire temporaire
+            st.session_state.messages_memory.append({
+                "sender": "user", 
+                "content": user_input, 
+                "created_at": None,
+                "type": "text"
+            })
 
-    # Ajouter le message dans la DB
-    ok = db.add_message(conv_id, "user", user_input, "image" if uploaded_file else "text", img_base64)
-    if ok:
-        st.session_state.messages_memory.append({"sender": "user", "content": user_input, "type": "image" if uploaded_file else "text", "image_data": img_base64, "created_at": time.time()})
-    else:
-        st.warning("Impossible d'ajouter le message à la conversation")
+    # Générer la réponse AI si on a un message
+    if full_message:
+        prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
+        
+        with message_container:
+            with st.chat_message("assistant"):
+                # Créer un placeholder pour l'animation
+                response_placeholder = st.empty()
+                response_placeholder.write("Vision AI réfléchit... 🤔")
+                
+                # Obtenir la réponse
+                resp = get_ai_response(prompt)
+                
+                # Animer la réponse caractère par caractère
+                stream_response(resp, response_placeholder)
 
-    # Obtenir la réponse AI
-    placeholder = message_container.empty()
-    response_text = get_ai_response(user_input)
-    stream_response(response_text, placeholder)
+        # Sauvegarder la réponse
+        conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+        if conv_id:
+            try:
+                db.add_message(conv_id, "assistant", resp, "text")
+            except Exception as e:
+                st.error(f"Erreur sauvegarde réponse: {e}")
+                # Fallback en mémoire
+                st.session_state.messages_memory.append({
+                    "sender": "assistant", 
+                    "content": resp, 
+                    "created_at": None,
+                    "type": "text"
+                })
+        else:
+            # Mode invité - mémoire temporaire
+            st.session_state.messages_memory.append({
+                "sender": "assistant", 
+                "content": resp, 
+                "created_at": None,
+                "type": "text"
+            })
+        
+        st.rerun()
 
-    # Ajouter réponse AI à la DB
-    if st.session_state.conversation:
-        db.add_message(conv_id, "assistant", response_text, "text")
-        st.session_state.messages_memory.append({"sender": "assistant", "content": response_text, "type": "text", "created_at": time.time()})
+# Message d'aide
+st.markdown("---")
+st.info("💡 **Comment utiliser Vision AI:**\n"
+        "• **Texte seul:** Posez vos questions normalement\n"
+        "• **Image seule:** Uploadez une image, elle sera analysée automatiquement\n"
+        "• **Image + Texte:** Uploadez une image ET écrivez votre question pour une analyse ciblée\n"
+        "• **Persistance:** Vos conversations sont automatiquement sauvegardées (utilisateurs connectés)")
 
+# -------------------------
+# Export CSV
+# -------------------------
+if display_msgs:
+    st.markdown("---")
+    with st.expander("📂 Exporter la conversation"):
+        # Créer une version propre pour l'export (sans les données image base64)
+        export_msgs = []
+        for m in display_msgs:
+            export_msg = {
+                "sender": m["sender"],
+                "content": m["content"],
+                "created_at": m["created_at"],
+                "type": m.get("type", "text"),
+                "has_image": "Oui" if m.get("image_data") else "Non"
+            }
+            export_msgs.append(export_msg)
+        
+        df = pd.DataFrame(export_msgs)
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
+
+        conv_id_for_file = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else "invite"
+        st.download_button(
+            "💾 Télécharger la conversation (CSV)",
+            csv_buffer.getvalue(),
+            file_name=f"conversation_{conv_id_for_file}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
