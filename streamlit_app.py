@@ -28,7 +28,7 @@ When you receive an image description starting with [IMAGE], you should:
 4. Be helpful and descriptive in your analysis"""
 
 # -------------------------
-# Utility functions
+# Funzioni utili
 # -------------------------
 def image_to_base64(image):
     buffer = io.BytesIO()
@@ -88,10 +88,12 @@ def stream_response(text, placeholder):
     placeholder.markdown(full_text + " ✅")
 
 # -------------------------
-# Session init
+# Inizializza session_state
 # -------------------------
 if "user" not in st.session_state:
     st.session_state.user = {"id": "guest", "email": "Invité"}
+if "conversation" not in st.session_state:
+    st.session_state.conversation = None
 if "processor" not in st.session_state or "model" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
 if "llama_client" not in st.session_state:
@@ -102,7 +104,7 @@ if "llama_client" not in st.session_state:
         st.warning("Impossible de connecter LLaMA.")
 
 # -------------------------
-# Auth
+# Sidebar Auth
 # -------------------------
 st.sidebar.title("🔐 Authentification")
 if st.session_state.user["id"] == "guest":
@@ -140,10 +142,11 @@ else:
     st.sidebar.success(f"✅ Connecté: {st.session_state.user.get('email')}")
     if st.sidebar.button("Se déconnecter"):
         st.session_state.user = {"id": "guest", "email": "Invité"}
+        st.session_state.conversation = None
         st.rerun()
 
 # -------------------------
-# Sidebar Conversations
+# Sidebar Conversazioni
 # -------------------------
 if st.session_state.user["id"] != "guest":
     st.sidebar.title("💬 Mes Conversations")
@@ -295,4 +298,3 @@ if display_msgs:
             mime="text/csv",
             use_container_width=True
         )
-
