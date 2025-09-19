@@ -69,11 +69,16 @@ def get_conversations(user_id=None):
     if not supabase:
         return []
     try:
-        query = supabase.table("messager").select("conversation_id, created_at, sender").order("created_at", desc=True)
+        query = (
+            supabase.table("messager")
+            .select("conversation_id, created_at, sender")
+            .order("created_at", desc=True)
+        )
         if user_id:
             query = query.eq("sender", user_id)
         resp = query.execute()
         data = resp.data or []
+
         convs = {}
         for row in data:
             cid = row["conversation_id"]
@@ -91,7 +96,10 @@ def get_conversations(user_id=None):
 # =======================
 # MESSAGES
 # =======================
-def add_message(conversation_id, sender, content, message_type="text", status="sent", created_at=None):
+def add_message(conversation_id, sender, content,
+                message_type="text", status="sent",
+                created_at=None, image_data=None):
+    """Ajoute un message (texte ou image) dans la table messager"""
     if not supabase:
         return False
     try:
@@ -103,6 +111,9 @@ def add_message(conversation_id, sender, content, message_type="text", status="s
             "status": status,
             "created_at": created_at or datetime.now().isoformat()
         }
+        if image_data:  # ✅ ajout du support d'image
+            data["image_data"] = image_data
+
         resp = supabase.table("messager").insert(data).execute()
         return bool(resp.data)
     except Exception as e:
@@ -110,10 +121,17 @@ def add_message(conversation_id, sender, content, message_type="text", status="s
         return False
 
 def get_messages(conversation_id):
+    """Récupère tous les messages d'une conversation donnée"""
     if not supabase:
         return []
     try:
-        resp = supabase.table("messager").select("*").eq("conversation_id", conversation_id).order("created_at").execute()
+        resp = (
+            supabase.table("messager")
+            .select("*")
+            .eq("conversation_id", conversation_id)
+            .order("created_at")
+            .execute()
+        )
         return resp.data or []
     except Exception as e:
         print(f"Erreur get_messages: {e}")
