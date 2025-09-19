@@ -14,17 +14,16 @@ import db  # ton module DB
 # -------------------------
 st.set_page_config(page_title="Vision AI Chat", layout="wide")
 SYSTEM_PROMPT = """You are Vision AI.
-You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
-with contributions from Meta AI.
-Your role is to help users with any task they need, from image analysis
-and editing to answering questions clearly and helpfully.
+You were created by Pepe Musafiri, an AI Engineer.
+Your role is to help users with any task, from image analysis
+to answering questions clearly.
 Always answer naturally as Vision AI.
 
 When you receive an image description starting with [IMAGE], you should:
-1. Acknowledge that you can see and analyze the image
-2. Provide detailed analysis of what you observe
-3. Answer any specific questions about the image
-4. Be helpful and descriptive in your analysis"""
+1. Acknowledge the image
+2. Provide detailed analysis
+3. Answer any user questions
+4. Be descriptive and helpful"""
 
 # -------------------------
 # Utility functions
@@ -44,42 +43,33 @@ def base64_to_image(img_str):
     except:
         return None
 
-def load_user_last_conversation(user_id):
-    """Récupérer la dernière conversation de l'utilisateur"""
-    try:
-        if user_id != "guest":
+def load_conversation_with_messages(user_id):
+    """Charge la dernière conversation et tous les messages depuis DB"""
+    conv = None
+    if user_id != "guest":
+        try:
             convs = db.get_conversations(user_id)
             if convs:
-                return convs[0]  # La plus récente
-        return None
-    except Exception as e:
-        st.error(f"Erreur chargement conversation: {e}")
-        return None
-
-def load_user_last_conversation_with_messages(user_id):
-    """Charger la dernière conversation avec tous les messages depuis DB"""
-    conv = load_user_last_conversation(user_id)
-    if conv:
-        conv_id = conv.get("conversation_id")
-        try:
-            msgs = db.get_messages(conv_id)
-            st.session_state.messages_memory = [
-                {
-                    "sender": m["sender"],
-                    "content": m["content"],
-                    "created_at": m.get("created_at"),
-                    "type": m.get("type","text"),
-                    "image_data": m.get("image_data", None)
-                } for m in msgs
-            ]
+                conv = convs[0]  # La plus récente
+                conv_id = conv.get("conversation_id")
+                msgs = db.get_messages(conv_id)
+                st.session_state.messages_memory = [
+                    {
+                        "sender": m["sender"],
+                        "content": m["content"],
+                        "created_at": m.get("created_at"),
+                        "type": m.get("type","text"),
+                        "image_data": m.get("image_data", None)
+                    } for m in msgs
+                ]
+            else:
+                st.session_state.messages_memory = []
         except Exception as e:
+            st.error(f"Erreur chargement conversation/messages: {e}")
             st.session_state.messages_memory = []
-        return conv
-    return None
-
-def save_active_conversation(user_id, conv_id):
-    """Fonction placeholder si besoin"""
-    pass
+    else:
+        st.session_state.messages_memory = []
+    return conv
 
 # -------------------------
 # BLIP loader
@@ -144,12 +134,11 @@ def get_ai_response(query: str) -> str:
 
 def stream_response(text, placeholder):
     full_text = ""
-    text_str = str(text)
     thinking_messages = ["🤔 Vision AI réfléchit", "💭 Vision AI analyse", "✨ Vision AI génère une réponse"]
     for msg in thinking_messages:
         placeholder.markdown(f"*{msg}...*")
         time.sleep(0.3)
-    for char in text_str:
+    for char in text:
         full_text += char
         display_text = full_text + "**█**"
         placeholder.markdown(display_text)
@@ -173,8 +162,8 @@ if st.session_state.user["id"] == "guest":
                 user_result = db.verify_user(email, password)
                 if user_result:
                     st.session_state.user = user_result
-                    # Charger la dernière conversation avec messages
-                    last_conv = load_user_last_conversation_with_messages(user_result["id"])
+                    # Charger la dernière conversation + messages
+                    last_conv = load_conversation_with_messages(user_result["id"])
                     st.session_state.conversation = last_conv
                     st.session_state.conversation_loaded = True
                     st.success("Connexion réussie ! Conversation restaurée.")
@@ -210,16 +199,16 @@ else:
         st.rerun()
 
 # -------------------------
-# Auto-chargement si pas déjà fait
+# Auto-chargement des conversations/messages
 # -------------------------
 if (st.session_state.user["id"] != "guest" and 
     not st.session_state.conversation_loaded):
-    last_conv = load_user_last_conversation_with_messages(st.session_state.user["id"])
+    last_conv = load_conversation_with_messages(st.session_state.user["id"])
     st.session_state.conversation = last_conv
     st.session_state.conversation_loaded = True
 
 # -------------------------
-# Conversations sidebar
+# Sidebar conversations
 # -------------------------
 if st.session_state.user["id"] != "guest":
     st.sidebar.title("💬 Mes Conversations")
@@ -228,7 +217,6 @@ if st.session_state.user["id"] != "guest":
         st.session_state.conversation = conv
         st.session_state.messages_memory = []
         st.rerun()
-
     convs = db.get_conversations(st.session_state.user["id"])
     if convs:
         current_conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
@@ -244,7 +232,7 @@ if st.session_state.user["id"] != "guest":
             selected_conv = convs[idx]
             if st.session_state.conversation != selected_conv:
                 st.session_state.conversation = selected_conv
-                # Charger les messages de la nouvelle conversation
+                # Charger les messages de la conversation sélectionnée
                 conv_id = selected_conv.get("conversation_id")
                 msgs = db.get_messages(conv_id)
                 st.session_state.messages_memory = [
@@ -272,7 +260,7 @@ if st.session_state.conversation:
     st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>📝 {conv_title}</p>", unsafe_allow_html=True)
 
 # -------------------------
-# Afficher messages
+# Affichage messages
 # -------------------------
 display_msgs = st.session_state.messages_memory.copy()
 for m in display_msgs:
@@ -327,14 +315,16 @@ if submit_button and (user_input or uploaded_file):
                 with message_container:
                     with st.chat_message("user"):
                         st.write(f"**Question:** {user_input}")
-            conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
-            if conv_id:
-                db.add_message(conv_id, "user", full_message, "image", image_data=image_base64)
-            else:
-                st.session_state.messages_memory.append({
-                    "sender": "user", "content": full_message, "created_at": None,
-                    "type": "image", "image_data": image_base64
-                })
+            # Sauvegarde immédiate DB
+            conv_id = st.session_state.conversation.get("conversation_id")
+            db.add_message(conv_id, "user", full_message, "image", image_data=image_base64)
+            st.session_state.messages_memory.append({
+                "sender": "user",
+                "content": full_message,
+                "created_at": None,
+                "type": "image",
+                "image_data": image_base64
+            })
         except Exception as e:
             st.error(f"Erreur image: {e}")
             full_message = user_input if user_input else ""
@@ -343,14 +333,14 @@ if submit_button and (user_input or uploaded_file):
         with message_container:
             with st.chat_message("user"):
                 st.markdown(user_input)
-        conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
-        if conv_id:
-            db.add_message(conv_id, "user", user_input, "text")
-        else:
-            st.session_state.messages_memory.append({
-                "sender": "user", "content": user_input, "created_at": None,
-                "type": "text"
-            })
+        conv_id = st.session_state.conversation.get("conversation_id")
+        db.add_message(conv_id, "user", user_input, "text")
+        st.session_state.messages_memory.append({
+            "sender": "user",
+            "content": user_input,
+            "created_at": None,
+            "type": "text"
+        })
 
     if full_message:
         prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
@@ -360,24 +350,15 @@ if submit_button and (user_input or uploaded_file):
                 response_placeholder.write("Vision AI réfléchit... 🤔")
                 resp = get_ai_response(prompt)
                 stream_response(resp, response_placeholder)
-        conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
-        if conv_id:
-            db.add_message(conv_id, "assistant", resp, "text")
-        else:
-            st.session_state.messages_memory.append({
-                "sender": "assistant", "content": resp, "created_at": None, "type": "text"
-            })
+        conv_id = st.session_state.conversation.get("conversation_id")
+        db.add_message(conv_id, "assistant", resp, "text")
+        st.session_state.messages_memory.append({
+            "sender": "assistant",
+            "content": resp,
+            "created_at": None,
+            "type": "text"
+        })
         st.rerun()
-
-# -------------------------
-# Info
-# -------------------------
-st.markdown("---")
-st.info("💡 **Comment utiliser Vision AI:**\n"
-        "• **Texte seul:** Posez vos questions normalement\n"
-        "• **Image seule:** Uploadez une image, elle sera analysée automatiquement\n"
-        "• **Image + Texte:** Uploadez une image ET écrivez votre question\n"
-        "• **Persistance:** Vos conversations sont automatiquement sauvegardées")
 
 # -------------------------
 # Export CSV
@@ -387,14 +368,13 @@ if display_msgs:
     with st.expander("📂 Exporter la conversation"):
         export_msgs = []
         for m in display_msgs:
-            export_msg = {
+            export_msgs.append({
                 "sender": m["sender"],
                 "content": m["content"],
                 "created_at": m["created_at"],
                 "type": m.get("type","text"),
                 "has_image": "Oui" if m.get("image_data") else "Non"
-            }
-            export_msgs.append(export_msg)
+            })
         df = pd.DataFrame(export_msgs)
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
