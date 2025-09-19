@@ -30,35 +30,48 @@ When you receive an image description starting with [IMAGE], you should:
 # Utility functions
 # -------------------------
 def image_to_base64(image):
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
+    try:
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode()
+    except:
+        return None
 
 def base64_to_image(img_str):
-    img_bytes = base64.b64decode(img_str)
-    return Image.open(io.BytesIO(img_bytes))
+    try:
+        img_bytes = base64.b64decode(img_str)
+        return Image.open(io.BytesIO(img_bytes))
+    except:
+        return None
 
 def load_user_last_conversation(user_id):
-    if user_id != "guest":
-        convs = db.get_conversations(user_id)
-        if convs:
-            return convs[0]  # La plus récente
-    return None
+    try:
+        if user_id != "guest":
+            convs = db.get_conversations(user_id)
+            if convs:
+                return convs[0]
+        return None
+    except Exception as e:
+        st.error(f"Erreur chargement conversation: {e}")
+        return None
 
 def load_user_last_conversation_with_messages(user_id):
     conv = load_user_last_conversation(user_id)
     if conv:
         conv_id = conv.get("conversation_id")
-        msgs = db.get_messages(conv_id)
-        st.session_state.messages_memory = [
-            {
-                "sender": m["sender"],
-                "content": m["content"],
-                "created_at": m.get("created_at"),
-                "type": m.get("type","text"),
-                "image_data": m.get("image_data", None)
-            } for m in msgs
-        ]
+        try:
+            msgs = db.get_messages(conv_id)
+            st.session_state.messages_memory = [
+                {
+                    "sender": m["sender"],
+                    "content": m["content"],
+                    "created_at": m.get("created_at"),
+                    "type": m.get("type","text"),
+                    "image_data": m.get("image_data", None)
+                } for m in msgs
+            ]
+        except Exception as e:
+            st.session_state.messages_memory = []
         return conv
     return None
 
@@ -72,13 +85,18 @@ def load_blip():
     return processor, model
 
 def generate_caption(image, processor, model):
-    inputs = processor(image, return_tensors="pt")
-    if torch.cuda.is_available():
-        inputs = inputs.to("cuda")
-        model = model.to("cuda")
-    with torch.no_grad():
-        out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
-    return processor.decode(out[0], skip_special_tokens=True)
+    if processor is None or model is None:
+        return "Description indisponible"
+    try:
+        inputs = processor(image, return_tensors="pt")
+        if torch.cuda.is_available():
+            inputs = inputs.to("cuda")
+            model = model.to("cuda")
+        with torch.no_grad():
+            out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
+        return processor.decode(out[0], skip_special_tokens=True)
+    except Exception as e:
+        return f"Erreur génération: {e}"
 
 # -------------------------
 # Session init
@@ -106,24 +124,33 @@ if "llama_client" not in st.session_state:
 def get_ai_response(query: str) -> str:
     if not st.session_state.llama_client:
         return "❌ Vision AI non disponible."
-    resp = st.session_state.llama_client.predict(
-        message=query,
-        max_tokens=8192,
-        temperature=0.7,
-        top_p=0.95,
-        api_name="/chat"
-    )
-    return str(resp)
+    try:
+        resp = st.session_state.llama_client.predict(
+            message=query,
+            max_tokens=8192,
+            temperature=0.7,
+            top_p=0.95,
+            api_name="/chat"
+        )
+        return str(resp)
+    except Exception as e:
+        return f"❌ Erreur modèle: {e}"
 
 def stream_response(text, placeholder):
     full_text = ""
     text_str = str(text)
+    thinking_messages = ["🤔 Vision AI réfléchit", "💭 Vision AI analyse", "✨ Vision AI génère une réponse"]
+    for msg in thinking_messages:
+        placeholder.markdown(f"*{msg}...*")
+        time.sleep(0.3)
     for char in text_str:
         full_text += char
         display_text = full_text + "**█**"
         placeholder.markdown(display_text)
-        time.sleep(0.02)
+        time.sleep(0.03 if char not in " .,!?;:" else 0.1)
     placeholder.markdown(full_text + " ✅")
+    time.sleep(0.5)
+    placeholder.markdown(full_text)
 
 # -------------------------
 # Auth
@@ -176,9 +203,10 @@ else:
         st.rerun()
 
 # -------------------------
-# Auto-chargement
+# Auto-chargement si pas déjà fait
 # -------------------------
-if (st.session_state.user["id"] != "guest" and not st.session_state.conversation_loaded):
+if (st.session_state.user["id"] != "guest" and 
+    not st.session_state.conversation_loaded):
     last_conv = load_user_last_conversation_with_messages(st.session_state.user["id"])
     st.session_state.conversation = last_conv
     st.session_state.conversation_loaded = True
@@ -210,6 +238,7 @@ if st.session_state.user["id"] != "guest":
             if st.session_state.conversation != selected_conv:
                 st.session_state.conversation = selected_conv
                 conv_id = selected_conv.get("conversation_id")
+                msgs = db.get_messages(conv_id)
                 st.session_state.messages_memory = [
                     {
                         "sender": m["sender"],
@@ -217,7 +246,7 @@ if st.session_state.user["id"] != "guest":
                         "created_at": m.get("created_at"),
                         "type": m.get("type","text"),
                         "image_data": m.get("image_data", None)
-                    } for m in db.get_messages(conv_id)
+                    } for m in msgs
                 ]
                 st.rerun()
     else:
@@ -235,20 +264,6 @@ if st.session_state.conversation:
     st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>📝 {conv_title}</p>", unsafe_allow_html=True)
 
 # -------------------------
-# Afficher messages
-# -------------------------
-for m in st.session_state.messages_memory:
-    role = "user" if m["sender"] in ["user","user_api_request"] else "assistant"
-    with st.chat_message(role):
-        if m.get("type") == "image":
-            if m.get("image_data"):
-                img = base64_to_image(m["image_data"])
-                st.image(img, caption="Image analysée", width=300)
-            st.markdown(m["content"])
-        else:
-            st.markdown(m["content"])
-
-# -------------------------
 # Nouveau message
 # -------------------------
 message_container = st.container()
@@ -261,53 +276,84 @@ if submit_button and (user_input or uploaded_file):
     if st.session_state.user["id"] != "guest" and not st.session_state.conversation:
         conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
         st.session_state.conversation = conv
+        st.session_state.messages_memory = []
 
-    conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
     full_message = ""
     image_base64 = None
+    image_caption = ""
+
     if uploaded_file:
-        image = Image.open(uploaded_file)
-        image_base64 = image_to_base64(image)
-        image_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        full_message = f"[IMAGE] {image_caption}"
-        if user_input.strip():
-            full_message += f"\n\nQuestion/Demande de l'utilisateur: {user_input}"
+        try:
+            image = Image.open(uploaded_file)
+            image_base64 = image_to_base64(image)
+            with message_container:
+                with st.chat_message("user"):
+                    st.image(image, caption="Image uploadée pour analyse", width=300)
+            image_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+            full_message = f"[IMAGE] {image_caption}"
+            if user_input.strip():
+                full_message += f"\n\nQuestion/Demande de l'utilisateur: {user_input}"
+                with message_container:
+                    with st.chat_message("user"):
+                        st.write(f"**Question:** {user_input}")
+            conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+            if conv_id:
+                db.add_message(conv_id, "user", full_message, "image", image_data=image_base64)
+            else:
+                st.session_state.messages_memory.append({
+                    "sender": "user", "content": full_message, "created_at": None,
+                    "type": "image", "image_data": image_base64
+                })
+        except Exception as e:
+            st.error(f"Erreur image: {e}")
+            full_message = user_input if user_input else ""
     elif user_input.strip():
         full_message = user_input
+        with message_container:
+            with st.chat_message("user"):
+                st.markdown(user_input)
+        conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+        if conv_id:
+            db.add_message(conv_id, "user", user_input, "text")
+        else:
+            st.session_state.messages_memory.append({
+                "sender": "user", "content": user_input, "created_at": None,
+                "type": "text"
+            })
 
-    # Ajouter le message utilisateur dans DB
-    if conv_id:
-        db.add_message(conv_id, "user", full_message, "image" if uploaded_file else "text", image_data=image_base64)
+    if full_message:
+        prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
+        with message_container:
+            with st.chat_message("assistant"):
+                response_placeholder = st.empty()
+                response_placeholder.write("Vision AI réfléchit... 🤔")
+                resp = get_ai_response(prompt)
+                stream_response(resp, response_placeholder)
+        conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
+        if conv_id:
+            db.add_message(conv_id, "assistant", resp, "text")
+        else:
+            st.session_state.messages_memory.append({
+                "sender": "assistant", "content": resp, "created_at": None, "type": "text"
+            })
+        st.rerun()
 
-    # Recharger tous les messages depuis DB
-    st.session_state.messages_memory = [
-        {
-            "sender": m["sender"],
-            "content": m["content"],
-            "created_at": m.get("created_at"),
-            "type": m.get("type","text"),
-            "image_data": m.get("image_data", None)
-        } for m in db.get_messages(conv_id)
-    ]
+# -------------------------
+# Afficher tous les messages avec nouvelle réponse en haut
+# -------------------------
+display_msgs = st.session_state.messages_memory.copy()
+if display_msgs:
+    # Trier: dernière réponse IA en haut
+    last_msg = display_msgs.pop(-1)
+    display_msgs.insert(0, last_msg)
 
-    # Afficher la réponse IA
-    prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
-    resp = get_ai_response(prompt)
-    if conv_id:
-        db.add_message(conv_id, "assistant", resp, "text")
-
-    # Recharger à nouveau pour inclure la réponse IA
-    st.session_state.messages_memory = [
-        {
-            "sender": m["sender"],
-            "content": m["content"],
-            "created_at": m.get("created_at"),
-            "type": m.get("type","text"),
-            "image_data": m.get("image_data", None)
-        } for m in db.get_messages(conv_id)
-    ]
-
-    st.rerun()
+for m in display_msgs:
+    role = "user" if m["sender"] in ["user","user_api_request"] else "assistant"
+    with st.chat_message(role):
+        if m.get("type") == "image" and m.get("image_data"):
+            img = base64_to_image(m["image_data"])
+            st.image(img, caption="Image analysée", width=300)
+        st.markdown(m["content"])
 
 # -------------------------
 # Info et Export CSV
@@ -319,17 +365,20 @@ st.info("💡 **Comment utiliser Vision AI:**\n"
         "• **Image + Texte:** Uploadez une image ET écrivez votre question\n"
         "• **Persistance:** Vos conversations sont automatiquement sauvegardées")
 
-if st.session_state.messages_memory:
+if display_msgs:
+    st.markdown("---")
     with st.expander("📂 Exporter la conversation"):
-        df = pd.DataFrame([
-            {
+        export_msgs = []
+        for m in display_msgs:
+            export_msg = {
                 "sender": m["sender"],
                 "content": m["content"],
-                "created_at": m.get("created_at"),
+                "created_at": m["created_at"],
                 "type": m.get("type","text"),
                 "has_image": "Oui" if m.get("image_data") else "Non"
-            } for m in st.session_state.messages_memory
-        ])
+            }
+            export_msgs.append(export_msg)
+        df = pd.DataFrame(export_msgs)
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         conv_id_for_file = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else "invite"
