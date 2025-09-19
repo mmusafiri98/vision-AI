@@ -13,6 +13,7 @@ import db  # ton module DB
 # Config
 # -------------------------
 st.set_page_config(page_title="Vision AI Chat", layout="wide")
+
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
 with contributions from Meta AI.
@@ -27,7 +28,7 @@ When you receive an image description starting with [IMAGE], you should:
 4. Be helpful and descriptive in your analysis"""
 
 # -------------------------
-# Utility functions
+# Utilitaires
 # -------------------------
 def image_to_base64(image):
     try:
@@ -49,17 +50,17 @@ def load_user_last_conversation(user_id):
         if user_id != "guest":
             convs = db.get_conversations(user_id)
             if convs:
-                return convs[0]  # la plus récente
+                return convs[0]
         return None
     except:
         return None
 
 def save_active_conversation(user_id, conv_id):
-    # Placeholder si besoin plus tard
+    # placeholder
     pass
 
 # -------------------------
-# BLIP loader
+# BLIP Loader
 # -------------------------
 @st.cache_resource
 def load_blip():
@@ -68,8 +69,6 @@ def load_blip():
     return processor, model
 
 def generate_caption(image, processor, model):
-    if processor is None or model is None:
-        return "Description indisponible"
     try:
         inputs = processor(image, return_tensors="pt")
         if torch.cuda.is_available():
@@ -157,11 +156,16 @@ if st.session_state.user["id"] == "guest":
                 user_result = db.verify_user(email, password)
                 if user_result:
                     st.session_state.user = user_result
+                    # Charger conversation et messages
                     last_conv = load_user_last_conversation(user_result["id"])
-                    st.session_state.conversation = last_conv
-                    st.session_state.messages_memory = []
-                    st.session_state.conversation_loaded = False
-                    st.success("Connexion réussie ! Conversation restaurée.")
+                    if last_conv:
+                        st.session_state.conversation = last_conv
+                        conv_id = last_conv.get("conversation_id")
+                        if conv_id:
+                            msgs = db.get_messages(conv_id)
+                            st.session_state.messages_memory = msgs if msgs else []
+                    st.session_state.conversation_loaded = True
+                    st.success("Connexion réussie !")
                     st.rerun()
                 else:
                     st.error("Email ou mot de passe invalide")
@@ -194,17 +198,7 @@ else:
         st.rerun()
 
 # -------------------------
-# Charger dernière conversation si connecté
-# -------------------------
-if st.session_state.user["id"] != "guest" and not st.session_state.conversation_loaded:
-    last_conv = load_user_last_conversation(st.session_state.user["id"])
-    if last_conv:
-        st.session_state.conversation = last_conv
-        st.info(f"📂 Dernière conversation chargée: {last_conv.get('description', 'Sans titre')}")
-    st.session_state.conversation_loaded = True
-
-# -------------------------
-# Conversations
+# Sidebar Conversations
 # -------------------------
 if st.session_state.user["id"] != "guest":
     st.sidebar.title("💬 Mes Conversations")
@@ -229,7 +223,8 @@ if st.session_state.user["id"] != "guest":
                 selected_conv = convs[idx]
                 if st.session_state.conversation != selected_conv:
                     st.session_state.conversation = selected_conv
-                    st.session_state.messages_memory = []
+                    conv_id = selected_conv.get("conversation_id")
+                    st.session_state.messages_memory = db.get_messages(conv_id) if conv_id else []
                     st.rerun()
         else:
             st.sidebar.info("Aucune conversation. Créez-en une.")
@@ -246,28 +241,9 @@ if st.session_state.conversation:
     st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>📝 {conv_title}</p>", unsafe_allow_html=True)
 
 # -------------------------
-# Affichage des messages existants
+# Affichage des messages
 # -------------------------
-display_msgs = []
-if st.session_state.conversation:
-    conv_id = st.session_state.conversation.get("conversation_id")
-    try:
-        db_msgs = db.get_messages(conv_id)
-        if db_msgs:
-            for m in db_msgs:
-                display_msgs.append({
-                    "sender": m["sender"], 
-                    "content": m["content"], 
-                    "created_at": m.get("created_at"),
-                    "type": m.get("type", "text"),
-                    "image_data": m.get("image_data", None)
-                })
-    except Exception as e:
-        st.error(f"Erreur chargement messages: {e}")
-else:
-    display_msgs = st.session_state.messages_memory.copy()
-
-# Affichage dans le chat
+display_msgs = st.session_state.messages_memory.copy() if st.session_state.messages_memory else []
 for m in display_msgs:
     role = "user" if m["sender"] in ["user","user_api_request"] else "assistant"
     with st.chat_message(role):
@@ -280,13 +256,10 @@ for m in display_msgs:
             st.markdown(m["content"])
 
 # -------------------------
-# Conteneur pour nouveaux messages
+# Nouveau message
 # -------------------------
 message_container = st.container()
 
-# -------------------------
-# Formulaire de saisie
-# -------------------------
 with st.form(key="chat_form", clear_on_submit=True):
     uploaded_file = st.file_uploader("📷 Ajouter une image (optionnel)", type=["png","jpg","jpeg"], key="image_upload")
     user_input = st.text_area(
@@ -297,13 +270,11 @@ with st.form(key="chat_form", clear_on_submit=True):
     )
     submit_button = st.form_submit_button("📤 Envoyer", use_container_width=True)
 
-# -------------------------
-# Traitement des nouveaux messages
-# -------------------------
 if submit_button and (user_input or uploaded_file):
     if st.session_state.user["id"] != "guest" and not st.session_state.conversation:
         conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
         st.session_state.conversation = conv
+        st.session_state.messages_memory = []
         save_active_conversation(st.session_state.user["id"], conv.get("conversation_id"))
 
     full_message = ""
@@ -333,18 +304,17 @@ if submit_button and (user_input or uploaded_file):
             with st.chat_message("user"):
                 st.markdown(user_input)
 
-    # Sauvegarde du message
+    # Sauvegarde message
     conv_id = st.session_state.conversation.get("conversation_id") if st.session_state.conversation else None
     if conv_id:
         db.add_message(conv_id, "user", full_message, "image" if image_base64 else "text", image_data=image_base64)
-    else:
-        st.session_state.messages_memory.append({
-            "sender": "user", 
-            "content": full_message, 
-            "created_at": None,
-            "type": "image" if image_base64 else "text",
-            "image_data": image_base64
-        })
+    st.session_state.messages_memory.append({
+        "sender": "user",
+        "content": full_message,
+        "created_at": None,
+        "type": "image" if image_base64 else "text",
+        "image_data": image_base64
+    })
 
     # Générer réponse AI
     if full_message:
@@ -357,13 +327,12 @@ if submit_button and (user_input or uploaded_file):
                 stream_response(resp, response_placeholder)
         if conv_id:
             db.add_message(conv_id, "assistant", resp, "text")
-        else:
-            st.session_state.messages_memory.append({
-                "sender": "assistant", 
-                "content": resp, 
-                "created_at": None,
-                "type": "text"
-            })
+        st.session_state.messages_memory.append({
+            "sender": "assistant",
+            "content": resp,
+            "created_at": None,
+            "type": "text"
+        })
         st.rerun()
 
 # -------------------------
@@ -392,4 +361,3 @@ if display_msgs:
             mime="text/csv",
             use_container_width=True
         )
-
