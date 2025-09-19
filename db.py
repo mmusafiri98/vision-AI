@@ -187,7 +187,6 @@ def create_conversation(user_id, description):
 
         data = {
             "user_id": user_id,
-            "description": clean_description,
             "created_at": datetime.now().isoformat()
         }
 
@@ -206,7 +205,7 @@ def create_conversation(user_id, description):
             print(f"✅ Conversation créée avec succès: {conv}")
             return {
                 "conversation_id": conv["conversation_id"],
-                "description": conv["description"],
+                "": conv["description"],
                 "created_at": safe_parse_datetime(conv.get("created_at")),
                 "user_id": conv["user_id"]
             }
@@ -265,7 +264,7 @@ def delete_conversation(conversation_id):
             return False
 
         # Supprimer d'abord tous les messages de la conversation
-        msg_delete = supabase.table("messages").delete().eq("conversation_id", conversation_id).execute()
+        msg_delete = supabase.table("messager").delete().eq("conversation_id", conversation_id).execute()
         print(f"🗑️ Messages supprimés: {len(msg_delete.data) if msg_delete.data else 0}")
         
         # Puis supprimer la conversation
@@ -404,7 +403,7 @@ def get_messages(conversation_id):
         print(f"🔍 Debug get_messages - conversation_id: {conversation_id}")
 
         response = (
-            supabase.table("messages")
+            supabase.table("messager")
             .select("*")
             .eq("conversation_id", conversation_id)
             .order("created_at", desc=False)  # Ordre chronologique
@@ -416,7 +415,7 @@ def get_messages(conversation_id):
         messages = []
         for msg in response.data:
             messages.append({
-                "message_id": msg.get("message_id"),
+                "conversation_id": msg.get("conversation_id"),
                 "sender": msg["sender"],
                 "content": msg["content"],
                 "created_at": safe_parse_datetime(msg.get("created_at"))
