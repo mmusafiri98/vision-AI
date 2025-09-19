@@ -7,7 +7,7 @@ import time
 import pandas as pd
 import io
 import base64
-import db  # ton module DB
+import db  # tuo modulo DB
 
 # -------------------------
 # Config
@@ -27,7 +27,7 @@ When you receive an image description starting with [IMAGE], you should:
 4. Be helpful and descriptive in your analysis"""
 
 # -------------------------
-# Fonctions utilitaires
+# Utility functions
 # -------------------------
 def image_to_base64(image):
     buffer = io.BytesIO()
@@ -68,7 +68,7 @@ def generate_caption(image, processor, model):
 # -------------------------
 def get_ai_response(query: str) -> str:
     if not st.session_state.llama_client:
-        return "❌ Vision AI non disponible."
+        return "❌ Vision AI non disponibile."
     try:
         resp = st.session_state.llama_client.predict(
             message=query,
@@ -106,6 +106,26 @@ if "llama_client" not in st.session_state:
     except Exception:
         st.session_state.llama_client = None
         st.warning("Impossible de connecter LLaMA.")
+
+# -------------------------
+# Debug sessione
+# -------------------------
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🐞 Debug Sessione")
+st.sidebar.text(f"user: {st.session_state.get('user')}")
+st.sidebar.text(f"conversation attuale: {st.session_state.get('conversation')}")
+if st.session_state.get('conversation'):
+    st.sidebar.text(f"conversation_id: {st.session_state.conversation.get('conversation_id')}")
+st.sidebar.text(f"messages_memory: {len(st.session_state.get('messages_memory', []))} messaggi")
+if st.session_state.user["id"] != "guest":
+    try:
+        convs = db.get_conversations(st.session_state.user["id"]) or []
+        st.sidebar.text(f"Conversations totali DB: {len(convs)}")
+        for i, c in enumerate(convs):
+            st.sidebar.text(f"{i+1}: {c['description']} ({c['conversation_id']}) - {c['created_at']}")
+    except Exception as e:
+        st.sidebar.text(f"Errore caricamento DB conversations: {e}")
+st.sidebar.markdown("---")
 
 # -------------------------
 # Auth
@@ -158,32 +178,29 @@ else:
         st.rerun()
 
 # -------------------------
-# Sidebar Conversations avec historique
+# Sidebar Conversations
 # -------------------------
 if st.session_state.user["id"] != "guest":
     st.sidebar.title("💬 Mes Conversations")
-    # Nouvelle conversation
     if st.sidebar.button("➕ Nouvelle conversation"):
         conv = db.create_conversation(st.session_state.user["id"], "Nouvelle discussion")
         st.session_state.conversation = conv
         st.session_state.messages_memory = []
         st.rerun()
-
-    # Historique conversations
     try:
         convs = db.get_conversations(st.session_state.user["id"]) or []
         options = []
-        # Ajouter d'abord la conversation fixe
+        # aggiungi prima una conversazione fissa
         fixed_conv_id = "739d543e-f49b-4d79-b91e-f320e7acc8a0"
         fixed_conv = next((c for c in convs if c["conversation_id"] == fixed_conv_id), None)
         if fixed_conv:
             options.append(f"{fixed_conv['description']} - {fixed_conv['created_at']}")
-        # Ajouter toutes les autres
+        # aggiungi tutte le altre
         for c in convs:
             if c["conversation_id"] != fixed_conv_id:
                 options.append(f"{c['description']} - {c['created_at']}")
         sel = st.sidebar.selectbox("Vos conversations:", options)
-        # Charger conversation sélectionnée
+        # Carica la conversation selezionata
         if sel:
             sel_idx = options.index(sel)
             selected_conv = convs[sel_idx] if sel_idx < len(convs) else None
@@ -252,7 +269,7 @@ if submit_button and (user_input or uploaded_file):
     else:
         full_message = user_input
 
-    # Sauvegarde dans DB et mémoire session
+    # Salva in DB e memoria sessione
     if conv_id:
         db.add_message(conv_id, "user", full_message, "image" if image_base64 else "text", image_data=image_base64)
     st.session_state.messages_memory.append({
@@ -262,7 +279,7 @@ if submit_button and (user_input or uploaded_file):
         "image_data": image_base64
     })
 
-    # Réponse AI
+    # Risposta AI
     if full_message:
         prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {full_message}"
         with message_container:
@@ -306,5 +323,4 @@ if display_msgs:
             mime="text/csv",
             use_container_width=True
         )
-
 
