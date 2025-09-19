@@ -2,6 +2,7 @@ import os
 from supabase import create_client
 from datetime import datetime
 import uuid
+import base64
 
 # -------------------------
 # Connexion Supabase
@@ -32,8 +33,17 @@ def clean_text(text):
 # -------------------------
 # USERS
 # -------------------------
+def verify_user(email, password):
+    try:
+        res = supabase.table("users").select("*").eq("email", email).execute()
+        if res.data and res.data[0]["password"] == password:
+            user = res.data[0]
+            return {"id": user["id"], "email": user["email"], "name": user.get("name")}
+        return None
+    except:
+        return None
+
 def create_user(email, password, name=None):
-    """Créer un utilisateur dans la table 'users'"""
     try:
         user_id = str(uuid.uuid4())
         user_data = {
@@ -45,29 +55,8 @@ def create_user(email, password, name=None):
         }
         res = supabase.table("users").insert(user_data).execute()
         return bool(res.data)
-    except Exception as e:
-        print("Erreur create_user:", e)
+    except:
         return False
-
-def verify_user(email, password):
-    """Vérifie l'utilisateur dans la table 'users'"""
-    try:
-        res = supabase.table("users").select("*").eq("email", email).execute()
-        print("DEBUG verify_user - res.data:", res.data)
-        if res.data:
-            stored_password = res.data[0].get("password")
-            print("DEBUG verify_user - stored_password:", stored_password)
-            if stored_password == password:
-                user = res.data[0]
-                return {
-                    "id": user["id"],
-                    "email": user["email"],
-                    "name": user.get("name")
-                }
-        return None
-    except Exception as e:
-        print("Erreur verify_user:", e)
-        return None
 
 # -------------------------
 # CONVERSATIONS
@@ -93,8 +82,7 @@ def get_conversations(user_id):
     try:
         res = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
         return res.data or []
-    except Exception as e:
-        print("Erreur get_conversations:", e)
+    except:
         return []
 
 # -------------------------
@@ -110,7 +98,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
             "image_data": image_data,
             "created_at": now_iso()
         }
-        res = supabase.table("messager").insert(data).execute()
+        res = supabase.table("messages").insert(data).execute()
         return bool(res.data)
     except Exception as e:
         print("Erreur add_message:", e)
@@ -118,10 +106,9 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
 
 def get_messages(conversation_id):
     try:
-        res = supabase.table("messager").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
+        res = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
         return res.data or []
-    except Exception as e:
-        print("Erreur get_messages:", e)
+    except:
         return []
 
 # -------------------------
@@ -129,17 +116,15 @@ def get_messages(conversation_id):
 # -------------------------
 def delete_conversation(conversation_id):
     try:
-        supabase.table("messager").delete().eq("conversation_id", conversation_id).execute()
+        supabase.table("messages").delete().eq("conversation_id", conversation_id).execute()
         res = supabase.table("conversations").delete().eq("conversation_id", conversation_id).execute()
         return bool(res.data)
-    except Exception as e:
-        print("Erreur delete_conversation:", e)
+    except:
         return False
 
 def delete_message(message_id):
     try:
-        res = supabase.table("messager").delete().eq("message_id", message_id).execute()
+        res = supabase.table("messages").delete().eq("message_id", message_id).execute()
         return bool(res.data)
-    except Exception as e:
-        print("Erreur delete_message:", e)
+    except:
         return False
