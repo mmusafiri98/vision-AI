@@ -2,12 +2,12 @@ import os
 import uuid
 from datetime import datetime
 import streamlit as st
-from supabase import create_client, Client
+from supabase import create_client
 
 # ==============================
 # CONFIGURATION SUPABASE
 # ==============================
-def get_supabase_client() -> Client:
+def get_supabase_client():
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_SERVICE_KEY")
     if not url or not key:
@@ -45,13 +45,12 @@ def get_conversations(user_id):
 # ==============================
 # MESSAGES
 # ==============================
-def add_message(conversation_id, sender, content, msg_type="text", image_data=None):
+def add_message(conversation_id, sender, content, msg_type="text"):
     msg = {
         "conversation_id": conversation_id,
         "sender": sender,
         "content": clean_content(content),
         "type": msg_type,
-        "image_data": image_data,
         "created_at": datetime.now().isoformat()
     }
     supabase.table("messages").insert(msg).execute()
@@ -60,4 +59,85 @@ def get_messages(conversation_id):
     resp = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", asc=True).execute()
     return resp.data or []
 
+# ==============================
+# SESSION INIT
+# ==============================
+if "user" not in st.session_state:
+    st.session_state.user = {"id": "guest", "email": "Invité"}
+
+if "conversation" not in st.session_state:
+    st.session_state.conversation = None
+
+if "messages_memory" not in st.session_state:
+    st.session_state.messages_memory = []
+
+if "refresh_flag" not in st.session_state:
+    st.session_state.refresh_flag = False  # Flag pour gérer le refresh manuel
+
+# ==============================
+# AUTHENTIFICATION SIMPLIFIÉE
+# ==============================
+st.sidebar.title("🔐 Authentification")
+if st.session_state.user["id"] == "guest":
+    email = st.sidebar.text_input("📧 Email", key="auth_email")
+    if st.sidebar.button("Se connecter"):
+        # Ici on simule la connexion
+        st.session_state.user = {"id": "user_1", "email": email}
+        st.success(f"✅ Connecté en tant que {email}")
+        st.stop()  # Forcer le refresh après connexion
+else:
+    st.sidebar.success(f"✅ Connecté: {st.session_state.user['email']}")
+    if st.sidebar.button("🚪 Se déconnecter"):
+        st.session_state.user = {"id": "guest", "email": "Invité"}
+        st.session_state.conversation = None
+        st.session_state.messages_memory = []
+        st.stop()  # Refresh après déconnexion
+
+# ==============================
+# CONVERSATIONS SIDEBAR
+# ==============================
+if st.session_state.user["id"] != "guest":
+    st.sidebar.title("💬 Mes Conversations")
+    conversations = get_conversations(st.session_state.user["id"])
+    
+    # Bouton création nouvelle conversation
+    if st.sidebar.button("➕ Nouvelle conversation"):
+        new_conv = create_conversation(st.session_state.user["id"])
+        if new_conv:
+            st.session_state.conversation = new_conv
+            st.session_state.messages_memory = []
+            st.stop()  # Refresh pour charger la nouvelle conversation
+
+    # Sélecteur de conversation
+    if conversations:
+        conv_mapping = {f"{c['description']} ({c['created_at'][:16]})": c for c in conversations}
+        selected_desc = st.sidebar.selectbox("Sélectionner une conversation:", list(conv_mapping.keys()))
+        selected_conv = conv_mapping[selected_desc]
+
+        # Si conversation change ou pas encore chargée
+        if (st.session_state.conversation is None) or (st.session_state.conversation["conversation_id"] != selected_conv["conversation_id"]):
+            st.session_state.conversation = selected_conv
+            st.session_state.messages_memory = get_messages(selected_conv["conversation_id"])
+
+# ==============================
+# CHAT
+# ==============================
+st.title("💬 Vision AI Chat")
+if st.session_state.conversation:
+    st.subheader(f"Conversation: {st.session_state.conversation['description']}")
+
+    # Affichage messages
+    for msg in st.session_state.messages_memory:
+        role = "user" if msg["sender"] == "user" else "assistant"
+        st.markdown(f"**{role}:** {msg['content']}")
+
+    # Nouveau message
+    new_msg = st.text_input("Votre message", key="input_msg")
+    if st.button("Envoyer") and new_msg.strip():
+        conv_id = st.session_state.conversation["conversation_id"]
+        add_message(conv_id, "user", new_msg)
+        st.session_state.messages_memory.append({"sender": "user", "content": new_msg})
+        st.stop()  # Refresh pour afficher le nouveau message
+else:
+    st.info("Sélectionnez ou créez une conversation pour commencer à discuter.")
 
