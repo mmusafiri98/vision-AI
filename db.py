@@ -1,34 +1,32 @@
+# db.py
 import os
 import uuid
 from datetime import datetime
 from supabase import create_client
-import streamlit as st
 
 # ==============================
-# INITIALISATION SUPABASE
+# CONFIG SUPABASE
 # ==============================
-def get_supabase_client():
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_KEY")
-    if not url or not key:
-        st.error("⚠️ Variables SUPABASE_URL ou SUPABASE_SERVICE_KEY manquantes")
-        return None
-    return create_client(url, key)
-
-supabase = get_supabase_client()
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ==============================
-# UTILITAIRES
+# UTILS
 # ==============================
 def clean_text(text):
-    return str(text).replace("\x00","").strip() if text else ""
+    if not text:
+        return ""
+    return str(text).replace("\x00", "").strip()
+
+def generate_uuid():
+    return str(uuid.uuid4())
 
 # ==============================
 # USERS
 # ==============================
-def create_user(email: str):
-    """Créer un utilisateur avec un UUID généré côté client"""
-    user_id = str(uuid.uuid4())
+def create_user(email):
+    user_id = generate_uuid()  # UUID valide
     data = {
         "user_id": user_id,
         "email": clean_text(email),
@@ -39,8 +37,8 @@ def create_user(email: str):
         return resp.data[0]
     return None
 
-def get_user_by_email(email: str):
-    resp = supabase.table("users").select("*").eq("email", email).execute()
+def get_user_by_email(email):
+    resp = supabase.table("users").select("*").eq("email", email).limit(1).execute()
     if resp.data:
         return resp.data[0]
     return None
@@ -48,8 +46,8 @@ def get_user_by_email(email: str):
 # ==============================
 # CONVERSATIONS
 # ==============================
-def create_conversation(user_id: str, description="Nouvelle conversation"):
-    conv_id = str(uuid.uuid4())
+def create_conversation(user_id, description="Nouvelle conversation"):
+    conv_id = generate_uuid()
     data = {
         "conversation_id": conv_id,
         "user_id": user_id,
@@ -61,15 +59,17 @@ def create_conversation(user_id: str, description="Nouvelle conversation"):
         return resp.data[0]
     return None
 
-def get_conversations(user_id: str):
+def get_conversations(user_id):
     resp = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
     return resp.data or []
 
 # ==============================
 # MESSAGES
 # ==============================
-def add_message(conversation_id: str, sender: str, content: str, msg_type="text", image_data=None):
+def add_message(conversation_id, sender, content, msg_type="text", image_data=None):
+    msg_id = generate_uuid()
     data = {
+        "message_id": msg_id,
         "conversation_id": conversation_id,
         "sender": sender,
         "content": clean_text(content),
@@ -79,7 +79,7 @@ def add_message(conversation_id: str, sender: str, content: str, msg_type="text"
     }
     supabase.table("messages").insert(data).execute()
 
-def get_messages(conversation_id: str):
+def get_messages(conversation_id):
     resp = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", asc=True).execute()
     return resp.data or []
 
