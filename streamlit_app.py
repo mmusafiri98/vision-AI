@@ -2,16 +2,15 @@ import streamlit as st
 from PIL import Image
 import io
 import base64
-import uuid
 import db
 
 # ==============================
-# UTILITAIRES
+# UTILITAIRES IMAGE
 # ==============================
 def image_to_base64(image):
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
 
 def base64_to_image(img_str):
     img_bytes = base64.b64decode(img_str)
@@ -21,50 +20,48 @@ def base64_to_image(img_str):
 # SESSION INIT
 # ==============================
 if "user" not in st.session_state:
-    st.session_state.user = {"id": str(uuid.uuid4()), "email": "Invité"}  # UUID valide pour invité
+    st.session_state.user = None
 if "conversation" not in st.session_state:
     st.session_state.conversation = None
 if "messages_memory" not in st.session_state:
     st.session_state.messages_memory = []
 
 # ==============================
-# AUTHENTIFICATION
+# AUTHENTIFICATION SIMPLIFIÉE
 # ==============================
 st.sidebar.title("🔐 Authentification")
-if st.session_state.user["email"] == "Invité":
+if not st.session_state.user:
     email = st.sidebar.text_input("📧 Email")
-    name = st.sidebar.text_input("👤 Nom complet")
-    if st.sidebar.button("Se connecter / Inscription"):
+    if st.sidebar.button("Se connecter") and email.strip():
         user = db.get_user_by_email(email)
         if not user:
-            user = db.create_user(email, name or email)
+            user = db.create_user(email)
         st.session_state.user = user
         st.success(f"Connecté en tant que {user['email']}")
         st.experimental_rerun()
 else:
     st.sidebar.success(f"✅ Connecté: {st.session_state.user['email']}")
     if st.sidebar.button("🚪 Se déconnecter"):
-        st.session_state.user = {"id": str(uuid.uuid4()), "email": "Invité"}
+        st.session_state.user = None
         st.session_state.conversation = None
         st.session_state.messages_memory = []
         st.experimental_rerun()
 
 # ==============================
-# CONVERSATIONS SIDEBAR
+# SIDEBAR CONVERSATIONS
 # ==============================
-if st.session_state.user["email"] != "Invité":
+if st.session_state.user:
     st.sidebar.title("💬 Mes Conversations")
-    conversations = db.get_conversations(st.session_state.user["id"])
+    user_id = st.session_state.user['user_id']
+    conversations = db.get_conversations(user_id)
 
-    # Nouvelle conversation
     if st.sidebar.button("➕ Nouvelle conversation"):
-        new_conv = db.create_conversation(st.session_state.user["id"])
+        new_conv = db.create_conversation(user_id)
         if new_conv:
             st.session_state.conversation = new_conv
             st.session_state.messages_memory = []
             st.experimental_rerun()
 
-    # Sélection conversation
     if conversations:
         conv_mapping = {f"{c['description']} ({c['created_at'][:16]})": c for c in conversations}
         selected_desc = st.sidebar.selectbox("Sélectionner une conversation:", list(conv_mapping.keys()))
@@ -115,5 +112,3 @@ if st.session_state.conversation:
         st.experimental_rerun()
 else:
     st.info("Sélectionnez ou créez une conversation pour commencer à discuter.")
-
-
