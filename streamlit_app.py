@@ -108,23 +108,60 @@ if "llama_client" not in st.session_state:
         st.warning("Impossible de connecter LLaMA.")
 
 # -------------------------
-# Debug sessione
+# Debug sessione AVANCÉ
 # -------------------------
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🐞 Debug Sessione")
 st.sidebar.text(f"user: {st.session_state.get('user')}")
 st.sidebar.text(f"conversation actuelle: {st.session_state.get('conversation')}")
 if st.session_state.get('conversation'):
-    st.sidebar.text(f"conversation_id: {st.session_state.conversation.get('conversation_id')}")
+    current_conv_id = st.session_state.conversation.get('conversation_id')
+    st.sidebar.text(f"conversation_id: {current_conv_id}")
+    
+    # DEBUG CRITIQUE: Test direct de la fonction get_messages
+    st.sidebar.markdown("**🔍 Test Direct DB:**")
+    try:
+        # Test direct de la fonction db.get_messages
+        direct_messages = db.get_messages(current_conv_id)
+        st.sidebar.text(f"db.get_messages() retourne: {type(direct_messages)}")
+        
+        if direct_messages is None:
+            st.sidebar.error("❌ db.get_messages() retourne None")
+        elif direct_messages == []:
+            st.sidebar.warning("⚠️ db.get_messages() retourne liste vide []")
+        else:
+            st.sidebar.success(f"✅ db.get_messages() retourne {len(direct_messages)} messages")
+            
+            # Afficher les détails des premiers messages
+            for i, msg in enumerate(direct_messages[:2]):
+                st.sidebar.text(f"Msg {i+1}: {msg}")
+                
+        # Test de requête SQL directe si possible
+        st.sidebar.markdown("**🔧 Test SQL Direct:**")
+        
+        # Afficher la structure probable de votre table messages
+        st.sidebar.text("Structure attendue table 'messages':")
+        st.sidebar.text("- conversation_id (FK)")
+        st.sidebar.text("- sender")
+        st.sidebar.text("- content")
+        st.sidebar.text("- type")
+        st.sidebar.text("- created_at")
+        
+    except Exception as e:
+        st.sidebar.error(f"❌ Erreur test DB: {e}")
+        st.sidebar.text(f"Erreur détaillée: {str(e)}")
+
 st.sidebar.text(f"messages_memory: {len(st.session_state.get('messages_memory', []))} messages")
 
-# Debug détaillé des messages
+# Debug détaillé des messages en mémoire
 if st.session_state.messages_memory:
     st.sidebar.markdown("**Messages en mémoire:**")
     for i, msg in enumerate(st.session_state.messages_memory[:3]):
         sender = msg.get('sender', 'unknown')
         content_preview = msg.get('content', '')[:30] + "..." if len(msg.get('content', '')) > 30 else msg.get('content', '')
         st.sidebar.text(f"{i+1}. {sender}: {content_preview}")
+else:
+    st.sidebar.warning("🚫 Aucun message en mémoire de session")
 
 if st.session_state.user["id"] != "guest":
     try:
@@ -250,6 +287,29 @@ if st.session_state.user["id"] != "guest":
                 index=current_index,
                 key="conv_selector"
             )
+            
+            # BOUTON DE TEST MANUEL
+            if st.sidebar.button("🔄 Recharger les messages", help="Force le rechargement des messages de la conversation actuelle"):
+                if st.session_state.conversation:
+                    test_conv_id = st.session_state.conversation.get("conversation_id")
+                    st.sidebar.info(f"🔍 Test de rechargement pour: {test_conv_id[:8]}")
+                    
+                    try:
+                        # Test direct
+                        test_messages = db.get_messages(test_conv_id)
+                        st.sidebar.write(f"Résultat: {test_messages}")
+                        
+                        if test_messages:
+                            st.session_state.messages_memory = test_messages
+                            st.sidebar.success(f"✅ {len(test_messages)} messages rechargés!")
+                            st.rerun()
+                        else:
+                            st.sidebar.error("❌ Aucun message trouvé dans la DB")
+                            
+                    except Exception as e:
+                        st.sidebar.error(f"❌ Erreur rechargement: {e}")
+                else:
+                    st.sidebar.warning("⚠️ Aucune conversation sélectionnée")
             
             # Charger la conversation sélectionnée
             if selected_display and selected_display in conv_mapping:
