@@ -177,173 +177,7 @@ st.sidebar.markdown("### 🐞 Debug Session State")
 
 # Initialisation des variables de session
 if "user" not in st.session_state:
-    st.session_state.messages_memory.append(ai_message)
-    st.info("✅ Réponse IA ajoutée à la mémoire de session")
-    
-    # Test de vérification - recharger les messages depuis la DB
-    st.info("🔍 Vérification: rechargement messages depuis DB...")
-    
-    try:
-        verification_messages = db.get_messages(conv_id)
-        db_count = len(verification_messages) if verification_messages else 0
-        session_count = len(st.session_state.messages_memory)
-        
-        st.info(f"📊 Messages en DB: {db_count}, Messages en session: {session_count}")
-        
-        if db_count != session_count:
-            st.warning(f"⚠️ DÉSYNCHRONISATION DÉTECTÉE: DB={db_count}, Session={session_count}")
-            
-            # Option de synchronisation
-            if st.button("🔄 Forcer synchronisation DB → Session"):
-                st.session_state.messages_memory = verification_messages
-                st.success("✅ Synchronisation forcée")
-                st.rerun()
-        else:
-            st.success("✅ DB et session synchronisées")
-            
-    except Exception as verif_e:
-        st.error(f"❌ Erreur vérification: {verif_e}")
-    
-    # Attendre un peu pour voir les messages de debug
-    time.sleep(2)
-    st.rerun()
-
-# -------------------------
-# Export et outils debug
-# -------------------------
-if st.session_state.messages_memory:
-    st.markdown("---")
-    
-    with st.expander("📊 Export & Debug Tools"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("💾 Export")
-            
-            # Préparer les données pour l'export
-            export_data = []
-            for i, msg in enumerate(st.session_state.messages_memory):
-                export_data.append({
-                    "index": i + 1,
-                    "sender": msg.get("sender", "unknown"),
-                    "content": msg.get("content", ""),
-                    "type": msg.get("type", "text"),
-                    "has_image": "Oui" if msg.get("image_data") else "Non",
-                    "created_at": msg.get("created_at", "")
-                })
-            
-            if export_data:
-                df = pd.DataFrame(export_data)
-                csv_buffer = io.StringIO()
-                df.to_csv(csv_buffer, index=False)
-                
-                conv_name = st.session_state.conversation.get("description", "conversation") if st.session_state.conversation else "messages"
-                filename = f"{conv_name}_debug_{int(time.time())}.csv"
-                
-                st.download_button(
-                    "📥 Télécharger CSV",
-                    csv_buffer.getvalue(),
-                    file_name=filename,
-                    mime="text/csv"
-                )
-                
-                st.info(f"📊 {len(export_data)} messages prêts à exporter")
-        
-        with col2:
-            st.subheader("🔧 Debug Actions")
-            
-            # Bouton force reload messages
-            if st.button("🔄 Force Reload Messages"):
-                if st.session_state.conversation:
-                    conv_id = st.session_state.conversation.get("conversation_id") or st.session_state.conversation.get("id")
-                    try:
-                        fresh_messages = db.get_messages(conv_id)
-                        st.session_state.messages_memory = fresh_messages or []
-                        st.success(f"✅ {len(st.session_state.messages_memory)} messages rechargés")
-                        st.rerun()
-                    except Exception as reload_e:
-                        st.error(f"❌ Erreur rechargement: {reload_e}")
-                else:
-                    st.warning("⚠️ Aucune conversation active")
-            
-            # Bouton clear session
-            if st.button("🗑️ Clear Session"):
-                st.session_state.messages_memory = []
-                st.session_state.conversation = None
-                st.session_state.conversation_loaded = False
-                st.success("✅ Session nettoyée")
-                st.rerun()
-            
-            # Bouton test complet DB
-            if st.button("🧪 Test Complet DB"):
-                try:
-                    st.write("🔍 Test connexion Supabase...")
-                    
-                    if hasattr(db, 'supabase') and db.supabase:
-                        # Test tables
-                        tables = ["users", "conversations", "messages"]
-                        for table in tables:
-                            try:
-                                response = db.supabase.table(table).select("*").limit(1).execute()
-                                st.write(f"✅ Table {table}: OK")
-                            except Exception as t_e:
-                                st.write(f"❌ Table {table}: {t_e}")
-                        
-                        # Test données utilisateur
-                        user_id = st.session_state.user.get("id")
-                        if user_id != "guest":
-                            user_convs = db.supabase.table("conversations").select("*").eq("user_id", user_id).execute()
-                            st.write(f"📊 Conversations utilisateur: {len(user_convs.data)}")
-                            
-                            if st.session_state.conversation:
-                                conv_id = st.session_state.conversation.get("conversation_id") or st.session_state.conversation.get("id")
-                                conv_messages = db.supabase.table("messages").select("*").eq("conversation_id", conv_id).execute()
-                                st.write(f"📨 Messages conversation actuelle: {len(conv_messages.data)}")
-                    else:
-                        st.error("❌ Client Supabase non disponible")
-                        
-                except Exception as test_e:
-                    st.error(f"❌ Erreur test: {test_e}")
-
-# -------------------------
-# Informations système en footer
-# -------------------------
-st.markdown("---")
-st.markdown("### 🔧 Informations Système")
-
-info_col1, info_col2, info_col3 = st.columns(3)
-
-with info_col1:
-    st.markdown("**Base de Données**")
-    supabase_status = "🟢 Connecté" if supabase_ok else "🔴 Déconnecté"
-    st.write(f"Supabase: {supabase_status}")
-    
-    if hasattr(db, 'supabase') and db.supabase:
-        st.write("Client: ✅ Disponible")
-    else:
-        st.write("Client: ❌ Non disponible")
-
-with info_col2:
-    st.markdown("**Session Utilisateur**")
-    st.write(f"ID: {st.session_state.user.get('id', 'N/A')}")
-    st.write(f"Email: {st.session_state.user.get('email', 'N/A')}")
-    st.write(f"Connecté: {'✅' if st.session_state.user.get('id') != 'guest' else '❌'}")
-
-with info_col3:
-    st.markdown("**État Application**")
-    st.write(f"Conversation: {'✅' if st.session_state.conversation else '❌'}")
-    st.write(f"Messages: {len(st.session_state.messages_memory)}")
-    st.write(f"BLIP: {'✅' if st.session_state.get('processor') else '❌'}")
-    st.write(f"LLaMA: {'✅' if st.session_state.get('llama_client') else '❌'}")
-
-# Debug final - log dans la console
-print(f"\n=== DEBUG FINAL SESSION ===")
-print(f"User ID: {st.session_state.user.get('id')}")
-print(f"Conversation: {st.session_state.conversation.get('description') if st.session_state.conversation else None}")
-print(f"Messages count: {len(st.session_state.messages_memory)}")
-print(f"Conversation loaded: {st.session_state.conversation_loaded}")
-print(f"Supabase OK: {supabase_ok}")
-print("=" * 30)user = {"id": "guest", "email": "Invité"}
+    st.session_state.user = {"id": "guest", "email": "Invité"}
     st.sidebar.info("🔄 user initialisé")
 
 if "conversation" not in st.session_state:
@@ -850,5 +684,170 @@ if submit_button and (user_input.strip() or uploaded_file):
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
     }
     
-    st.session_state.
+    st.session_state.messages_memory.append(ai_message)
+    st.info("✅ Réponse IA ajoutée à la mémoire de session")
+    
+    # Test de vérification - recharger les messages depuis la DB
+    st.info("🔍 Vérification: rechargement messages depuis DB...")
+    
+    try:
+        verification_messages = db.get_messages(conv_id)
+        db_count = len(verification_messages) if verification_messages else 0
+        session_count = len(st.session_state.messages_memory)
+        
+        st.info(f"📊 Messages en DB: {db_count}, Messages en session: {session_count}")
+        
+        if db_count != session_count:
+            st.warning(f"⚠️ DÉSYNCHRONISATION DÉTECTÉE: DB={db_count}, Session={session_count}")
+            
+            # Option de synchronisation
+            if st.button("🔄 Forcer synchronisation DB → Session"):
+                st.session_state.messages_memory = verification_messages
+                st.success("✅ Synchronisation forcée")
+                st.rerun()
+        else:
+            st.success("✅ DB et session synchronisées")
+            
+    except Exception as verif_e:
+        st.error(f"❌ Erreur vérification: {verif_e}")
+    
+    # Attendre un peu pour voir les messages de debug
+    time.sleep(2)
+    st.rerun()
 
+# -------------------------
+# Export et outils debug
+# -------------------------
+if st.session_state.messages_memory:
+    st.markdown("---")
+    
+    with st.expander("📊 Export & Debug Tools"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("💾 Export")
+            
+            # Préparer les données pour l'export
+            export_data = []
+            for i, msg in enumerate(st.session_state.messages_memory):
+                export_data.append({
+                    "index": i + 1,
+                    "sender": msg.get("sender", "unknown"),
+                    "content": msg.get("content", ""),
+                    "type": msg.get("type", "text"),
+                    "has_image": "Oui" if msg.get("image_data") else "Non",
+                    "created_at": msg.get("created_at", "")
+                })
+            
+            if export_data:
+                df = pd.DataFrame(export_data)
+                csv_buffer = io.StringIO()
+                df.to_csv(csv_buffer, index=False)
+                
+                conv_name = st.session_state.conversation.get("description", "conversation") if st.session_state.conversation else "messages"
+                filename = f"{conv_name}_debug_{int(time.time())}.csv"
+                
+                st.download_button(
+                    "📥 Télécharger CSV",
+                    csv_buffer.getvalue(),
+                    file_name=filename,
+                    mime="text/csv"
+                )
+                
+                st.info(f"📊 {len(export_data)} messages prêts à exporter")
+        
+        with col2:
+            st.subheader("🔧 Debug Actions")
+            
+            # Bouton force reload messages
+            if st.button("🔄 Force Reload Messages"):
+                if st.session_state.conversation:
+                    conv_id = st.session_state.conversation.get("conversation_id") or st.session_state.conversation.get("id")
+                    try:
+                        fresh_messages = db.get_messages(conv_id)
+                        st.session_state.messages_memory = fresh_messages or []
+                        st.success(f"✅ {len(st.session_state.messages_memory)} messages rechargés")
+                        st.rerun()
+                    except Exception as reload_e:
+                        st.error(f"❌ Erreur rechargement: {reload_e}")
+                else:
+                    st.warning("⚠️ Aucune conversation active")
+            
+            # Bouton clear session
+            if st.button("🗑️ Clear Session"):
+                st.session_state.messages_memory = []
+                st.session_state.conversation = None
+                st.session_state.conversation_loaded = False
+                st.success("✅ Session nettoyée")
+                st.rerun()
+            
+            # Bouton test complet DB
+            if st.button("🧪 Test Complet DB"):
+                try:
+                    st.write("🔍 Test connexion Supabase...")
+                    
+                    if hasattr(db, 'supabase') and db.supabase:
+                        # Test tables
+                        tables = ["users", "conversations", "messages"]
+                        for table in tables:
+                            try:
+                                response = db.supabase.table(table).select("*").limit(1).execute()
+                                st.write(f"✅ Table {table}: OK")
+                            except Exception as t_e:
+                                st.write(f"❌ Table {table}: {t_e}")
+                        
+                        # Test données utilisateur
+                        user_id = st.session_state.user.get("id")
+                        if user_id != "guest":
+                            user_convs = db.supabase.table("conversations").select("*").eq("user_id", user_id).execute()
+                            st.write(f"📊 Conversations utilisateur: {len(user_convs.data)}")
+                            
+                            if st.session_state.conversation:
+                                conv_id = st.session_state.conversation.get("conversation_id") or st.session_state.conversation.get("id")
+                                conv_messages = db.supabase.table("messages").select("*").eq("conversation_id", conv_id).execute()
+                                st.write(f"📨 Messages conversation actuelle: {len(conv_messages.data)}")
+                    else:
+                        st.error("❌ Client Supabase non disponible")
+                        
+                except Exception as test_e:
+                    st.error(f"❌ Erreur test: {test_e}")
+
+# -------------------------
+# Informations système en footer
+# -------------------------
+st.markdown("---")
+st.markdown("### 🔧 Informations Système")
+
+info_col1, info_col2, info_col3 = st.columns(3)
+
+with info_col1:
+    st.markdown("**Base de Données**")
+    supabase_status = "🟢 Connecté" if supabase_ok else "🔴 Déconnecté"
+    st.write(f"Supabase: {supabase_status}")
+    
+    if hasattr(db, 'supabase') and db.supabase:
+        st.write("Client: ✅ Disponible")
+    else:
+        st.write("Client: ❌ Non disponible")
+
+with info_col2:
+    st.markdown("**Session Utilisateur**")
+    st.write(f"ID: {st.session_state.user.get('id', 'N/A')}")
+    st.write(f"Email: {st.session_state.user.get('email', 'N/A')}")
+    st.write(f"Connecté: {'✅' if st.session_state.user.get('id') != 'guest' else '❌'}")
+
+with info_col3:
+    st.markdown("**État Application**")
+    st.write(f"Conversation: {'✅' if st.session_state.conversation else '❌'}")
+    st.write(f"Messages: {len(st.session_state.messages_memory)}")
+    st.write(f"BLIP: {'✅' if st.session_state.get('processor') else '❌'}")
+    st.write(f"LLaMA: {'✅' if st.session_state.get('llama_client') else '❌'}")
+
+# Debug final - log dans la console
+print(f"\n=== DEBUG FINAL SESSION ===")
+print(f"User ID: {st.session_state.user.get('id')}")
+print(f"Conversation: {st.session_state.conversation.get('description') if st.session_state.conversation else None}")
+print(f"Messages count: {len(st.session_state.messages_memory)}")
+print(f"Conversation loaded: {st.session_state.conversation_loaded}")
+print(f"Supabase OK: {supabase_ok}")
+print("=" * 30)
