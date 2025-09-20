@@ -1,251 +1,144 @@
 import os
 import uuid
-import re
 from datetime import datetime
-from dateutil import parser
 import streamlit as st
 from supabase import create_client
 
-# ===================================================
+# ==============================
 # CONFIGURATION SUPABASE
-# ===================================================
-
+# ==============================
 def get_supabase_client():
-    """Initialise et retourne le client Supabase"""
-    try:
-        supabase_url = os.environ.get("SUPABASE_URL")
-        supabase_service_key = os.environ.get("SUPABASE_SERVICE_KEY")
-
-        if not supabase_url or not supabase_service_key:
-            raise Exception("⚠️ Variables SUPABASE_URL ou SUPABASE_SERVICE_KEY manquantes")
-
-        if not supabase_url.startswith(("http://", "https://")):
-            raise Exception(f"SUPABASE_URL invalide: {supabase_url}")
-
-        client = create_client(supabase_url, supabase_service_key)
-
-        # test rapide
-        client.table("users").select("*").limit(1).execute()
-        print("✅ Connexion Supabase réussie")
-        return client
-
-    except Exception as e:
-        st.error(f"❌ Erreur connexion Supabase: {e}")
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        st.error("⚠️ Variables SUPABASE_URL ou SUPABASE_SERVICE_KEY manquantes")
         return None
-
+    return create_client(url, key)
 
 supabase = get_supabase_client()
 
-# ===================================================
+# ==============================
 # UTILS
-# ===================================================
-
-def clean_message_content(content):
-    if not content:
+# ==============================
+def clean_content(text):
+    if not text:
         return ""
-    content = str(content).replace("\x00", "").strip()
-    if len(content) > 10000:
-        content = content[:9950] + "... [tronqué]"
-    content = re.sub(r"\n{3,}", "\n\n", content)
-    return content
+    return str(text).replace("\x00", "").strip()
 
-def safe_parse_datetime(date_str):
-    try:
-        return parser.isoparse(date_str) if date_str else datetime.now()
-    except Exception:
-        return datetime.now()
-
-# ===================================================
-# USERS
-# ===================================================
-
-def verify_user(email, password):
-    try:
-        if not supabase:
-            return None
-
-        auth_response = supabase.auth.sign_in_with_password({
-            "email": email,
-            "password": password
-        })
-
-        if auth_response.user:
-            return {
-                "id": auth_response.user.id,
-                "email": auth_response.user.email,
-                "name": auth_response.user.user_metadata.get("name", email.split("@")[0])
-            }
-
-        return None
-    except Exception as e:
-        print(f"❌ verify_user: {e}")
-        return None
-
-
-# ===================================================
+# ==============================
 # CONVERSATIONS
-# ===================================================
-
-def create_conversation(user_id, description="Nouvelle discussion"):
-    try:
-        conv_data = {
-            "conversation_id": str(uuid.uuid4()),
-            "user_id": user_id,
-            "description": clean_message_content(description),
-            "created_at": datetime.now().isoformat()
-        }
-        response = supabase.table("conversations").insert(conv_data).execute()
-        return response.data[0] if response.data else None
-    except Exception as e:
-        print(f"❌ create_conversation: {e}")
-        return None
+# ==============================
+def create_conversation(user_id, description="Nouvelle conversation"):
+    data = {
+        "conversation_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "description": clean_content(description),
+        "created_at": datetime.now().isoformat()
+    }
+    resp = supabase.table("conversations").insert(data).execute()
+    return resp.data[0] if resp.data else None
 
 def get_conversations(user_id):
-    try:
-        response = (
-            supabase.table("conversations")
-            .select("*")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .execute()
-        )
-        return response.data or []
-    except Exception as e:
-        print(f"❌ get_conversations: {e}")
-        return []
+    resp = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+    return resp.data or []
 
-# ===================================================
+# ==============================
 # MESSAGES
-# ===================================================
-
-def detect_message_schema():
-    """Détecte si la colonne correcte est 'conversation_id' ou 'id'"""
-    try:
-        sample = supabase.table("messages").select("*").limit(1).execute()
-        if not sample.data:
-            return "conversation_id"  # fallback
-        keys = sample.data[0].keys()
-        print("🗂 Colonnes détectées dans messages:", keys)
-        if "conversation_id" in keys:
-            return "conversation_id"
-        elif "id" in keys:
-            return "id"
-        return "conversation_id"
-    except Exception as e:
-        print(f"❌ detect_message_schema: {e}")
-        return "conversation_id"
-
-MESSAGE_CONVERSATION_FIELD = detect_message_schema()
-
-
-def add_message(conversation_id, sender, content):
-    try:
-        msg = {
-            "message_id": str(uuid.uuid4()),
-            MESSAGE_CONVERSATION_FIELD: conversation_id,  # 👈 adaptable
-            "sender": sender,
-            "content": clean_message_content(content),
-            "created_at": datetime.now().isoformat(),
-            "type": "text",
-        }
-        supabase.table("messages").insert(msg).execute()
-        return True
-    except Exception as e:
-        print(f"❌ add_message: {e}")
-        return False
-
+# ==============================
+def add_message(conversation_id, sender, content, msg_type="text"):
+    msg = {
+        "conversation_id": conversation_id,
+        "sender": sender,
+        "content": clean_content(content),
+        "type": msg_type,
+        "created_at": datetime.now().isoformat()
+    }
+    supabase.table("messages").insert(msg).execute()
 
 def get_messages(conversation_id):
-    try:
-        print(f"🔍 get_messages avec {MESSAGE_CONVERSATION_FIELD} = {conversation_id}")
+    resp = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", asc=True).execute()
+    return resp.data or []
 
-        response = (
-            supabase.table("messages")
-            .select("*")
-            .eq(MESSAGE_CONVERSATION_FIELD, str(conversation_id).strip())
-            .order("created_at", desc=True)
-            .execute()
-        )
+# ==============================
+# SESSION INIT
+# ==============================
+if "user" not in st.session_state:
+    st.session_state.user = {"id": "guest", "email": "Invité"}
 
-        print("📦 Réponse brute:", response)
+if "conversation" not in st.session_state:
+    st.session_state.conversation = None
 
-        if not response.data:
-            test = supabase.table("messages").select("id, conversation_id").limit(5).execute()
-            print("🗂 Exemples de messages en DB:", test.data)
+if "messages_memory" not in st.session_state:
+    st.session_state.messages_memory = []
 
-        return response.data or []
-    except Exception as e:
-        print(f"❌ get_messages: {e}")
-        return []
+# ==============================
+# AUTHENTIFICATION SIMPLIFIÉE
+# ==============================
+st.sidebar.title("🔐 Authentification")
+if st.session_state.user["id"] == "guest":
+    email = st.sidebar.text_input("📧 Email")
+    if st.sidebar.button("Se connecter"):
+        # Ici tu devrais utiliser supabase.auth.sign_in_with_password
+        # Pour l'exemple, on simule la connexion
+        st.session_state.user = {"id": "user_1", "email": email}
+        st.success(f"Connecté en tant que {email}")
+        st.experimental_rerun()
+else:
+    st.sidebar.success(f"✅ Connecté: {st.session_state.user['email']}")
+    if st.sidebar.button("🚪 Se déconnecter"):
+        st.session_state.user = {"id": "guest", "email": "Invité"}
+        st.session_state.conversation = None
+        st.session_state.messages_memory = []
+        st.experimental_rerun()
 
-# ===================================================
-# STREAMLIT UI
-# ===================================================
-
-def init_session():
-    if "user" not in st.session_state:
-        st.session_state.user = None
-    if "conversation_id" not in st.session_state:
-        st.session_state.conversation_id = None
-
-def show_login():
-    st.subheader("Connexion")
-    email = st.text_input("Email")
-    pwd = st.text_input("Mot de passe", type="password")
-    if st.button("Se connecter"):
-        user = verify_user(email, pwd)
-        if user:
-            st.session_state.user = user
-            st.success(f"Bienvenue {user['name']}")
-        else:
-            st.error("Email ou mot de passe incorrect")
-
-def show_conversations():
-    user_id = st.session_state.user["id"]
-    conversations = get_conversations(user_id)
-
-    st.sidebar.subheader("Vos conversations")
-    for conv in conversations:
-        if st.sidebar.button(conv["description"], key=conv["conversation_id"]):
-            st.session_state.conversation_id = conv["conversation_id"]
-
+# ==============================
+# CONVERSATIONS SIDEBAR
+# ==============================
+if st.session_state.user["id"] != "guest":
+    st.sidebar.title("💬 Mes Conversations")
+    conversations = get_conversations(st.session_state.user["id"])
+    
+    # Création nouvelle conversation
     if st.sidebar.button("➕ Nouvelle conversation"):
-        conv = create_conversation(user_id)
-        if conv:
-            st.session_state.conversation_id = conv["conversation_id"]
-
-def show_chat():
-    conv_id = st.session_state.conversation_id
-    if not conv_id:
-        st.info("Sélectionnez ou créez une conversation.")
-        return
-
-    messages = get_messages(conv_id)
-    for msg in messages:
-        st.write(f"**{msg['sender']}**: {msg['content']}")
-
-    user_input = st.text_input("Votre message")
-    if st.button("Envoyer"):
-        if user_input.strip():
-            add_message(conv_id, "user", user_input)
+        new_conv = create_conversation(st.session_state.user["id"])
+        if new_conv:
+            st.session_state.conversation = new_conv
+            st.session_state.messages_memory = []
             st.experimental_rerun()
 
-# ===================================================
-# MAIN
-# ===================================================
+    # Sélecteur de conversation
+    if conversations:
+        conv_mapping = {f"{c['description']} ({c['created_at'][:16]})": c for c in conversations}
+        selected_desc = st.sidebar.selectbox("Sélectionner une conversation:", list(conv_mapping.keys()))
+        selected_conv = conv_mapping[selected_desc]
 
-def main():
-    st.title("💬 Chat App avec Supabase")
-    init_session()
+        # Si conversation change ou pas encore chargée
+        if (st.session_state.conversation is None) or (st.session_state.conversation["conversation_id"] != selected_conv["conversation_id"]):
+            st.session_state.conversation = selected_conv
+            st.session_state.messages_memory = get_messages(selected_conv["conversation_id"])
 
-    if not st.session_state.user:
-        show_login()
-    else:
-        show_conversations()
-        show_chat()
+# ==============================
+# CHAT
+# ==============================
+st.title("💬 Chat App")
+if st.session_state.conversation:
+    st.subheader(f"Conversation: {st.session_state.conversation['description']}")
 
+    # Affichage messages
+    for msg in st.session_state.messages_memory:
+        role = "user" if msg["sender"] == "user" else "assistant"
+        st.markdown(f"**{role}:** {msg['content']}")
 
-if __name__ == "__main__":
-    main()
+    # Nouveau message
+    new_msg = st.text_input("Votre message")
+    if st.button("Envoyer") and new_msg.strip():
+        add_message(st.session_state.conversation["conversation_id"], "user", new_msg)
+        st.session_state.messages_memory.append({
+            "sender": "user",
+            "content": new_msg
+        })
+        st.experimental_rerun()
+else:
+    st.info("Sélectionnez ou créez une conversation pour commencer à discuter.")
 
 
