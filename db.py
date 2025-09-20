@@ -118,11 +118,31 @@ def get_conversations(user_id):
 # MESSAGES
 # ===================================================
 
+def detect_message_schema():
+    """Détecte si la colonne correcte est 'conversation_id' ou 'id'"""
+    try:
+        sample = supabase.table("messages").select("*").limit(1).execute()
+        if not sample.data:
+            return "conversation_id"  # fallback
+        keys = sample.data[0].keys()
+        print("🗂 Colonnes détectées dans messages:", keys)
+        if "conversation_id" in keys:
+            return "conversation_id"
+        elif "id" in keys:
+            return "id"
+        return "conversation_id"
+    except Exception as e:
+        print(f"❌ detect_message_schema: {e}")
+        return "conversation_id"
+
+MESSAGE_CONVERSATION_FIELD = detect_message_schema()
+
+
 def add_message(conversation_id, sender, content):
     try:
         msg = {
             "message_id": str(uuid.uuid4()),
-            "conversation_id": conversation_id,
+            MESSAGE_CONVERSATION_FIELD: conversation_id,  # 👈 adaptable
             "sender": sender,
             "content": clean_message_content(content),
             "created_at": datetime.now().isoformat(),
@@ -134,15 +154,25 @@ def add_message(conversation_id, sender, content):
         print(f"❌ add_message: {e}")
         return False
 
+
 def get_messages(conversation_id):
     try:
+        print(f"🔍 get_messages avec {MESSAGE_CONVERSATION_FIELD} = {conversation_id}")
+
         response = (
             supabase.table("messages")
             .select("*")
-            .eq("conversation_id", conversation_id)
+            .eq(MESSAGE_CONVERSATION_FIELD, str(conversation_id).strip())
             .order("created_at", desc=True)
             .execute()
         )
+
+        print("📦 Réponse brute:", response)
+
+        if not response.data:
+            test = supabase.table("messages").select("id, conversation_id").limit(5).execute()
+            print("🗂 Exemples de messages en DB:", test.data)
+
         return response.data or []
     except Exception as e:
         print(f"❌ get_messages: {e}")
@@ -217,4 +247,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
