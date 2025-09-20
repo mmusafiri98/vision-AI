@@ -1,105 +1,89 @@
+import os
+import uuid
+from datetime import datetime
+from supabase import create_client
 import streamlit as st
-from PIL import Image
-import io
-import base64
-import db
 
 # ==============================
-# UTILITAIRES
+# INITIALISATION SUPABASE
 # ==============================
-def image_to_base64(image):
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
+def get_supabase_client():
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        st.error("⚠️ Variables SUPABASE_URL ou SUPABASE_SERVICE_KEY manquantes")
+        return None
+    return create_client(url, key)
 
-def base64_to_image(img_str):
-    img_bytes = base64.b64decode(img_str)
-    return Image.open(io.BytesIO(img_bytes))
-
-# ==============================
-# SESSION INIT
-# ==============================
-if "user" not in st.session_state:
-    st.session_state.user = {"id": "guest", "email": "Invité"}
-if "conversation" not in st.session_state:
-    st.session_state.conversation = None
-if "messages_memory" not in st.session_state:
-    st.session_state.messages_memory = []
+supabase = get_supabase_client()
 
 # ==============================
-# AUTHENTIFICATION
+# UTILS
 # ==============================
-st.sidebar.title("🔐 Authentification")
-if st.session_state.user["id"] == "guest":
-    email = st.sidebar.text_input("📧 Email")
-    if st.sidebar.button("Se connecter"):
-        st.session_state.user = {"id": "user_1", "email": email}  # Simulé
-        st.success(f"Connecté en tant que {email}")
-        st.experimental_rerun()
-else:
-    st.sidebar.success(f"✅ Connecté: {st.session_state.user['email']}")
-    if st.sidebar.button("🚪 Se déconnecter"):
-        st.session_state.user = {"id": "guest", "email": "Invité"}
-        st.session_state.conversation = None
-        st.session_state.messages_memory = []
-        st.experimental_rerun()
+def clean_content(text):
+    if not text:
+        return ""
+    return str(text).replace("\x00", "").strip()
 
 # ==============================
-# SIDEBAR CONVERSATIONS
+# UTILISATEURS
 # ==============================
-if st.session_state.user["id"] != "guest":
-    st.sidebar.title("💬 Mes Conversations")
-    conversations = db.get_conversations(st.session_state.user["id"])
+def create_user(email, name):
+    user_id = str(uuid.uuid4())
+    data = {
+        "user_id": user_id,
+        "email": clean_content(email),
+        "name": clean_content(name),
+        "created_at": datetime.now().isoformat()
+    }
+    resp = supabase.table("users").insert(data).execute()
+    if resp.data:
+        return {"id": user_id, "email": email, "name": name}
+    return None
 
-    if st.sidebar.button("➕ Nouvelle conversation"):
-        new_conv = db.create_conversation(st.session_state.user["id"])
-        if new_conv:
-            st.session_state.conversation = new_conv
-            st.session_state.messages_memory = []
-            st.experimental_rerun()
-
-    if conversations:
-        conv_mapping = {f"{c['description']} ({c['created_at'][:16]})": c for c in conversations}
-        selected_desc = st.sidebar.selectbox("Sélectionner une conversation:", list(conv_mapping.keys()))
-        selected_conv = conv_mapping[selected_desc]
-
-        if (st.session_state.conversation is None) or (st.session_state.conversation["conversation_id"] != selected_conv["conversation_id"]):
-            st.session_state.conversation = selected_conv
-            st.session_state.messages_memory = db.get_messages(selected_conv["conversation_id"])
+def get_user_by_email(email):
+    resp = supabase.table("users").select("*").eq("email", email).execute()
+    if resp.data:
+        u = resp.data[0]
+        return {"id": u["user_id"], "email": u["email"], "name": u.get("name", "")}
+    return None
 
 # ==============================
-# CHAT
+# CONVERSATIONS
 # ==============================
-st.title("💬 Chat App")
-if st.session_state.conversation:
-    st.subheader(f"Conversation: {st.session_state.conversation['description']}")
+def create_conversation(user_id, description="Nouvelle conversation"):
+    conv_id = str(uuid.uuid4())
+    data = {
+        "conversation_id": conv_id,
+        "user_id": user_id,
+        "description": clean_content(description),
+        "created_at": datetime.now().isoformat()
+    }
+    resp = supabase.table("conversations").insert(data).execute()
+    if resp.data:
+        return resp.data[0]
+    return None
 
-    # Affichage messages
-    for msg in st.session_state.messages_memory:
-        role = "user" if msg["sender"] == "user" else "assistant"
-        if msg["type"] == "image" and msg.get("image_data"):
-            st.image(base64_to_image(msg["image_data"]), width=300)
-        st.markdown(f"**{role}:** {msg['content']}")
+def get_conversations(user_id):
+    resp = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+    return resp.data or []
 
-    # Nouveau message
-    new_msg = st.text_input("Votre message")
-    uploaded_file = st.file_uploader("📷 Image", type=["png","jpg","jpeg"], key="upload_msg")
-    if st.button("Envoyer") and (new_msg.strip() or uploaded_file):
-        image_data = None
-        if uploaded_file:
-            img = Image.open(uploaded_file)
-            image_data = image_to_base64(img)
-            if not new_msg.strip():
-                new_msg = "[IMAGE]"
+# ==============================
+# MESSAGES
+# ==============================
+def add_message(conversation_id, sender, content, msg_type="text", image_data=None):
+    msg = {
+        "message_id": str(uuid.uuid4()),
+        "conversation_id": conversation_id,
+        "sender": sender,
+        "content": clean_content(content),
+        "type": msg_type,
+        "image_data": image_data,
+        "created_at": datetime.now().isoformat()
+    }
+    supabase.table("messages").insert(msg).execute()
 
-        db.add_message(st.session_state.conversation["conversation_id"], "user", new_msg, "image" if image_data else "text", image_data=image_data)
-        st.session_state.messages_memory.append({
-            "sender": "user",
-            "content": new_msg,
-            "type": "image" if image_data else "text",
-            "image_data": image_data
-        })
-        st.experimental_rerun()
-else:
-    st.info("Sélectionnez ou créez une conversation pour commencer à discuter.")
+def get_messages(conversation_id):
+    resp = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", asc=True).execute()
+    return resp.data or []
 
