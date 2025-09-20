@@ -187,23 +187,84 @@ if st.session_state.user["id"] == "guest":
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🚪 Se connecter"):
-                user_result = db.verify_user(email, password)
-                if user_result:
-                    st.session_state.user = user_result
-                    last_conv = load_user_last_conversation(user_result["id"])
-                    st.session_state.conversation = last_conv
-                    if last_conv:
-                        conv_id = last_conv.get("conversation_id")
-                        try:
-                            messages = db.get_messages(conv_id)
-                            st.session_state.messages_memory = messages or []
-                            st.success(f"Connexion réussie! {len(st.session_state.messages_memory)} messages chargés.")
-                        except Exception as e:
-                            st.error(f"Erreur chargement messages: {e}")
-                            st.session_state.messages_memory = []
-                    st.rerun()
+                if not email or not password:
+                    st.error("⚠️ Veuillez remplir email et mot de passe")
                 else:
-                    st.error("Email ou mot de passe invalide")
+                    with st.spinner("🔄 Connexion en cours..."):
+                        user_result = db.verify_user(email, password)
+                        
+                        if user_result:
+                            st.session_state.user = user_result
+                            st.success(f"✅ Connecté en tant que {user_result.get('name', user_result.get('email'))}")
+                            
+                            # Debug Supabase: tester la connexion
+                            try:
+                                if hasattr(db, 'supabase') and db.supabase:
+                                    st.info("🟢 Supabase connecté")
+                                else:
+                                    st.warning("🟡 Supabase potentiellement déconnecté")
+                                    
+                                # Charger les conversations
+                                all_convs = db.get_conversations(user_result["id"])
+                                st.info(f"📊 {len(all_convs) if all_convs else 0} conversations trouvées")
+                                
+                                if all_convs:
+                                    # Prendre la première conversation (plus récente)
+                                    first_conv = all_convs[0]
+                                    st.session_state.conversation = first_conv
+                                    conv_id = first_conv.get("conversation_id")
+                                    
+                                    st.info(f"🔄 Chargement conversation: {first_conv.get('description')} ({conv_id})")
+                                    
+                                    # Charger les messages avec debug Supabase
+                                    try:
+                                        messages = db.get_messages(conv_id)
+                                        st.info(f"📨 get_messages() retourne {len(messages) if messages else 0} messages")
+                                        
+                                        if messages:
+                                            st.session_state.messages_memory = messages
+                                            st.success(f"✅ {len(messages)} messages chargés!")
+                                            
+                                            # Afficher aperçu des messages
+                                            for i, msg in enumerate(messages[:2]):
+                                                sender = msg.get('sender', 'unknown')
+                                                content = msg.get('content', '')[:50] + "..."
+                                                st.write(f"Message {i+1}: {sender} - {content}")
+                                        else:
+                                            st.session_state.messages_memory = []
+                                            st.warning(f"⚠️ Aucun message dans cette conversation")
+                                            
+                                            # Test direct Supabase
+                                            try:
+                                                if db.supabase:
+                                                    test_response = db.supabase.table("messages").select("*").eq("conversation_id", conv_id).execute()
+                                                    st.info(f"🔍 Test Supabase direct: {len(test_response.data)} messages trouvés")
+                                                    if test_response.data:
+                                                        st.write("Premiers messages trouvés:")
+                                                        for msg in test_response.data[:2]:
+                                                            st.write(f"- {msg.get('sender')}: {msg.get('content', '')[:30]}...")
+                                            except Exception as direct_e:
+                                                st.error(f"❌ Test Supabase direct échoué: {direct_e}")
+                                                
+                                    except Exception as msg_e:
+                                        st.error(f"❌ Erreur chargement messages: {msg_e}")
+                                        st.session_state.messages_memory = []
+                                else:
+                                    st.session_state.conversation = None
+                                    st.session_state.messages_memory = []
+                                    st.info("ℹ️ Aucune conversation trouvée - créez en une nouvelle!")
+                                    
+                            except Exception as conv_e:
+                                st.error(f"❌ Erreur chargement conversations: {conv_e}")
+                                st.session_state.conversation = None
+                                st.session_state.messages_memory = []
+                            
+                            # Attendre pour voir les messages de debug
+                            time.sleep(3)
+                            st.rerun()
+                        else:
+                            st.error("❌ Email ou mot de passe invalide")
+                            st.info("💡 Vérifiez vos identifiants ou créez un nouveau compte")
         with col2:
             if st.button("👤 Mode invité"):
                 st.session_state.user = {"id": "guest", "email": "Invité"}
@@ -354,8 +415,48 @@ if st.session_state.user["id"] != "guest":
                 else:
                     st.sidebar.warning("⚠️ Aucune conversation sélectionnée")
             
-            # Test SQL Direct Simple
-            if st.sidebar.button("🧪 Test SQL Direct", help="Test direct de la base de données"):
+            # Test de Connection Supabase
+            if st.sidebar.button("🔌 Test Supabase", help="Teste la connexion à Supabase"):
+                try:
+                    if hasattr(db, 'supabase') and db.supabase:
+                        st.sidebar.success("✅ Client Supabase connecté")
+                        
+                        # Test des tables
+                        for table_name in ["users", "conversations", "messages"]:
+                            try:
+                                response = db.supabase.table(table_name).select("*").limit(1).execute()
+                                st.sidebar.write(f"✅ Table {table_name}: OK ({len(response.data)} exemples)")
+                            except Exception as table_e:
+                                st.sidebar.error(f"❌ Table {table_name}: {table_e}")
+                        
+                        # Test avec votre conversation actuelle
+                        if st.session_state.conversation:
+                            conv_id = st.session_state.conversation.get("conversation_id")
+                            try:
+                                msg_response = db.supabase.table("messages").select("*").eq("conversation_id", conv_id).execute()
+                                st.sidebar.info(f"📊 Messages pour cette conversation: {len(msg_response.data)}")
+                                
+                                if msg_response.data:
+                                    st.sidebar.write("Premiers messages:")
+                                    for i, msg in enumerate(msg_response.data[:2]):
+                                        sender = msg.get('sender', 'unknown')
+                                        content = msg.get('content', '')[:25] + "..."
+                                        st.sidebar.write(f"{i+1}. {sender}: {content}")
+                            except Exception as conv_e:
+                                st.sidebar.error(f"❌ Test conversation: {conv_e}")
+                    else:
+                        st.sidebar.error("❌ Supabase non connecté")
+                        
+                        # Vérifier les variables d'environnement
+                        import os
+                        supabase_url = os.environ.get("SUPABASE_URL")
+                        supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
+                        
+                        st.sidebar.write(f"SUPABASE_URL: {'✅ Défini' if supabase_url else '❌ Manquant'}")
+                        st.sidebar.write(f"SUPABASE_SERVICE_KEY: {'✅ Défini' if supabase_key else '❌ Manquant'}")
+                        
+                except Exception as e:
+                    st.sidebar.error(f"❌ Erreur test Supabase: {e}")
                 if st.session_state.conversation:
                     conv_id = st.session_state.conversation.get("conversation_id")
                     st.sidebar.write(f"🔍 Test pour conversation: {conv_id}")
