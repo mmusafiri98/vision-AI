@@ -575,8 +575,12 @@ if submit and (user_input.strip() or uploaded_file):
         prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
         
         with st.chat_message("assistant"):
-            placeholder = st.empty()
+            thinking_placeholder = st.empty()
+            thinking_placeholder.markdown("🤖 Vision AI is thinking...")
+            time.sleep(1.5)  # Petit délai pour montrer l'état "réflexion"
             response = get_ai_response(prompt)
+            thinking_placeholder.empty()
+            placeholder = st.empty()
             stream_response(response, placeholder)
         
         # Sauvegarder réponse IA
@@ -611,3 +615,4 @@ if submit and (user_input.strip() or uploaded_file):
                 st.rerun()
         
         st.rerun()
+
