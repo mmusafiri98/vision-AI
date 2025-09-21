@@ -13,7 +13,7 @@ from supabase import create_client
 # -------------------------
 # Configuration Streamlit
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Full", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Typing Effect", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
@@ -54,7 +54,6 @@ def create_user(email, password, name):
     if not supabase:
         return False
     try:
-        # Tentative via Supabase Auth Admin
         try:
             response = supabase.auth.admin.create_user({
                 "email": email,
@@ -64,7 +63,6 @@ def create_user(email, password, name):
             })
             return response.user is not None
         except:
-            # Fallback table "users"
             user_data = {
                 "id": str(uuid.uuid4()),
                 "email": email,
@@ -72,8 +70,8 @@ def create_user(email, password, name):
                 "name": name,
                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
             }
-            response = supabase.table("users").insert(user_data).execute()
-            return bool(response.data and len(response.data) > 0)
+            resp = supabase.table("users").insert(user_data).execute()
+            return bool(resp.data and len(resp.data) > 0)
     except Exception as e:
         st.error(f"Erreur create_user: {e}")
         return False
@@ -82,20 +80,15 @@ def verify_user(email, password):
     if not supabase:
         return None
     try:
-        # Auth Supabase
         try:
-            response = supabase.auth.sign_in_with_password({
-                "email": email,
-                "password": password
-            })
-            if response.user:
+            resp = supabase.auth.sign_in_with_password({"email": email, "password": password})
+            if resp.user:
                 return {
-                    "id": response.user.id,
-                    "email": response.user.email,
-                    "name": response.user.user_metadata.get("name", email.split("@")[0])
+                    "id": resp.user.id,
+                    "email": resp.user.email,
+                    "name": resp.user.user_metadata.get("name", email.split("@")[0])
                 }
         except:
-            # Fallback table "users"
             resp = supabase.table("users").select("*").eq("email", email).execute()
             if resp.data and len(resp.data) > 0:
                 user = resp.data[0]
@@ -111,7 +104,7 @@ def verify_user(email, password):
         return None
 
 # -------------------------
-# Fonctions Conversations & Messages
+# Conversations & Messages
 # -------------------------
 def create_conversation(user_id, description="Nouvelle conversation"):
     if not supabase or not user_id:
@@ -144,7 +137,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
     if not supabase:
         return False
     try:
-        message_data = {
+        data = {
             "conversation_id": conversation_id,
             "sender": sender,
             "content": content,
@@ -152,8 +145,8 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
         if image_data:
-            message_data["image_data"] = image_data
-        resp = supabase.table("messages").insert(message_data).execute()
+            data["image_data"] = image_data
+        resp = supabase.table("messages").insert(data).execute()
         return bool(resp.data and len(resp.data) > 0)
     except Exception as e:
         st.error(f"add_message: {e}")
@@ -187,7 +180,7 @@ def generate_caption(image, processor, model):
     return processor.decode(out[0], skip_special_tokens=True)
 
 # -------------------------
-# Conversion Image <-> Base64
+# Image <-> Base64
 # -------------------------
 def image_to_base64(image):
     buffer = io.BytesIO()
@@ -225,6 +218,17 @@ def get_ai_response(prompt):
         return f"Erreur modèle: {e}"
 
 # -------------------------
+# Effet dactylographique
+# -------------------------
+def stream_response(text, placeholder):
+    displayed = ""
+    for char in str(text):
+        displayed += char
+        placeholder.markdown(displayed + "▋")
+        time.sleep(0.02)
+    placeholder.markdown(displayed)
+
+# -------------------------
 # Session State
 # -------------------------
 if "user" not in st.session_state:
@@ -242,7 +246,6 @@ if "processor" not in st.session_state:
 st.sidebar.title("Authentification / Debug")
 if st.session_state.user["id"] == "guest":
     tab1, tab2 = st.sidebar.tabs(["Connexion", "Inscription"])
-    
     with tab1:
         email = st.text_input("Email")
         password = st.text_input("Mot de passe", type="password")
@@ -254,7 +257,6 @@ if st.session_state.user["id"] == "guest":
                 st.rerun()
             else:
                 st.error("Identifiants invalides")
-    
     with tab2:
         email_reg = st.text_input("Email", key="reg_email")
         name_reg = st.text_input("Nom", key="reg_name")
@@ -341,27 +343,37 @@ if submit and (user_input.strip() or uploaded_file):
             "image_data": image_data,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         })
-    
+
+    # Affichage utilisateur
     with st.chat_message("user"):
         if msg_type == "image" and image_data:
             st.image(base64_to_image(image_data), width=300)
         st.markdown(message_content)
 
-    # Générer réponse IA
-    prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
-    ai_response = get_ai_response(prompt)
-
-    if add_message(conv_id, "assistant", ai_response, "text"):
-        st.session_state.messages_memory.append({
-            "sender": "assistant",
-            "content": ai_response,
-            "type": "text",
-            "image_data": None,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        })
-
+    # Placeholder "Thinking"
     with st.chat_message("assistant"):
-        st.markdown(ai_response)
+        thinking_placeholder = st.empty()
+        thinking_placeholder.markdown("🤖 Vision AI is thinking...")
+        time.sleep(1.5)
+
+        # Générer réponse IA
+        prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
+        ai_response = get_ai_response(prompt)
+
+        # Supprimer placeholder
+        thinking_placeholder.empty()
+        response_placeholder = st.empty()
+        stream_response(ai_response, response_placeholder)
+
+        # Sauvegarder réponse IA
+        if add_message(conv_id, "assistant", ai_response, "text"):
+            st.session_state.messages_memory.append({
+                "sender": "assistant",
+                "content": ai_response,
+                "type": "text",
+                "image_data": None,
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
 
     st.rerun()
 
