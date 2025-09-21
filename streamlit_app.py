@@ -7,12 +7,13 @@ import time
 import io
 import base64
 import os
+import uuid
 from supabase import create_client
 
 # -------------------------
-# Config
+# Configuration Streamlit
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Fixed", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Full", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
@@ -47,11 +48,100 @@ def init_supabase():
 supabase = init_supabase()
 
 # -------------------------
-# Fonctions DB simplifiées
+# Fonctions Utilisateur
 # -------------------------
+def create_user(email, password, name):
+    if not supabase:
+        return False
+    try:
+        # Tentative via Supabase Auth Admin
+        try:
+            response = supabase.auth.admin.create_user({
+                "email": email,
+                "password": password,
+                "email_confirm": True,
+                "user_metadata": {"name": name}
+            })
+            return response.user is not None
+        except:
+            # Fallback table "users"
+            user_data = {
+                "id": str(uuid.uuid4()),
+                "email": email,
+                "password": password,
+                "name": name,
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            response = supabase.table("users").insert(user_data).execute()
+            return bool(response.data and len(response.data) > 0)
+    except Exception as e:
+        st.error(f"Erreur create_user: {e}")
+        return False
+
+def verify_user(email, password):
+    if not supabase:
+        return None
+    try:
+        # Auth Supabase
+        try:
+            response = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            if response.user:
+                return {
+                    "id": response.user.id,
+                    "email": response.user.email,
+                    "name": response.user.user_metadata.get("name", email.split("@")[0])
+                }
+        except:
+            # Fallback table "users"
+            resp = supabase.table("users").select("*").eq("email", email).execute()
+            if resp.data and len(resp.data) > 0:
+                user = resp.data[0]
+                if user.get("password") == password:
+                    return {
+                        "id": user["id"],
+                        "email": user["email"],
+                        "name": user.get("name", email.split("@")[0])
+                    }
+        return None
+    except Exception as e:
+        st.error(f"Erreur verify_user: {e}")
+        return None
+
+# -------------------------
+# Fonctions Conversations & Messages
+# -------------------------
+def create_conversation(user_id, description="Nouvelle conversation"):
+    if not supabase or not user_id:
+        return None
+    try:
+        data = {
+            "conversation_id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "description": description,
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        resp = supabase.table("conversations").insert(data).execute()
+        if resp.data and len(resp.data) > 0:
+            return resp.data[0]
+        return None
+    except Exception as e:
+        st.error(f"Erreur create_conversation: {e}")
+        return None
+
+def get_conversations(user_id):
+    if not supabase or not user_id:
+        return []
+    try:
+        resp = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+        return resp.data if resp.data else []
+    except:
+        return []
+
 def add_message(conversation_id, sender, content, msg_type="text", image_data=None):
     if not supabase:
-        st.error("Supabase non connecté")
         return False
     try:
         message_data = {
@@ -63,8 +153,8 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         }
         if image_data:
             message_data["image_data"] = image_data
-        response = supabase.table("messages").insert(message_data).execute()
-        return bool(response.data and len(response.data) > 0)
+        resp = supabase.table("messages").insert(message_data).execute()
+        return bool(resp.data and len(resp.data) > 0)
     except Exception as e:
         st.error(f"add_message: {e}")
         return False
@@ -73,8 +163,8 @@ def get_messages(conversation_id):
     if not supabase:
         return []
     try:
-        response = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at").execute()
-        return response.data if response.data else []
+        resp = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at").execute()
+        return resp.data if resp.data else []
     except:
         return []
 
@@ -108,13 +198,12 @@ def base64_to_image(img_str):
     return Image.open(io.BytesIO(base64.b64decode(img_str)))
 
 # -------------------------
-# IA
+# LLaMA Client
 # -------------------------
 @st.cache_resource
 def load_llama():
     try:
-        client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
-        return client
+        return Client("muryshev/LLaMA-3.1-70b-it-NeMo")
     except:
         return None
 
@@ -136,15 +225,81 @@ def get_ai_response(prompt):
         return f"Erreur modèle: {e}"
 
 # -------------------------
-# Session
+# Session State
 # -------------------------
+if "user" not in st.session_state:
+    st.session_state.user = {"id": "guest", "email": "Invité"}
 if "conversation" not in st.session_state:
-    st.session_state.conversation = {"conversation_id": "demo"}
+    st.session_state.conversation = None
 if "messages_memory" not in st.session_state:
     st.session_state.messages_memory = []
+if "processor" not in st.session_state:
+    st.session_state.processor, st.session_state.model = load_blip()
 
 # -------------------------
-# Interface
+# Sidebar Auth & Debug
+# -------------------------
+st.sidebar.title("Authentification / Debug")
+if st.session_state.user["id"] == "guest":
+    tab1, tab2 = st.sidebar.tabs(["Connexion", "Inscription"])
+    
+    with tab1:
+        email = st.text_input("Email")
+        password = st.text_input("Mot de passe", type="password")
+        if st.button("Se connecter"):
+            user = verify_user(email, password)
+            if user:
+                st.session_state.user = user
+                st.success("Connexion réussie!")
+                st.rerun()
+            else:
+                st.error("Identifiants invalides")
+    
+    with tab2:
+        email_reg = st.text_input("Email", key="reg_email")
+        name_reg = st.text_input("Nom", key="reg_name")
+        pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
+        if st.button("Créer compte"):
+            if create_user(email_reg, pass_reg, name_reg):
+                st.success("Compte créé!")
+            else:
+                st.error("Erreur création compte")
+    st.stop()
+else:
+    st.sidebar.success(f"Connecté: {st.session_state.user.get('email')}")
+    if st.sidebar.button("Déconnexion"):
+        st.session_state.user = {"id": "guest", "email": "Invité"}
+        st.session_state.conversation = None
+        st.session_state.messages_memory = []
+        st.rerun()
+
+# -------------------------
+# Gestion Conversations
+# -------------------------
+st.sidebar.title("Conversations")
+if st.sidebar.button("Nouvelle conversation"):
+    conv = create_conversation(st.session_state.user["id"])
+    if conv:
+        st.session_state.conversation = conv
+        st.session_state.messages_memory = []
+        st.success("Nouvelle conversation créée!")
+        st.rerun()
+
+convs = get_conversations(st.session_state.user["id"])
+if convs:
+    options = [f"{c['description']} ({c['created_at'][:16]})" for c in convs]
+    current_idx = 0
+    if st.session_state.conversation:
+        for i, c in enumerate(convs):
+            if c["conversation_id"] == st.session_state.conversation.get("conversation_id"):
+                current_idx = i
+                break
+    selected_idx = st.sidebar.selectbox("Vos conversations:", range(len(options)), format_func=lambda i: options[i], index=current_idx)
+    st.session_state.conversation = convs[selected_idx]
+    st.session_state.messages_memory = get_messages(st.session_state.conversation["conversation_id"])
+
+# -------------------------
+# Interface principale
 # -------------------------
 st.title("Vision AI Chat")
 
@@ -156,7 +311,7 @@ for msg in st.session_state.messages_memory:
             st.image(base64_to_image(msg["image_data"]), width=300)
         st.markdown(msg["content"])
 
-# Formulaire
+# Formulaire nouveau message
 with st.form("msg_form", clear_on_submit=True):
     user_input = st.text_area("Votre message:", height=100)
     uploaded_file = st.file_uploader("Image", type=["png","jpg","jpeg"])
@@ -164,7 +319,6 @@ with st.form("msg_form", clear_on_submit=True):
 
 if submit and (user_input.strip() or uploaded_file):
     conv_id = st.session_state.conversation["conversation_id"]
-    
     message_content = user_input.strip()
     msg_type = "text"
     image_data = None
@@ -177,8 +331,8 @@ if submit and (user_input.strip() or uploaded_file):
         if user_input.strip():
             message_content += f"\n\nQuestion: {user_input.strip()}"
         msg_type = "image"
-    
-    # Sauvegarde utilisateur
+
+    # Sauvegarde message utilisateur
     if add_message(conv_id, "user", message_content, msg_type, image_data):
         st.session_state.messages_memory.append({
             "sender": "user",
@@ -188,17 +342,15 @@ if submit and (user_input.strip() or uploaded_file):
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         })
     
-    # Affichage utilisateur
     with st.chat_message("user"):
         if msg_type == "image" and image_data:
             st.image(base64_to_image(image_data), width=300)
         st.markdown(message_content)
-    
+
     # Générer réponse IA
     prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
     ai_response = get_ai_response(prompt)
-    
-    # Sauvegarde IA
+
     if add_message(conv_id, "assistant", ai_response, "text"):
         st.session_state.messages_memory.append({
             "sender": "assistant",
@@ -207,10 +359,10 @@ if submit and (user_input.strip() or uploaded_file):
             "image_data": None,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         })
-    
-    # Affichage IA
+
     with st.chat_message("assistant"):
         st.markdown(ai_response)
-    
+
     st.rerun()
+
 
