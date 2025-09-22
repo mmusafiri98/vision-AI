@@ -237,21 +237,20 @@ def edit_image(image, prompt):
         st.error("Modèle Qwen Image Edit non disponible")
         return image
     
-    # Sauvegarder image dans un buffer en mémoire
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    buffer.seek(0)
+    # Sauvegarder temporairement l'image
+    temp_path = f"/tmp/{uuid.uuid4()}.png"
+    image.save(temp_path, format="PNG")
     
     prompt_text = prompt.strip() if prompt.strip() else "Enhance this image artistically."
     
     try:
         result = qwen_client.predict(
-            image=handle_file(buffer),
+            image=handle_file(temp_path),  # handle_file attend un path
             prompt=prompt_text,
             seed=0,
             randomize_seed=True,
-            true_guidance_scale=7,  # plus fort pour modification visible
-            num_inference_steps=25, # plus de steps
+            true_guidance_scale=7,
+            num_inference_steps=25,
             rewrite_prompt=True,
             api_name="/infer"
         )
@@ -264,6 +263,11 @@ def edit_image(image, prompt):
     except Exception as e:
         st.error(f"Erreur édition image: {e}")
         return image
+    finally:
+        try:
+            os.remove(temp_path)
+        except:
+            pass
 
     return image
 
@@ -406,7 +410,7 @@ if submit and (user_input.strip() or uploaded_file):
             time.sleep(1.5)
 
             # Editer image avec Qwen
-            edited_image = edit_image(image, user_input)
+            edited_image = edit_image(image, user_input if user_input.strip() else "Améliorer l'image")
             edited_image = ImageOps.fit(edited_image, (512, 512))
             edited_base64 = image_to_base64(edited_image)
 
