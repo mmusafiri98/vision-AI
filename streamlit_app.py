@@ -2,19 +2,18 @@ import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import torch
-from gradio_client import Client, handle_file
+from gradio_client import Client
 import time
 import io
 import base64
 import os
 import uuid
 from supabase import create_client
-import tempfile
 
 # -------------------------
 # Configuration Streamlit
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Image Edit", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Typing Effect", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
@@ -27,13 +26,7 @@ When you receive an image description starting with [IMAGE], you should:
 1. Acknowledge that you can see and analyze the image
 2. Provide detailed analysis of what you observe
 3. Answer any specific questions about the image
-4. Be helpful and descriptive in your analysis
-
-When you receive an edited image description starting with [EDITED_IMAGE], you should:
-1. Acknowledge that you can see the edited image
-2. Describe what modifications were made
-3. Analyze the result of the editing
-4. Comment on the quality and success of the edit"""
+4. Be helpful and descriptive in your analysis"""
 
 # -------------------------
 # Supabase
@@ -140,7 +133,7 @@ def get_conversations(user_id):
     except:
         return []
 
-def add_message(conversation_id, sender, content, msg_type="text", image_data=None, edited_image_data=None):
+def add_message(conversation_id, sender, content, msg_type="text", image_data=None):
     if not supabase:
         return False
     try:
@@ -153,8 +146,6 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         }
         if image_data:
             data["image_data"] = image_data
-        if edited_image_data:
-            data["edited_image_data"] = edited_image_data
         resp = supabase.table("messages").insert(data).execute()
         return bool(resp.data and len(resp.data) > 0)
     except Exception as e:
@@ -187,248 +178,6 @@ def generate_caption(image, processor, model):
     with torch.no_grad():
         out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
     return processor.decode(out[0], skip_special_tokens=True)
-
-# -------------------------
-# Image Editing avec Multiple APIs
-# -------------------------
-@st.cache_resource
-def load_image_edit_clients():
-    """Charge plusieurs clients d'édition d'images comme alternatives"""
-    clients = {}
-    
-    # Client principal : Qwen Image Edit
-    try:
-        clients['qwen'] = Client("Qwen/Qwen-Image-Edit")
-    except:
-        clients['qwen'] = None
-    
-    # Alternative 1 : InstEditBooth
-    try:
-        clients['instedit'] = Client("SeaArtLab/InstEditBooth")
-    except:
-        clients['instedit'] = None
-    
-    # Alternative 2 : Flux Dev (si disponible)
-    try:
-        clients['flux'] = Client("black-forest-labs/FLUX.1-dev")
-    except:
-        clients['flux'] = None
-    
-    return clients
-
-def check_quota_status(client, client_name):
-    """Vérifie si un client API a du quota disponible"""
-    try:
-        # Test simple pour vérifier la disponibilité
-        # Chaque API a sa propre méthode de vérification
-        return True
-    except Exception as e:
-        if "quota" in str(e).lower() or "exceeded" in str(e).lower():
-            return False
-        return True
-
-def edit_image_with_multiple_apis(image, edit_prompt, seed=0, randomize_seed=True, guidance_scale=4, num_steps=20, rewrite_prompt=True):
-    """Essaie plusieurs APIs d'édition d'images en cas d'échec"""
-    clients = load_image_edit_clients()
-    
-    # Liste des APIs à essayer dans l'ordre de préférence
-    api_attempts = [
-        ('qwen', 'Qwen Image Edit'),
-        ('instedit', 'InstEditBooth'),
-        ('flux', 'Flux Dev')
-    ]
-    
-    last_error = None
-    
-    for api_key, api_name in api_attempts:
-        client = clients.get(api_key)
-        if not client:
-            st.warning(f"❌ {api_name} non disponible, tentative suivante...")
-            continue
-            
-        try:
-            st.info(f"🔄 Tentative avec {api_name}...")
-            
-            # Sauvegarder l'image temporairement
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
-                # Convertir en RGB si nécessaire (important pour certaines APIs)
-                if image.mode != 'RGB':
-                    image = image.convert('RGB')
-                image.save(tmp_file.name, format='PNG')
-                tmp_path = tmp_file.name
-            
-            # Debug: Vérifier que le fichier existe
-            if not os.path.exists(tmp_path):
-                st.error(f"❌ Erreur: fichier temporaire non créé pour {api_name}")
-                continue
-                
-            st.info(f"🔄 Fichier temporaire créé: {tmp_path}")
-            
-            # Ajuster les paramètres selon l'API
-            if api_key == 'qwen':
-                st.info("🔄 Appel API Qwen en cours...")
-                result = client.predict(
-                    image=handle_file(tmp_path),
-                    prompt=edit_prompt,
-                    seed=seed,
-                    randomize_seed=randomize_seed,
-                    true_guidance_scale=guidance_scale,
-                    num_inference_steps=min(num_steps, 25),
-                    rewrite_prompt=rewrite_prompt,
-                    api_name="/infer"
-                )
-                st.info(f"📥 Résultat Qwen reçu: {type(result)}")
-                
-            elif api_key == 'instedit':
-                st.info("🔄 Appel API InstEdit en cours...")
-                result = client.predict(
-                    image=handle_file(tmp_path),
-                    prompt=edit_prompt,
-                    seed=seed,
-                    api_name="/predict"
-                )
-                st.info(f"📥 Résultat InstEdit reçu: {type(result)}")
-                
-            elif api_key == 'flux':
-                st.info("🔄 Appel API Flux en cours...")
-                result = client.predict(
-                    prompt=f"Edit this image: {edit_prompt}",
-                    image=handle_file(tmp_path),
-                    seed=seed,
-                    api_name="/infer"
-                )
-                st.info(f"📥 Résultat Flux reçu: {type(result)}")
-            
-            # Debug: Analyser le résultat
-            st.info(f"🔍 Analyse du résultat: {result}")
-            
-            # Nettoyer le fichier temporaire
-            try:
-                os.unlink(tmp_path)
-            except:
-                pass
-            
-            # Vérifier et traiter le résultat
-            if result is not None:
-                try:
-                    # Le résultat peut être différent selon l'API
-                    if isinstance(result, (list, tuple)) and len(result) > 0:
-                        edited_image_path = result[0]
-                        st.info(f"🔍 Chemin image résultat: {edited_image_path}")
-                    elif isinstance(result, str):
-                        edited_image_path = result
-                        st.info(f"🔍 Chemin image résultat (string): {edited_image_path}")
-                    else:
-                        st.warning(f"⚠️ Format de résultat inattendu pour {api_name}: {type(result)}")
-                        continue
-                    
-                    # Vérifier que le fichier image existe
-                    if os.path.exists(edited_image_path):
-                        edited_image = Image.open(edited_image_path)
-                        st.success(f"✅ Image éditée avec succès avec {api_name}!")
-                        return edited_image, f"✅ Édition réussie avec {api_name}!"
-                    else:
-                        st.warning(f"⚠️ Fichier image résultat non trouvé: {edited_image_path}")
-                        continue
-                        
-                except Exception as img_error:
-                    st.error(f"❌ Erreur lors du traitement de l'image résultat avec {api_name}: {img_error}")
-                    continue
-            else:
-                st.warning(f"⚠️ Résultat vide de {api_name}")
-                continue
-                    
-        except Exception as e:
-            last_error = str(e)
-            st.error(f"❌ Erreur avec {api_name}: {last_error}")
-            
-            # Nettoyer le fichier temporaire en cas d'erreur
-            try:
-                if 'tmp_path' in locals():
-                    os.unlink(tmp_path)
-            except:
-                pass
-            
-            # Si c'est un problème de quota, essayer la prochaine API
-            if "quota" in last_error.lower() or "exceeded" in last_error.lower():
-                st.warning(f"⏰ Quota épuisé pour {api_name}, essai avec une alternative...")
-                continue
-            else:
-                st.warning(f"❌ Erreur technique avec {api_name}, essai avec une alternative...")
-                continue
-    
-    # Si toutes les APIs ont échoué
-    return None, f"❌ Toutes les APIs d'édition ont échoué. Dernière erreur: {last_error}"
-
-def edit_image_with_qwen(image, edit_prompt, seed=0, randomize_seed=True, guidance_scale=4, num_steps=20, rewrite_prompt=True):
-    """Fonction principale d'édition avec fallback sur plusieurs APIs"""
-    # En mode debug, utiliser la fonction de test simplifiée
-    if st.session_state.get('debug_mode', False):
-        return simple_edit_test(image, edit_prompt)
-    else:
-        return edit_image_with_multiple_apis(image, edit_prompt, seed, randomize_seed, guidance_scale, num_steps, rewrite_prompt)
-    """Version de test simplifiée pour debug"""
-    st.write("🚀 **DEBUT DU TEST D'EDITION**")
-    
-    try:
-        # Test Qwen uniquement d'abord
-        qwen_client = load_image_edit_clients().get('qwen')
-        if not qwen_client:
-            return None, "❌ Client Qwen non disponible"
-        
-        st.write("✅ Client Qwen chargé")
-        
-        # Sauvegarder l'image temporairement
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            image.save(tmp_file.name, format='PNG')
-            tmp_path = tmp_file.name
-        
-        st.write(f"✅ Image sauvée temporairement: {tmp_path}")
-        st.write(f"📝 Prompt d'édition: '{edit_prompt}'")
-        
-        # Test simple avec paramètres minimaux
-        st.write("🔄 Appel API Qwen...")
-        result = qwen_client.predict(
-            image=handle_file(tmp_path),
-            prompt=edit_prompt,
-            seed=42,
-            randomize_seed=False,
-            true_guidance_scale=3.0,
-            num_inference_steps=15,
-            rewrite_prompt=True,
-            api_name="/infer"
-        )
-        
-        st.write(f"📥 Résultat API: {result}")
-        st.write(f"📥 Type résultat: {type(result)}")
-        
-        # Nettoyer fichier temporaire
-        os.unlink(tmp_path)
-        
-        if result:
-            if isinstance(result, (list, tuple)) and len(result) > 0:
-                image_path = result[0]
-                st.write(f"🖼️ Chemin image: {image_path}")
-                
-                if os.path.exists(image_path):
-                    edited_image = Image.open(image_path)
-                    st.write("✅ Image éditée chargée avec succès!")
-                    return edited_image, "✅ Édition réussie!"
-                else:
-                    st.write(f"❌ Fichier image non trouvé: {image_path}")
-                    return None, "❌ Fichier résultat non trouvé"
-            else:
-                st.write(f"❌ Format résultat inattendu: {result}")
-                return None, "❌ Format résultat invalide"
-        else:
-            st.write("❌ Résultat API vide")
-            return None, "❌ Pas de résultat"
-            
-    except Exception as e:
-        st.write(f"❌ ERREUR: {str(e)}")
-        return None, f"❌ Erreur: {str(e)}"
 
 # -------------------------
 # Image <-> Base64
@@ -469,28 +218,6 @@ def get_ai_response(prompt):
         return f"Erreur modèle: {e}"
 
 # -------------------------
-# Fonction d'édition d'image dans le chat
-# -------------------------
-def process_image_edit_in_chat(image, user_text, edit_params):
-    """Traite l'édition d'image directement dans le chat"""
-    # Extraire le prompt d'édition du texte de l'utilisateur
-    edit_prompt = user_text.strip()
-    if not edit_prompt:
-        edit_prompt = "improve this image"
-    
-    # Éditer l'image
-    edited_image, edit_message = edit_image_with_qwen(
-        image, 
-        edit_prompt,
-        seed=edit_params.get('seed', 0),
-        randomize_seed=(edit_params.get('seed', 0) == 0),
-        guidance_scale=edit_params.get('guidance', 4.0),
-        num_steps=edit_params.get('steps', 20)
-    )
-    
-    return edited_image, edit_message, edit_prompt
-
-# -------------------------
 # Effet dactylographique
 # -------------------------
 def stream_response(text, placeholder):
@@ -512,10 +239,6 @@ if "messages_memory" not in st.session_state:
     st.session_state.messages_memory = []
 if "processor" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
-if "edit_mode" not in st.session_state:
-    st.session_state.edit_mode = False
-if "image_to_edit" not in st.session_state:
-    st.session_state.image_to_edit = None
 
 # -------------------------
 # Sidebar Auth & Debug
@@ -578,256 +301,25 @@ if convs:
     st.session_state.messages_memory = get_messages(st.session_state.conversation["conversation_id"])
 
 # -------------------------
-# Sidebar Mode Édition
-# -------------------------
-st.sidebar.title("🎨 Mode Édition d'Images")
-st.sidebar.info("Uploadez une image puis choisissez: 💬 Analyser ou 🎨 Éditer")
-
-# Paramètres d'édition avancés
-with st.sidebar.expander("⚙️ Paramètres d'édition"):
-    edit_steps = st.slider("Nombre d'étapes", min_value=10, max_value=50, value=20, 
-                          help="Moins d'étapes = plus rapide mais qualité moindre")
-    edit_guidance = st.slider("Force du guidage", min_value=1.0, max_value=10.0, value=4.0, step=0.5,
-                             help="Plus élevé = plus fidèle au prompt")
-    edit_seed = st.number_input("Seed (optionnel)", value=0, help="0 = aléatoire")
-
-# Quota et status des APIs
-with st.sidebar.expander("📊 Status des APIs"):
-    st.write("**APIs d'édition disponibles:**")
-    clients = load_image_edit_clients()
-    api_status = {}
-    for api_name, client in clients.items():
-        if client:
-            st.success(f"✅ {api_name.upper()}")
-            api_status[api_name] = "✅ Disponible"
-        else:
-            st.error(f"❌ {api_name.upper()}")
-            api_status[api_name] = "❌ Indisponible"
-    
-    # Debug info
-    if st.button("🔍 Test de Connexion APIs"):
-        for api_name, status in api_status.items():
-            st.write(f"{api_name}: {status}")
-    
-    # Debug mode toggle
-    debug_mode = st.checkbox("🐛 Mode Debug", help="Active les messages de debug détaillés")
-    st.session_state['debug_mode'] = debug_mode
-    
-    st.write("**Conseils pour éviter les quotas:**")
-    st.write("• Réduisez le nombre d'étapes (10-20)")
-    st.write("• Utilisez des prompts courts et précis")
-    st.write("• Évitez les éditions complexes")
-
-# -------------------------
 # Interface principale
 # -------------------------
-st.title("Vision AI Chat - Analyse & Édition d'Images")
+st.title("Vision AI Chat")
 
 # Affichage messages
 for msg in st.session_state.messages_memory:
     role = "user" if msg["sender"] == "user" else "assistant"
     with st.chat_message(role):
         if msg["type"] == "image" and msg.get("image_data"):
-            st.image(base64_to_image(msg["image_data"]), width=300, caption="Image originale")
-        if msg.get("edited_image_data"):
-            st.image(base64_to_image(msg["edited_image_data"]), width=300, caption="Image éditée")
+            st.image(base64_to_image(msg["image_data"]), width=300)
         st.markdown(msg["content"])
 
-# Interface pour l'édition d'images (mode édition spécial)
-if st.session_state.edit_mode and st.session_state.image_to_edit:
-    st.info("🎨 Mode Édition Activé")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image(st.session_state.image_to_edit, width=300, caption="Image à éditer")
-    with col2:
-        edit_prompt = st.text_area("Décrivez les modifications souhaitées:", 
-                                 placeholder="Ex: add a red hat, change background to beach, make it night scene...")
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("✨ Éditer l'image"):
-                if edit_prompt.strip():
-                    with st.spinner("Édition en cours..."):
-                        edited_image, message = edit_image_with_qwen(
-                            st.session_state.image_to_edit, 
-                            edit_prompt,
-                            seed=edit_seed,
-                            randomize_seed=(edit_seed == 0),
-                            guidance_scale=edit_guidance,
-                            num_steps=edit_steps
-                        )
-                        if edited_image:
-                            # Générer description de l'image éditée
-                            edited_caption = generate_caption(edited_image, st.session_state.processor, st.session_state.model)
-                            
-                            # Sauvegarder le message d'édition
-                            conv_id = st.session_state.conversation["conversation_id"]
-                            edit_content = f"[EDITED_IMAGE] {edited_caption}\n\nModifications demandées: {edit_prompt}"
-                            edited_image_data = image_to_base64(edited_image)
-                            original_image_data = image_to_base64(st.session_state.image_to_edit)
-                            
-                            if add_message(conv_id, "user", edit_content, "image_edit", original_image_data, edited_image_data):
-                                st.session_state.messages_memory.append({
-                                    "sender": "user",
-                                    "content": edit_content,
-                                    "type": "image_edit",
-                                    "image_data": original_image_data,
-                                    "edited_image_data": edited_image_data,
-                                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                                })
-                                
-                                # Réponse IA pour analyser l'édition
-                                prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {edit_content}"
-                                ai_response = get_ai_response(prompt)
-                                
-                                if add_message(conv_id, "assistant", ai_response, "text"):
-                                    st.session_state.messages_memory.append({
-                                        "sender": "assistant",
-                                        "content": ai_response,
-                                        "type": "text",
-                                        "image_data": None,
-                                        "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                                    })
-                                
-                                st.success("Image éditée avec succès!")
-                                st.session_state.edit_mode = False
-                                st.session_state.image_to_edit = None
-                                st.rerun()
-                        else:
-                            st.error(f"Erreur lors de l'édition: {message}")
-                else:
-                    st.warning("Veuillez saisir une description des modifications")
-        with col_b:
-            if st.button("❌ Annuler"):
-                st.session_state.edit_mode = False
-                st.session_state.image_to_edit = None
-                st.rerun()
-
-# Formulaire nouveau message avec sélection d'action
+# Formulaire nouveau message
 with st.form("msg_form", clear_on_submit=True):
-    user_input = st.text_area("Votre message:", height=100, 
-                             placeholder="Écrivez votre message ici... \n\nPour éditer une image: décrivez les modifications souhaitées (ex: 'add a red hat', 'change to night scene')")
+    user_input = st.text_area("Votre message:", height=100)
     uploaded_file = st.file_uploader("Image", type=["png","jpg","jpeg"])
-    
-    # Sélection d'action selon qu'une image soit uploadée ou non
-    if uploaded_file:
-        st.info("📷 Image détectée! Choisissez votre action:")
-        action_choice = st.radio(
-            "Action à effectuer:",
-            ["💬 Analyser l'image", "🎨 Éditer l'image", "⚙️ Mode Édition avancé"],
-            help="Sélectionnez ce que vous voulez faire avec l'image"
-        )
-        submit_button = st.form_submit_button("🚀 Exécuter")
-        
-        # Définir les variables selon le choix
-        if submit_button:
-            analyze_submit = action_choice == "💬 Analyser l'image"
-            edit_submit = action_choice == "🎨 Éditer l'image"
-            edit_mode_submit = action_choice == "⚙️ Mode Édition avancé"
-        else:
-            analyze_submit = edit_submit = edit_mode_submit = False
-    else:
-        # Pas d'image, juste un message normal
-        analyze_submit = st.form_submit_button("💬 Envoyer le message")
-        edit_submit = edit_mode_submit = False
+    submit = st.form_submit_button("Envoyer")
 
-# Gestion du mode édition avancé
-if uploaded_file and edit_mode_submit:
-    image = Image.open(uploaded_file)
-    st.session_state.image_to_edit = image
-    st.session_state.edit_mode = True
-    st.rerun()
-
-# Paramètres d'édition actuels
-edit_params = {
-    'seed': edit_seed,
-    'guidance': edit_guidance,
-    'steps': edit_steps
-}
-
-# Gestion de l'édition directe dans le chat
-if uploaded_file and edit_submit:
-    if not user_input.strip():
-        st.error("⚠️ Veuillez décrire les modifications souhaitées dans le message!")
-    else:
-        image = Image.open(uploaded_file)
-        conv_id = st.session_state.conversation["conversation_id"]
-        
-        # Afficher l'image originale dans le chat utilisateur
-        original_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        user_message = f"[IMAGE] {original_caption}\n\nÉdition demandée: {user_input.strip()}"
-        original_image_data = image_to_base64(image)
-        
-        # Affichage du message utilisateur
-        with st.chat_message("user"):
-            st.image(image, width=300, caption="Image originale")
-            st.markdown(user_message)
-        
-        # Sauvegarder le message utilisateur
-        if add_message(conv_id, "user", user_message, "image", original_image_data):
-            st.session_state.messages_memory.append({
-                "sender": "user",
-                "content": user_message,
-                "type": "image",
-                "image_data": original_image_data,
-                "edited_image_data": None,
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-            })
-        
-        # Traitement de l'édition
-        with st.chat_message("assistant"):
-            thinking_placeholder = st.empty()
-            thinking_placeholder.markdown("🎨 Vision AI édite votre image...")
-            
-            # Éditer l'image
-            edited_image, edit_message, edit_prompt = process_image_edit_in_chat(
-                image, user_input, edit_params
-            )
-            
-            if edited_image:
-                # Générer description de l'image éditée
-                edited_caption = generate_caption(edited_image, st.session_state.processor, st.session_state.model)
-                edited_image_data = image_to_base64(edited_image)
-                
-                # Préparer la réponse complète
-                ai_content = f"[EDITED_IMAGE] {edited_caption}\n\n{edit_message}\n\nJ'ai modifié votre image selon votre demande: '{edit_prompt}'. Voici le résultat:"
-                
-                # Supprimer le placeholder et afficher le résultat
-                thinking_placeholder.empty()
-                st.image(edited_image, width=300, caption="Image éditée")
-                
-                response_placeholder = st.empty()
-                stream_response(ai_content, response_placeholder)
-                
-                # Sauvegarder la réponse avec l'image éditée
-                if add_message(conv_id, "assistant", ai_content, "image_edit_response", None, edited_image_data):
-                    st.session_state.messages_memory.append({
-                        "sender": "assistant",
-                        "content": ai_content,
-                        "type": "image_edit_response",
-                        "image_data": None,
-                        "edited_image_data": edited_image_data,
-                        "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                    })
-            else:
-                # Erreur d'édition
-                thinking_placeholder.empty()
-                error_message = f"❌ {edit_message}"
-                st.error(error_message)
-                
-                if add_message(conv_id, "assistant", error_message, "text"):
-                    st.session_state.messages_memory.append({
-                        "sender": "assistant",
-                        "content": error_message,
-                        "type": "text",
-                        "image_data": None,
-                        "edited_image_data": None,
-                        "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                    })
-        
-        st.rerun()
-
-# Gestion de l'analyse normale (bouton analyser/envoyer)
-if analyze_submit and (user_input.strip() or uploaded_file):
+if submit and (user_input.strip() or uploaded_file):
     conv_id = st.session_state.conversation["conversation_id"]
     message_content = user_input.strip()
     msg_type = "text"
@@ -849,7 +341,6 @@ if analyze_submit and (user_input.strip() or uploaded_file):
             "content": message_content,
             "type": msg_type,
             "image_data": image_data,
-            "edited_image_data": None,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         })
 
@@ -881,44 +372,10 @@ if analyze_submit and (user_input.strip() or uploaded_file):
                 "content": ai_response,
                 "type": "text",
                 "image_data": None,
-                "edited_image_data": None,
                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
             })
 
     st.rerun()
 
-# -------------------------
-# Instructions d'utilisation
-# -------------------------
-if not st.session_state.messages_memory:
-    st.markdown("""
-    ### 🎉 Bienvenue dans Vision AI Chat!
-    
-    **Fonctionnalités disponibles:**
-    
-    🔍 **Analyse d'images:**
-    - Uploadez une image et cliquez sur **💬 Analyser l'image**
-    - Posez des questions sur l'image dans le message
-    
-    🎨 **Édition d'images (3 modes):**
-    1. **Édition directe:** Uploadez une image, décrivez les modifications et cliquez **🎨 Éditer l'image**
-    2. **Mode édition avancé:** Cliquez **⚙️ Mode Édition** pour plus de contrôle
-    3. **Paramètres personnalisables** dans la sidebar
-    
-    💬 **Chat normal:**
-    - Posez vos questions sans image
-    - Vision AI vous répondra normalement
-    
-    **Exemples de prompts d'édition:**
-    - "add a red hat to the person"
-    - "change the background to a beach"
-    - "make it a night scene"
-    - "remove the car from the image"
-    - "add snow falling"
-    """)
 
-# -------------------------
-# Footer
-# -------------------------
-st.markdown("---")
-st.markdown("🤖 **Vision AI** - Créé par Pepe Musafiri avec contributions de Meta AI | 🎨 Édition d'images alimentée par Qwen")
+
