@@ -219,7 +219,7 @@ def get_ai_response(prompt):
         return f"Erreur modèle: {e}"
 
 # -------------------------
-# Effet dactylographique + TTS (gTTS segmenté)
+# TTS gTTS + audio auto-play
 # -------------------------
 def text_to_speech(text, lang="fr"):
     try:
@@ -231,20 +231,28 @@ def text_to_speech(text, lang="fr"):
         st.error(f"Erreur TTS: {e}")
         return None
 
+def play_audio_auto(audio_file):
+    audio_bytes = open(audio_file, "rb").read()
+    audio_b64 = base64.b64encode(audio_bytes).decode()
+    audio_html = f"""
+    <audio autoplay>
+        <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
+    </audio>
+    """
+    st.markdown(audio_html, unsafe_allow_html=True)
+
 def stream_response_with_voice(text, placeholder):
     displayed = ""
-    for sentence in text.split(". "):  # découpe par phrase
+    for sentence in text.split(". "):
         for char in sentence:
             displayed += char
             placeholder.markdown(displayed + "▋")
             time.sleep(0.02)
         displayed += ". "
         placeholder.markdown(displayed)
-
-        # Générer la voix pour chaque phrase finie
         audio_file = text_to_speech(sentence, lang="fr")
         if audio_file:
-            st.audio(audio_file, format="audio/mp3")
+            play_audio_auto(audio_file)
 
 # -------------------------
 # Session State
@@ -378,7 +386,7 @@ if submit and (user_input.strip() or uploaded_file):
         prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
         ai_response = get_ai_response(prompt)
 
-        # Supprimer placeholder
+        # Supprimer placeholder et afficher réponse avec audio
         thinking_placeholder.empty()
         response_placeholder = st.empty()
         stream_response_with_voice(ai_response, response_placeholder)
@@ -394,5 +402,4 @@ if submit and (user_input.strip() or uploaded_file):
             })
 
     st.rerun()
-
 
