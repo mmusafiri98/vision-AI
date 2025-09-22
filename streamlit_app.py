@@ -2,14 +2,13 @@ import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import torch
-from gradio_client import Client
+from gradio_client import Client, handle_file
 import time
 import io
 import base64
 import os
 import uuid
 from supabase import create_client
-from gtts import gTTS
 
 # -------------------------
 # Configuration Streamlit
@@ -230,14 +229,30 @@ def stream_response(text, placeholder):
     placeholder.markdown(displayed)
 
 # -------------------------
-# TTS (gTTS)
+# TTS avec ResembleAI Chatterbox
 # -------------------------
-def text_to_speech(text):
+@st.cache_resource
+def load_tts_client():
     try:
-        tts = gTTS(text, lang="fr")
-        audio_file = f"/tmp/{uuid.uuid4()}.mp3"
-        tts.save(audio_file)
-        return audio_file
+        return Client("ResembleAI/Chatterbox-Multilingual-TTS")
+    except Exception as e:
+        st.error(f"Erreur chargement TTS: {e}")
+        return None
+
+tts_client = load_tts_client()
+
+def text_to_speech(text, lang="fr"):
+    try:
+        if not tts_client:
+            return None
+        # ResembleAI demande un fichier audio de référence, on utilise un sample neutre
+        result = tts_client.predict(
+            lang=lang,
+            current_ref=handle_file("https://github.com/gradio-app/gradio/raw/main/test/test_files/audio_sample.wav"),
+            current_text=text,
+            api_name="/on_language_change"
+        )
+        return result  # URL ou fichier généré
     except Exception as e:
         st.error(f"Erreur TTS: {e}")
         return None
@@ -317,7 +332,7 @@ if convs:
 # -------------------------
 # Interface principale
 # -------------------------
-st.title("Vision AI Chat avec Voix")
+st.title("Vision AI Chat avec Voix (ResembleAI)")
 
 # Affichage messages
 for msg in st.session_state.messages_memory:
@@ -379,10 +394,10 @@ if submit and (user_input.strip() or uploaded_file):
         response_placeholder = st.empty()
         stream_response(ai_response, response_placeholder)
 
-        # 🔊 Générer voix avec gTTS
-        audio_file = text_to_speech(ai_response)
-        if audio_file:
-            st.audio(audio_file, format="audio/mp3", autoplay=True)
+        # 🔊 Générer voix avec ResembleAI
+        audio_result = text_to_speech(ai_response, lang="fr")
+        if audio_result:
+            st.audio(audio_result, format="audio/wav", autoplay=True)
 
         # Sauvegarder réponse IA
         if add_message(conv_id, "assistant", ai_response, "text"):
