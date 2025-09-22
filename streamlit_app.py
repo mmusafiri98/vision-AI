@@ -575,29 +575,33 @@ if st.session_state.edit_mode and st.session_state.image_to_edit:
                 st.session_state.image_to_edit = None
                 st.rerun()
 
-# Formulaire nouveau message avec deux modes
+# Formulaire nouveau message avec sélection d'action
 with st.form("msg_form", clear_on_submit=True):
     user_input = st.text_area("Votre message:", height=100, 
                              placeholder="Écrivez votre message ici... \n\nPour éditer une image: décrivez les modifications souhaitées (ex: 'add a red hat', 'change to night scene')")
     uploaded_file = st.file_uploader("Image", type=["png","jpg","jpeg"])
     
-    # Afficher les options selon qu'une image soit uploadée ou non
+    # Sélection d'action selon qu'une image soit uploadée ou non
     if uploaded_file:
         st.info("📷 Image détectée! Choisissez votre action:")
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col1:
-            analyze_submit = st.form_submit_button("💬 Analyser l'image", help="Analyser et décrire l'image")
-        with col2:
-            edit_submit = st.form_submit_button("🎨 Éditer l'image", help="Éditer l'image selon votre message")
-        with col3:
-            edit_mode_submit = st.form_submit_button("⚙️ Mode Édition", help="Mode d'édition avancé")
+        action_choice = st.radio(
+            "Action à effectuer:",
+            ["💬 Analyser l'image", "🎨 Éditer l'image", "⚙️ Mode Édition avancé"],
+            help="Sélectionnez ce que vous voulez faire avec l'image"
+        )
+        submit_button = st.form_submit_button("🚀 Exécuter")
+        
+        # Définir les variables selon le choix
+        if submit_button:
+            analyze_submit = action_choice == "💬 Analyser l'image"
+            edit_submit = action_choice == "🎨 Éditer l'image"
+            edit_mode_submit = action_choice == "⚙️ Mode Édition avancé"
+        else:
+            analyze_submit = edit_submit = edit_mode_submit = False
     else:
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            analyze_submit = st.form_submit_button("💬 Envoyer le message")
-        with col2:
-            edit_submit = False
-            edit_mode_submit = False
+        # Pas d'image, juste un message normal
+        analyze_submit = st.form_submit_button("💬 Envoyer le message")
+        edit_submit = edit_mode_submit = False
 
 # Gestion du mode édition avancé
 if uploaded_file and edit_mode_submit:
@@ -696,7 +700,7 @@ if uploaded_file and edit_submit:
         st.rerun()
 
 # Gestion de l'analyse normale (bouton analyser/envoyer)
-elif (analyze_submit or (not uploaded_file and st.form_submit_button("💬 Envoyer"))) and (user_input.strip() or uploaded_file):
+if analyze_submit and (user_input.strip() or uploaded_file):
     conv_id = st.session_state.conversation["conversation_id"]
     message_content = user_input.strip()
     msg_type = "text"
@@ -791,5 +795,4 @@ if not st.session_state.messages_memory:
 # -------------------------
 st.markdown("---")
 st.markdown("🤖 **Vision AI** - Créé par Pepe Musafiri avec contributions de Meta AI | 🎨 Édition d'images alimentée par Qwen")
-
 
