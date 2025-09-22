@@ -237,37 +237,34 @@ def edit_image(image, prompt):
         st.error("Modèle Qwen Image Edit non disponible")
         return image
     
-    # Sauvegarder temporairement l'image
-    temp_path = f"/tmp/{uuid.uuid4()}.png"
-    image.save(temp_path, format="PNG")
+    # Sauvegarder image dans un buffer en mémoire
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
     
-    result = qwen_client.predict(
-        image=handle_file(temp_path),
-        prompt=prompt,
-        seed=0,
-        randomize_seed=True,
-        true_guidance_scale=1,
-        num_inference_steps=8,
-        rewrite_prompt=True,
-        api_name="/infer"
-    )
+    prompt_text = prompt.strip() if prompt.strip() else "Enhance this image artistically."
     
-    # Supprimer le fichier temporaire après usage
     try:
-        os.remove(temp_path)
-    except:
-        pass
-
-    # Résultat renvoyé en base64 ou URL
-    try:
+        result = qwen_client.predict(
+            image=handle_file(buffer),
+            prompt=prompt_text,
+            seed=0,
+            randomize_seed=True,
+            true_guidance_scale=7,  # plus fort pour modification visible
+            num_inference_steps=25, # plus de steps
+            rewrite_prompt=True,
+            api_name="/infer"
+        )
+        
         if isinstance(result, dict) and "image_base64" in result:
             return base64_to_image(result["image_base64"])
         elif isinstance(result, str) and result.startswith("http"):
             resp = requests.get(result)
             return Image.open(io.BytesIO(resp.content))
-    except:
+    except Exception as e:
+        st.error(f"Erreur édition image: {e}")
         return image
-    
+
     return image
 
 # -------------------------
@@ -409,7 +406,7 @@ if submit and (user_input.strip() or uploaded_file):
             time.sleep(1.5)
 
             # Editer image avec Qwen
-            edited_image = edit_image(image, user_input if user_input.strip() else "Améliorer l'image")
+            edited_image = edit_image(image, user_input)
             edited_image = ImageOps.fit(edited_image, (512, 512))
             edited_base64 = image_to_base64(edited_image)
 
@@ -463,6 +460,5 @@ if submit and (user_input.strip() or uploaded_file):
                 })
 
     st.rerun()
-
 
 
