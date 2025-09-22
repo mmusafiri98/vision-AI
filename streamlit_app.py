@@ -9,7 +9,6 @@ import base64
 import os
 import uuid
 from supabase import create_client
-from gtts import gTTS
 
 # -------------------------
 # Configuration Streamlit
@@ -219,40 +218,15 @@ def get_ai_response(prompt):
         return f"Erreur modèle: {e}"
 
 # -------------------------
-# TTS gTTS + audio auto-play
+# Effet dactylographique
 # -------------------------
-def text_to_speech(text, lang="fr"):
-    try:
-        tts = gTTS(text=text, lang=lang)
-        filename = f"/tmp/{uuid.uuid4()}.mp3"
-        tts.save(filename)
-        return filename
-    except Exception as e:
-        st.error(f"Erreur TTS: {e}")
-        return None
-
-def play_audio_auto(audio_file):
-    audio_bytes = open(audio_file, "rb").read()
-    audio_b64 = base64.b64encode(audio_bytes).decode()
-    audio_html = f"""
-    <audio autoplay>
-        <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
-    </audio>
-    """
-    st.markdown(audio_html, unsafe_allow_html=True)
-
-def stream_response_with_voice(text, placeholder):
+def stream_response(text, placeholder):
     displayed = ""
-    for sentence in text.split(". "):
-        for char in sentence:
-            displayed += char
-            placeholder.markdown(displayed + "▋")
-            time.sleep(0.02)
-        displayed += ". "
-        placeholder.markdown(displayed)
-        audio_file = text_to_speech(sentence, lang="fr")
-        if audio_file:
-            play_audio_auto(audio_file)
+    for char in str(text):
+        displayed += char
+        placeholder.markdown(displayed + "▋")
+        time.sleep(0.02)
+    placeholder.markdown(displayed)
 
 # -------------------------
 # Session State
@@ -386,10 +360,10 @@ if submit and (user_input.strip() or uploaded_file):
         prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
         ai_response = get_ai_response(prompt)
 
-        # Supprimer placeholder et afficher réponse avec audio
+        # Supprimer placeholder
         thinking_placeholder.empty()
         response_placeholder = st.empty()
-        stream_response_with_voice(ai_response, response_placeholder)
+        stream_response(ai_response, response_placeholder)
 
         # Sauvegarder réponse IA
         if add_message(conv_id, "assistant", ai_response, "text"):
@@ -402,4 +376,6 @@ if submit and (user_input.strip() or uploaded_file):
             })
 
     st.rerun()
+
+
 
