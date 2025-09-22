@@ -2,18 +2,19 @@ import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import torch
-from gradio_client import Client, handle_file
+from gradio_client import Client
 import time
 import io
 import base64
 import os
 import uuid
 from supabase import create_client
+import pyttsx3
 
 # -------------------------
 # Configuration Streamlit
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Typing Effect + TTS", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Typing Effect", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
@@ -218,8 +219,27 @@ def get_ai_response(prompt):
         return f"Erreur modèle: {e}"
 
 # -------------------------
-# Effet dactylographique
+# Effet dactylographique + TTS pyttsx3
 # -------------------------
+def init_tts():
+    engine = pyttsx3.init()
+    voices = engine.getProperty('voices')
+    for v in voices:
+        if "fr" in v.languages[0].decode('utf-8').lower() or "french" in v.name.lower():
+            engine.setProperty('voice', v.id)
+            break
+    engine.setProperty('rate', 180)
+    return engine
+
+tts_engine = init_tts()
+
+def speak_text(text):
+    try:
+        tts_engine.say(text)
+        tts_engine.runAndWait()
+    except Exception as e:
+        st.error(f"Erreur TTS: {e}")
+
 def stream_response(text, placeholder):
     displayed = ""
     for char in str(text):
@@ -227,35 +247,8 @@ def stream_response(text, placeholder):
         placeholder.markdown(displayed + "▋")
         time.sleep(0.02)
     placeholder.markdown(displayed)
-
-# -------------------------
-# TTS avec ResembleAI Chatterbox
-# -------------------------
-@st.cache_resource
-def load_tts_client():
-    try:
-        return Client("ResembleAI/Chatterbox-Multilingual-TTS")
-    except Exception as e:
-        st.error(f"Erreur chargement TTS: {e}")
-        return None
-
-tts_client = load_tts_client()
-
-def text_to_speech(text, lang="fr"):
-    try:
-        if not tts_client:
-            return None
-        # ResembleAI demande un fichier audio de référence, on utilise un sample neutre
-        result = tts_client.predict(
-            lang=lang,
-            current_ref=handle_file("https://github.com/gradio-app/gradio/raw/main/test/test_files/audio_sample.wav"),
-            current_text=text,
-            api_name="/on_language_change"
-        )
-        return result  # URL ou fichier généré
-    except Exception as e:
-        st.error(f"Erreur TTS: {e}")
-        return None
+    # Lire la réponse après affichage complet
+    speak_text(displayed)
 
 # -------------------------
 # Session State
@@ -332,7 +325,7 @@ if convs:
 # -------------------------
 # Interface principale
 # -------------------------
-st.title("Vision AI Chat avec Voix (ResembleAI)")
+st.title("Vision AI Chat")
 
 # Affichage messages
 for msg in st.session_state.messages_memory:
@@ -382,7 +375,7 @@ if submit and (user_input.strip() or uploaded_file):
     # Placeholder "Thinking"
     with st.chat_message("assistant"):
         thinking_placeholder = st.empty()
-        thinking_placeholder.markdown("🤖 Vision AI réfléchit...")
+        thinking_placeholder.markdown("🤖 Vision AI is thinking...")
         time.sleep(1.5)
 
         # Générer réponse IA
@@ -393,11 +386,6 @@ if submit and (user_input.strip() or uploaded_file):
         thinking_placeholder.empty()
         response_placeholder = st.empty()
         stream_response(ai_response, response_placeholder)
-
-        # 🔊 Générer voix avec ResembleAI
-        audio_result = text_to_speech(ai_response, lang="fr")
-        if audio_result:
-            st.audio(audio_result, format="audio/wav", autoplay=True)
 
         # Sauvegarder réponse IA
         if add_message(conv_id, "assistant", ai_response, "text"):
@@ -410,6 +398,5 @@ if submit and (user_input.strip() or uploaded_file):
             })
 
     st.rerun()
-
 
 
