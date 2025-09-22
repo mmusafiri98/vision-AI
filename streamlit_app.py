@@ -9,11 +9,12 @@ import base64
 import os
 import uuid
 from supabase import create_client
+from gtts import gTTS
 
 # -------------------------
 # Configuration Streamlit
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Typing Effect", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Typing Effect + TTS", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
@@ -229,6 +230,19 @@ def stream_response(text, placeholder):
     placeholder.markdown(displayed)
 
 # -------------------------
+# TTS (gTTS)
+# -------------------------
+def text_to_speech(text):
+    try:
+        tts = gTTS(text, lang="fr")
+        audio_file = f"/tmp/{uuid.uuid4()}.mp3"
+        tts.save(audio_file)
+        return audio_file
+    except Exception as e:
+        st.error(f"Erreur TTS: {e}")
+        return None
+
+# -------------------------
 # Session State
 # -------------------------
 if "user" not in st.session_state:
@@ -303,7 +317,7 @@ if convs:
 # -------------------------
 # Interface principale
 # -------------------------
-st.title("Vision AI Chat")
+st.title("Vision AI Chat avec Voix")
 
 # Affichage messages
 for msg in st.session_state.messages_memory:
@@ -353,7 +367,7 @@ if submit and (user_input.strip() or uploaded_file):
     # Placeholder "Thinking"
     with st.chat_message("assistant"):
         thinking_placeholder = st.empty()
-        thinking_placeholder.markdown("🤖 Vision AI is thinking...")
+        thinking_placeholder.markdown("🤖 Vision AI réfléchit...")
         time.sleep(1.5)
 
         # Générer réponse IA
@@ -364,6 +378,11 @@ if submit and (user_input.strip() or uploaded_file):
         thinking_placeholder.empty()
         response_placeholder = st.empty()
         stream_response(ai_response, response_placeholder)
+
+        # 🔊 Générer voix avec gTTS
+        audio_file = text_to_speech(ai_response)
+        if audio_file:
+            st.audio(audio_file, format="audio/mp3", autoplay=True)
 
         # Sauvegarder réponse IA
         if add_message(conv_id, "assistant", ai_response, "text"):
@@ -376,5 +395,6 @@ if submit and (user_input.strip() or uploaded_file):
             })
 
     st.rerun()
+
 
 
