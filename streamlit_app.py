@@ -243,6 +243,7 @@ def edit_image_with_multiple_apis(image, edit_prompt, seed=0, randomize_seed=Tru
     for api_key, api_name in api_attempts:
         client = clients.get(api_key)
         if not client:
+            st.warning(f"❌ {api_name} non disponible, tentative suivante...")
             continue
             
         try:
@@ -250,53 +251,101 @@ def edit_image_with_multiple_apis(image, edit_prompt, seed=0, randomize_seed=Tru
             
             # Sauvegarder l'image temporairement
             with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                # Convertir en RGB si nécessaire (important pour certaines APIs)
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
                 image.save(tmp_file.name, format='PNG')
                 tmp_path = tmp_file.name
             
+            # Debug: Vérifier que le fichier existe
+            if not os.path.exists(tmp_path):
+                st.error(f"❌ Erreur: fichier temporaire non créé pour {api_name}")
+                continue
+                
+            st.info(f"🔄 Fichier temporaire créé: {tmp_path}")
+            
             # Ajuster les paramètres selon l'API
             if api_key == 'qwen':
+                st.info("🔄 Appel API Qwen en cours...")
                 result = client.predict(
                     image=handle_file(tmp_path),
                     prompt=edit_prompt,
                     seed=seed,
                     randomize_seed=randomize_seed,
                     true_guidance_scale=guidance_scale,
-                    num_inference_steps=min(num_steps, 20),  # Réduire les steps pour économiser le quota
+                    num_inference_steps=min(num_steps, 25),
                     rewrite_prompt=rewrite_prompt,
                     api_name="/infer"
                 )
+                st.info(f"📥 Résultat Qwen reçu: {type(result)}")
+                
             elif api_key == 'instedit':
+                st.info("🔄 Appel API InstEdit en cours...")
                 result = client.predict(
                     image=handle_file(tmp_path),
                     prompt=edit_prompt,
                     seed=seed,
                     api_name="/predict"
                 )
+                st.info(f"📥 Résultat InstEdit reçu: {type(result)}")
+                
             elif api_key == 'flux':
+                st.info("🔄 Appel API Flux en cours...")
                 result = client.predict(
                     prompt=f"Edit this image: {edit_prompt}",
                     image=handle_file(tmp_path),
                     seed=seed,
                     api_name="/infer"
                 )
+                st.info(f"📥 Résultat Flux reçu: {type(result)}")
+            
+            # Debug: Analyser le résultat
+            st.info(f"🔍 Analyse du résultat: {result}")
             
             # Nettoyer le fichier temporaire
-            os.unlink(tmp_path)
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
             
-            # Vérifier le résultat
-            if result and len(result) > 0:
+            # Vérifier et traiter le résultat
+            if result is not None:
                 try:
-                    edited_image_path = result[0] if isinstance(result[0], str) else result
-                    edited_image = Image.open(edited_image_path)
-                    return edited_image, f"✅ Édition réussie avec {api_name}!"
-                except:
+                    # Le résultat peut être différent selon l'API
+                    if isinstance(result, (list, tuple)) and len(result) > 0:
+                        edited_image_path = result[0]
+                        st.info(f"🔍 Chemin image résultat: {edited_image_path}")
+                    elif isinstance(result, str):
+                        edited_image_path = result
+                        st.info(f"🔍 Chemin image résultat (string): {edited_image_path}")
+                    else:
+                        st.warning(f"⚠️ Format de résultat inattendu pour {api_name}: {type(result)}")
+                        continue
+                    
+                    # Vérifier que le fichier image existe
+                    if os.path.exists(edited_image_path):
+                        edited_image = Image.open(edited_image_path)
+                        st.success(f"✅ Image éditée avec succès avec {api_name}!")
+                        return edited_image, f"✅ Édition réussie avec {api_name}!"
+                    else:
+                        st.warning(f"⚠️ Fichier image résultat non trouvé: {edited_image_path}")
+                        continue
+                        
+                except Exception as img_error:
+                    st.error(f"❌ Erreur lors du traitement de l'image résultat avec {api_name}: {img_error}")
                     continue
+            else:
+                st.warning(f"⚠️ Résultat vide de {api_name}")
+                continue
                     
         except Exception as e:
             last_error = str(e)
+            st.error(f"❌ Erreur avec {api_name}: {last_error}")
+            
             # Nettoyer le fichier temporaire en cas d'erreur
             try:
-                os.unlink(tmp_path)
+                if 'tmp_path' in locals():
+                    os.unlink(tmp_path)
             except:
                 pass
             
@@ -305,7 +354,7 @@ def edit_image_with_multiple_apis(image, edit_prompt, seed=0, randomize_seed=Tru
                 st.warning(f"⏰ Quota épuisé pour {api_name}, essai avec une alternative...")
                 continue
             else:
-                st.warning(f"❌ Erreur avec {api_name}: {last_error}")
+                st.warning(f"❌ Erreur technique avec {api_name}, essai avec une alternative...")
                 continue
     
     # Si toutes les APIs ont échoué
@@ -795,4 +844,3 @@ if not st.session_state.messages_memory:
 # -------------------------
 st.markdown("---")
 st.markdown("🤖 **Vision AI** - Créé par Pepe Musafiri avec contributions de Meta AI | 🎨 Édition d'images alimentée par Qwen")
-
