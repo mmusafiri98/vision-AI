@@ -362,7 +362,73 @@ def edit_image_with_multiple_apis(image, edit_prompt, seed=0, randomize_seed=Tru
 
 def edit_image_with_qwen(image, edit_prompt, seed=0, randomize_seed=True, guidance_scale=4, num_steps=20, rewrite_prompt=True):
     """Fonction principale d'édition avec fallback sur plusieurs APIs"""
-    return edit_image_with_multiple_apis(image, edit_prompt, seed, randomize_seed, guidance_scale, num_steps, rewrite_prompt)
+    # En mode debug, utiliser la fonction de test simplifiée
+    if st.session_state.get('debug_mode', False):
+        return simple_edit_test(image, edit_prompt)
+    else:
+        return edit_image_with_multiple_apis(image, edit_prompt, seed, randomize_seed, guidance_scale, num_steps, rewrite_prompt)
+    """Version de test simplifiée pour debug"""
+    st.write("🚀 **DEBUT DU TEST D'EDITION**")
+    
+    try:
+        # Test Qwen uniquement d'abord
+        qwen_client = load_image_edit_clients().get('qwen')
+        if not qwen_client:
+            return None, "❌ Client Qwen non disponible"
+        
+        st.write("✅ Client Qwen chargé")
+        
+        # Sauvegarder l'image temporairement
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            image.save(tmp_file.name, format='PNG')
+            tmp_path = tmp_file.name
+        
+        st.write(f"✅ Image sauvée temporairement: {tmp_path}")
+        st.write(f"📝 Prompt d'édition: '{edit_prompt}'")
+        
+        # Test simple avec paramètres minimaux
+        st.write("🔄 Appel API Qwen...")
+        result = qwen_client.predict(
+            image=handle_file(tmp_path),
+            prompt=edit_prompt,
+            seed=42,
+            randomize_seed=False,
+            true_guidance_scale=3.0,
+            num_inference_steps=15,
+            rewrite_prompt=True,
+            api_name="/infer"
+        )
+        
+        st.write(f"📥 Résultat API: {result}")
+        st.write(f"📥 Type résultat: {type(result)}")
+        
+        # Nettoyer fichier temporaire
+        os.unlink(tmp_path)
+        
+        if result:
+            if isinstance(result, (list, tuple)) and len(result) > 0:
+                image_path = result[0]
+                st.write(f"🖼️ Chemin image: {image_path}")
+                
+                if os.path.exists(image_path):
+                    edited_image = Image.open(image_path)
+                    st.write("✅ Image éditée chargée avec succès!")
+                    return edited_image, "✅ Édition réussie!"
+                else:
+                    st.write(f"❌ Fichier image non trouvé: {image_path}")
+                    return None, "❌ Fichier résultat non trouvé"
+            else:
+                st.write(f"❌ Format résultat inattendu: {result}")
+                return None, "❌ Format résultat invalide"
+        else:
+            st.write("❌ Résultat API vide")
+            return None, "❌ Pas de résultat"
+            
+    except Exception as e:
+        st.write(f"❌ ERREUR: {str(e)}")
+        return None, f"❌ Erreur: {str(e)}"
 
 # -------------------------
 # Image <-> Base64
@@ -529,11 +595,23 @@ with st.sidebar.expander("⚙️ Paramètres d'édition"):
 with st.sidebar.expander("📊 Status des APIs"):
     st.write("**APIs d'édition disponibles:**")
     clients = load_image_edit_clients()
+    api_status = {}
     for api_name, client in clients.items():
         if client:
             st.success(f"✅ {api_name.upper()}")
+            api_status[api_name] = "✅ Disponible"
         else:
             st.error(f"❌ {api_name.upper()}")
+            api_status[api_name] = "❌ Indisponible"
+    
+    # Debug info
+    if st.button("🔍 Test de Connexion APIs"):
+        for api_name, status in api_status.items():
+            st.write(f"{api_name}: {status}")
+    
+    # Debug mode toggle
+    debug_mode = st.checkbox("🐛 Mode Debug", help="Active les messages de debug détaillés")
+    st.session_state['debug_mode'] = debug_mode
     
     st.write("**Conseils pour éviter les quotas:**")
     st.write("• Réduisez le nombre d'étapes (10-20)")
