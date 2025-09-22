@@ -9,11 +9,12 @@ import base64
 import os
 import uuid
 from supabase import create_client
+import requests
 
 # -------------------------
 # Configuration Streamlit
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Typing & Image Edit", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Image Edit", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an AI Engineer,
@@ -235,12 +236,13 @@ def edit_image(image, prompt):
     if not qwen_client:
         st.error("Modèle Qwen Image Edit non disponible")
         return image
-    # Convertir image PIL en fichier temporaire
-    buffered = io.BytesIO()
-    image.save(buffered, format="PNG")
-    buffered.seek(0)
+    
+    # Sauvegarder temporairement l'image
+    temp_path = f"/tmp/{uuid.uuid4()}.png"
+    image.save(temp_path, format="PNG")
+    
     result = qwen_client.predict(
-        image=handle_file(buffered),
+        image=handle_file(temp_path),
         prompt=prompt,
         seed=0,
         randomize_seed=True,
@@ -249,14 +251,23 @@ def edit_image(image, prompt):
         rewrite_prompt=True,
         api_name="/infer"
     )
-    # Résultat renvoyé en URL ou base64
+    
+    # Supprimer le fichier temporaire après usage
     try:
-        if "image_base64" in result:
+        os.remove(temp_path)
+    except:
+        pass
+
+    # Résultat renvoyé en base64 ou URL
+    try:
+        if isinstance(result, dict) and "image_base64" in result:
             return base64_to_image(result["image_base64"])
         elif isinstance(result, str) and result.startswith("http"):
-            return Image.open(io.BytesIO(qwen_client.download(result)))
+            resp = requests.get(result)
+            return Image.open(io.BytesIO(resp.content))
     except:
         return image
+    
     return image
 
 # -------------------------
@@ -369,7 +380,6 @@ if submit and (user_input.strip() or uploaded_file):
 
     if uploaded_file:
         image = Image.open(uploaded_file)
-        # Générer caption BLIP
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
         message_content = f"[IMAGE] {caption}"
         if user_input.strip():
@@ -400,12 +410,10 @@ if submit and (user_input.strip() or uploaded_file):
 
             # Editer image avec Qwen
             edited_image = edit_image(image, user_input if user_input.strip() else "Améliorer l'image")
-            # Convertir en carré
             edited_image = ImageOps.fit(edited_image, (512, 512))
             edited_base64 = image_to_base64(edited_image)
 
             thinking_placeholder.empty()
-            response_placeholder = st.empty()
             st.image(edited_image, caption="🖌️ Image éditée par Vision AI", width=300)
 
             # Sauvegarder réponse IA
@@ -455,7 +463,6 @@ if submit and (user_input.strip() or uploaded_file):
                 })
 
     st.rerun()
-
 
 
 
