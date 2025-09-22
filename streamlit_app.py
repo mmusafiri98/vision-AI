@@ -9,7 +9,7 @@ import base64
 import os
 import uuid
 from supabase import create_client
-import pyttsx3
+from gtts import gTTS
 
 # -------------------------
 # Configuration Streamlit
@@ -219,36 +219,32 @@ def get_ai_response(prompt):
         return f"Erreur modèle: {e}"
 
 # -------------------------
-# Effet dactylographique + TTS pyttsx3
+# Effet dactylographique + TTS (gTTS segmenté)
 # -------------------------
-def init_tts():
-    engine = pyttsx3.init()
-    voices = engine.getProperty('voices')
-    for v in voices:
-        if "fr" in v.languages[0].decode('utf-8').lower() or "french" in v.name.lower():
-            engine.setProperty('voice', v.id)
-            break
-    engine.setProperty('rate', 180)
-    return engine
-
-tts_engine = init_tts()
-
-def speak_text(text):
+def text_to_speech(text, lang="fr"):
     try:
-        tts_engine.say(text)
-        tts_engine.runAndWait()
+        tts = gTTS(text=text, lang=lang)
+        filename = f"/tmp/{uuid.uuid4()}.mp3"
+        tts.save(filename)
+        return filename
     except Exception as e:
         st.error(f"Erreur TTS: {e}")
+        return None
 
-def stream_response(text, placeholder):
+def stream_response_with_voice(text, placeholder):
     displayed = ""
-    for char in str(text):
-        displayed += char
-        placeholder.markdown(displayed + "▋")
-        time.sleep(0.02)
-    placeholder.markdown(displayed)
-    # Lire la réponse après affichage complet
-    speak_text(displayed)
+    for sentence in text.split(". "):  # découpe par phrase
+        for char in sentence:
+            displayed += char
+            placeholder.markdown(displayed + "▋")
+            time.sleep(0.02)
+        displayed += ". "
+        placeholder.markdown(displayed)
+
+        # Générer la voix pour chaque phrase finie
+        audio_file = text_to_speech(sentence, lang="fr")
+        if audio_file:
+            st.audio(audio_file, format="audio/mp3")
 
 # -------------------------
 # Session State
@@ -385,7 +381,7 @@ if submit and (user_input.strip() or uploaded_file):
         # Supprimer placeholder
         thinking_placeholder.empty()
         response_placeholder = st.empty()
-        stream_response(ai_response, response_placeholder)
+        stream_response_with_voice(ai_response, response_placeholder)
 
         # Sauvegarder réponse IA
         if add_message(conv_id, "assistant", ai_response, "text"):
