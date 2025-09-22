@@ -1,8 +1,8 @@
 import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
-from PIL import Image
+from PIL import Image, ImageOps
 import torch
-from gradio_client import Client
+from gradio_client import Client, handle_file
 import time
 import io
 import base64
@@ -13,13 +13,13 @@ from supabase import create_client
 # -------------------------
 # Configuration Streamlit
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Typing Effect", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Typing & Image Edit", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI.
-You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
+You were created by Pepe Musafiri, an AI Engineer,
 with contributions from Meta AI.
-Your role is to help users with any task they need, from image analysis
-and editing to answering questions clearly and helpfully.
+Your role is to help users with any task they need,
+from image analysis and editing to answering questions clearly and helpfully.
 Always answer naturally as Vision AI.
 
 When you receive an image description starting with [IMAGE], you should:
@@ -162,7 +162,7 @@ def get_messages(conversation_id):
         return []
 
 # -------------------------
-# BLIP
+# BLIP (pour légendes d'image)
 # -------------------------
 @st.cache_resource
 def load_blip():
@@ -196,6 +196,7 @@ def base64_to_image(img_str):
 @st.cache_resource
 def load_llama():
     try:
+        from gradio_client import Client
         return Client("muryshev/LLaMA-3.1-70b-it-NeMo")
     except:
         return None
@@ -216,6 +217,47 @@ def get_ai_response(prompt):
         return str(resp)
     except Exception as e:
         return f"Erreur modèle: {e}"
+
+# -------------------------
+# Qwen Image Edit Client
+# -------------------------
+@st.cache_resource
+def load_qwen_edit():
+    try:
+        return Client("multimodalart/Qwen-Image-Edit-Fast")
+    except:
+        return None
+
+qwen_client = load_qwen_edit()
+
+def edit_image(image, prompt):
+    """Modifie une image avec Qwen Image Edit et renvoie l'image PIL."""
+    if not qwen_client:
+        st.error("Modèle Qwen Image Edit non disponible")
+        return image
+    # Convertir image PIL en fichier temporaire
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    buffered.seek(0)
+    result = qwen_client.predict(
+        image=handle_file(buffered),
+        prompt=prompt,
+        seed=0,
+        randomize_seed=True,
+        true_guidance_scale=1,
+        num_inference_steps=8,
+        rewrite_prompt=True,
+        api_name="/infer"
+    )
+    # Résultat renvoyé en URL ou base64
+    try:
+        if "image_base64" in result:
+            return base64_to_image(result["image_base64"])
+        elif isinstance(result, str) and result.startswith("http"):
+            return Image.open(io.BytesIO(qwen_client.download(result)))
+    except:
+        return image
+    return image
 
 # -------------------------
 # Effet dactylographique
@@ -303,7 +345,7 @@ if convs:
 # -------------------------
 # Interface principale
 # -------------------------
-st.title("Vision AI Chat")
+st.title("Vision AI Chat - Image Edit")
 
 # Affichage messages
 for msg in st.session_state.messages_memory:
@@ -327,55 +369,93 @@ if submit and (user_input.strip() or uploaded_file):
 
     if uploaded_file:
         image = Image.open(uploaded_file)
-        image_data = image_to_base64(image)
+        # Générer caption BLIP
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
         message_content = f"[IMAGE] {caption}"
         if user_input.strip():
             message_content += f"\n\nQuestion: {user_input.strip()}"
         msg_type = "image"
+        image_data = image_to_base64(image)
 
-    # Sauvegarde message utilisateur
-    if add_message(conv_id, "user", message_content, msg_type, image_data):
-        st.session_state.messages_memory.append({
-            "sender": "user",
-            "content": message_content,
-            "type": msg_type,
-            "image_data": image_data,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        })
-
-    # Affichage utilisateur
-    with st.chat_message("user"):
-        if msg_type == "image" and image_data:
-            st.image(base64_to_image(image_data), width=300)
-        st.markdown(message_content)
-
-    # Placeholder "Thinking"
-    with st.chat_message("assistant"):
-        thinking_placeholder = st.empty()
-        thinking_placeholder.markdown("🤖 Vision AI is thinking...")
-        time.sleep(1.5)
-
-        # Générer réponse IA
-        prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
-        ai_response = get_ai_response(prompt)
-
-        # Supprimer placeholder
-        thinking_placeholder.empty()
-        response_placeholder = st.empty()
-        stream_response(ai_response, response_placeholder)
-
-        # Sauvegarder réponse IA
-        if add_message(conv_id, "assistant", ai_response, "text"):
+        # Sauvegarder message utilisateur
+        if add_message(conv_id, "user", message_content, msg_type, image_data):
             st.session_state.messages_memory.append({
-                "sender": "assistant",
-                "content": ai_response,
+                "sender": "user",
+                "content": message_content,
+                "type": msg_type,
+                "image_data": image_data,
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+        # Affichage utilisateur
+        with st.chat_message("user"):
+            st.image(image, width=300)
+            st.markdown(message_content)
+
+        # Placeholder "Thinking"
+        with st.chat_message("assistant"):
+            thinking_placeholder = st.empty()
+            thinking_placeholder.markdown("🤖 Vision AI is editing the image...")
+            time.sleep(1.5)
+
+            # Editer image avec Qwen
+            edited_image = edit_image(image, user_input if user_input.strip() else "Améliorer l'image")
+            # Convertir en carré
+            edited_image = ImageOps.fit(edited_image, (512, 512))
+            edited_base64 = image_to_base64(edited_image)
+
+            thinking_placeholder.empty()
+            response_placeholder = st.empty()
+            st.image(edited_image, caption="🖌️ Image éditée par Vision AI", width=300)
+
+            # Sauvegarder réponse IA
+            ai_content = "Voici votre image modifiée par Vision AI."
+            if add_message(conv_id, "assistant", ai_content, "image", edited_base64):
+                st.session_state.messages_memory.append({
+                    "sender": "assistant",
+                    "content": ai_content,
+                    "type": "image",
+                    "image_data": edited_base64,
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+
+    else:
+        # Message texte classique
+        if add_message(conv_id, "user", message_content, "text"):
+            st.session_state.messages_memory.append({
+                "sender": "user",
+                "content": message_content,
                 "type": "text",
                 "image_data": None,
                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
             })
+        with st.chat_message("user"):
+            st.markdown(message_content)
+
+        # Placeholder "Thinking"
+        with st.chat_message("assistant"):
+            thinking_placeholder = st.empty()
+            thinking_placeholder.markdown("🤖 Vision AI is thinking...")
+            time.sleep(1.5)
+
+            prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
+            ai_response = get_ai_response(prompt)
+
+            thinking_placeholder.empty()
+            response_placeholder = st.empty()
+            stream_response(ai_response, response_placeholder)
+
+            if add_message(conv_id, "assistant", ai_response, "text"):
+                st.session_state.messages_memory.append({
+                    "sender": "assistant",
+                    "content": ai_response,
+                    "type": "text",
+                    "image_data": None,
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
 
     st.rerun()
+
 
 
 
