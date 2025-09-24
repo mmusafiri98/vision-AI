@@ -5,7 +5,6 @@ from PIL import Image
 import torch
 from gradio_client import Client, handle_file
 import time
-import pandas as pd
 import io
 import base64
 import os
@@ -47,14 +46,9 @@ def init_supabase():
         supabase_url = os.environ.get("SUPABASE_URL")
         supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
         if not supabase_url or not supabase_key:
-            st.error("SUPABASE_URL ou SUPABASE_SERVICE_KEY manquante dans les variables d'environnement.")
+            st.error("SUPABASE_URL ou SUPABASE_SERVICE_KEY manquante.")
             return None
         client = create_client(supabase_url, supabase_key)
-        # test basique
-        try:
-            _ = client.table("users").select("*").limit(1).execute()
-        except Exception:
-            pass
         return client
     except Exception as e:
         st.error(f"Erreur init_supabase: {e}")
@@ -63,13 +57,12 @@ def init_supabase():
 supabase = init_supabase()
 
 # -------------------------
-# Utilitaires DB
+# Fonctions Supabase
 # -------------------------
 def verify_user(email, password):
     if not supabase:
         return None
     try:
-        # Essayer auth (si configuré)
         try:
             resp = supabase.auth.sign_in_with_password({"email": email, "password": password})
             if getattr(resp, "user", None):
@@ -80,8 +73,6 @@ def verify_user(email, password):
                 }
         except Exception:
             pass
-
-        # Fallback table users
         resp = supabase.table("users").select("*").eq("email", email).execute()
         if resp.data and len(resp.data) > 0:
             user = resp.data[0]
@@ -100,7 +91,6 @@ def create_user(email, password, name):
     if not supabase:
         return False
     try:
-        # Essayer auth admin
         try:
             resp = supabase.auth.admin.create_user({
                 "email": email,
@@ -111,8 +101,6 @@ def create_user(email, password, name):
             return getattr(resp, "user", None) is not None
         except Exception:
             pass
-
-        # Fallback: insert user dans table
         user_data = {
             "id": str(uuid.uuid4()),
             "email": email,
@@ -203,12 +191,10 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         st.error("add_message: paramètres manquants")
         return False
     try:
-        # Assurer l'existence conversation
         conv_check = supabase.table("conversations").select("*").eq("conversation_id", conversation_id).execute()
         if not conv_check.data:
             st.error(f"add_message: conversation {conversation_id} introuvable")
             return False
-
         message_data = {
             "message_id": str(uuid.uuid4()),
             "conversation_id": conversation_id,
@@ -332,11 +318,8 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str):
         st.error("Client Qwen non disponible.")
         return None, "Client Qwen non disponible."
     try:
-        # Sauver image temporaire
         temp_path = os.path.join(TMP_DIR, f"input_{uuid.uuid4().hex}.png")
         image.save(temp_path)
-
-        # Appel Gradio avec handle_file pour fichier local
         result = client.predict(
             image=handle_file(temp_path),
             prompt=edit_instruction,
@@ -347,13 +330,9 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str):
             rewrite_prompt=True,
             api_name="/infer"
         )
-
-        # Résultat attendu : tuple dont le premier élément est le path local du fichier rendu
         if isinstance(result, (list, tuple)) and len(result) >= 1:
             edited_tmp_path = result[0]
-            # Parfois le fichier est en webp, png, etc. Ouvrir avec PIL
             edited_img = Image.open(edited_tmp_path).convert("RGBA")
-            # Sauver copie persistante
             final_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
             edited_img.save(final_path)
             return edited_img, final_path
@@ -383,7 +362,7 @@ if st.session_state.user["id"] == "guest":
                 if user:
                     st.session_state.user = user
                     st.success("Connexion réussie")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Identifiants invalides")
     with tab2:
@@ -404,7 +383,7 @@ else:
         st.session_state.user = {"id": "guest", "email": "Invité", "name": "Invité"}
         st.session_state.conversation = None
         st.session_state.messages_memory = []
-        st.experimental_rerun()
+        st.rerun()
 
 # -------------------------
 # Gestion conversations sidebar
@@ -417,7 +396,7 @@ if st.sidebar.button("Nouvelle conversation"):
         st.session_state.conversation = conv
         st.session_state.messages_memory = []
         st.success("Conversation créée")
-        st.experimental_rerun()
+        st.rerun()
 
 convs = get_conversations(st.session_state.user["id"]) if st.session_state.user["id"] != "guest" else []
 if convs:
@@ -430,11 +409,10 @@ if convs:
                 break
     sel = st.sidebar.selectbox("Vos conversations", range(len(opts)), format_func=lambda i: opts[i], index=current_idx)
     sel_conv = convs[sel]
-    # Charger messages si nouvelle conversation sélectionnée
     if not st.session_state.conversation or st.session_state.conversation.get("conversation_id") != sel_conv.get("conversation_id"):
         st.session_state.conversation = sel_conv
         st.session_state.messages_memory = get_messages(sel_conv.get("conversation_id"))
-        st.experimental_rerun()
+        st.rerun()
 
 # -------------------------
 # Interface principale
@@ -482,7 +460,6 @@ if submit and (user_input.strip() or uploaded_file):
     # Si image uploadée : caption + potentielle édition
     if uploaded_file:
         img = Image.open(uploaded_file).convert("RGBA")
-        # Générer caption
         try:
             caption = generate_caption(img.convert("RGB"), st.session_state.processor, st.session_state.model)
         except Exception as e:
@@ -493,12 +470,8 @@ if submit and (user_input.strip() or uploaded_file):
             message_content += f"\n\nQuestion: {user_input.strip()}"
         msg_type = "image"
         image_b64 = image_to_base64(img.convert("RGB"))
-
-        # Sauvegarder message utilisateur (image + texte)
         saved = add_message(conv_id, "user", message_content, msg_type, image_b64)
-        if not saved:
-            st.error("Impossible de sauvegarder le message image en DB.")
-        else:
+        if saved:
             st.session_state.messages_memory.append({
                 "message_id": str(uuid.uuid4()),
                 "sender": "user",
@@ -507,20 +480,15 @@ if submit and (user_input.strip() or uploaded_file):
                 "image_data": image_b64,
                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
             })
-
-        # Vérifier si l'utilisateur demande explicitement une modification
         lower = user_input.lower()
         if any(k in lower for k in ["modifie", "modifier", "edit", "changer", "retouche", "retoucher"]):
-            # On réalise l'édition via Qwen
             with st.spinner("Édition de l'image via Qwen..."):
                 edited_img, info = edit_image_with_qwen(img.convert("RGB"), user_input.strip())
                 if edited_img:
-                    # Convertir & sauvegarder en base64 et en DB comme réponse assistant
                     edited_b64 = image_to_base64(edited_img.convert("RGB"))
                     add_message(conv_id, "assistant", f"Image éditée selon la demande: {user_input.strip()}", "image", edited_b64)
                     st.success("Image éditée avec succès.")
                     st.image(edited_img, caption="Image éditée", use_column_width=True)
-                    # Ajouter en session
                     st.session_state.messages_memory.append({
                         "message_id": str(uuid.uuid4()),
                         "sender": "assistant",
@@ -531,12 +499,9 @@ if submit and (user_input.strip() or uploaded_file):
                     })
                 else:
                     st.error(f"Échec édition : {info}")
-            st.experimental_rerun()
+            st.rerun()
         else:
-            # Pas d'édition demandée : on laisse l'IA répondre en texte à la question (si fournie)
             prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
-            if user_input.strip():
-                prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
             with st.chat_message("assistant"):
                 ph = st.empty()
                 ai_resp = get_ai_response(prompt)
@@ -550,15 +515,11 @@ if submit and (user_input.strip() or uploaded_file):
                 "image_data": None,
                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
             })
-            st.experimental_rerun()
-
+            st.rerun()
     else:
-        # Message texte seulement
         if message_content:
             saved = add_message(conv_id, "user", message_content, "text", None)
-            if not saved:
-                st.error("Impossible de sauvegarder le message texte.")
-            else:
+            if saved:
                 st.session_state.messages_memory.append({
                     "message_id": str(uuid.uuid4()),
                     "sender": "user",
@@ -567,8 +528,6 @@ if submit and (user_input.strip() or uploaded_file):
                     "image_data": None,
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
-
-            # Générer réponse texte via LLaMA
             prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
             with st.chat_message("assistant"):
                 ph = st.empty()
@@ -584,8 +543,3 @@ if submit and (user_input.strip() or uploaded_file):
                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
             })
             st.rerun()
-
-# -------------------------
-# Fin du fichier
-# -------------------------
-
