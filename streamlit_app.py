@@ -162,7 +162,7 @@ def get_messages(conversation_id):
         return []
 
 # -------------------------
-# BLIP
+# BLIP (Caption)
 # -------------------------
 @st.cache_resource
 def load_blip():
@@ -191,7 +191,7 @@ def base64_to_image(img_str):
     return Image.open(io.BytesIO(base64.b64decode(img_str)))
 
 # -------------------------
-# LLaMA Client
+# LLaMA Client (Texte)
 # -------------------------
 @st.cache_resource
 def load_llama():
@@ -208,7 +208,7 @@ def get_ai_response(prompt):
     try:
         resp = llama_client.predict(
             message=str(prompt),
-            max_tokens=8192,
+            max_tokens=2048,
             temperature=0.7,
             top_p=0.95,
             api_name="/chat"
@@ -217,18 +217,24 @@ def get_ai_response(prompt):
     except Exception as e:
         return f"Erreur modèle: {e}"
 
-# ======================================================
-# ===============  ÉDITION D’IMAGE =====================
-# ======================================================
+# -------------------------
+# Qwen Image Edit (Édition)
+# -------------------------
+@st.cache_resource
+def load_qwen_edit():
+    try:
+        return Client("Qwen/Qwen-Image-Edit")
+    except:
+        return None
+
+qwen_edit_client = load_qwen_edit()
+EDITED_IMAGES_DIR = "edited_images"
+os.makedirs(EDITED_IMAGES_DIR, exist_ok=True)
 
 def edit_image_with_qwen(image_path, edit_instruction, client):
-    """
-    Édite une image en utilisant Qwen-Image-Edit.
-    Retourne le chemin de l’image éditée et un message de statut.
-    """
     try:
         result = client.predict(
-            image=handle_file(image_path),
+            image=open(image_path, "rb"),
             prompt=edit_instruction,
             seed=0,
             randomize_seed=True,
@@ -237,7 +243,6 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
             rewrite_prompt=True,
             api_name="/infer"
         )
-        # Le modèle retourne un tuple : (chemin_temp_image, taille)
         if isinstance(result, tuple) and len(result) >= 1:
             temp_image_path = result[0]
             edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
@@ -250,143 +255,11 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
         return None, f"Erreur édition : {e}"
 
 # ======================================================
-# ===============  SIDEBAR =============================
+# ===============  AFFICHAGE CHAT ======================
 # ======================================================
+st.title("🎯 Vision AI Chat")
 
-# Gestion des chats sauvegardés
-st.sidebar.title("📂 Gestion des chats")
-if st.sidebar.button("➕ Nouveau chat"):
-    st.session_state.chat_id = str(uuid.uuid4())  # Nouveau chat_id
-    st.session_state.chat_history = []           # Vide l’historique
-    save_chat_history([], st.session_state.chat_id)
-    st.rerun()
-
-# Liste et sélection des anciens chats
-available_chats = list_chats()
-if available_chats:
-    selected = st.sidebar.selectbox(
-        "Vos discussions:", available_chats,
-        index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
-    )
-    if selected != st.session_state.chat_id:
-        st.session_state.chat_id = selected
-        st.session_state.chat_history = load_chat_history(selected)
-        st.rerun()
-
-# Choix du mode (Description ou Édition)
-st.sidebar.title("🎛️ Mode")
-mode = st.sidebar.radio("Choisir:", ["📝 Description", "✏️ Édition"],
-                        index=0 if st.session_state.mode=="describe" else 1)
-st.session_state.mode = "describe" if "Description" in mode else "edit"
-
-# ======================================================
-# ===============  AFFICHAGE DU CHAT ==================
-# ======================================================
-
-st.markdown("<h1 style='text-align:center'>🎯 Vision AI Chat</h1>", unsafe_allow_html=True)
-
-# Affiche l’historique des messages
-for msg in st.session_state.chat_history:
-    if msg["role"] == "user":
-        st.markdown(f"**👤 Vous:** {msg['content']}")
-        if msg.get("image") and os.path.exists(msg["image"]):
-            st.image(msg["image"], caption="📤 Image", width=300)
-    else:
-        st.markdown(f"**🤖 Vision AI:** {msg['content']}")
-        if msg.get("edited_image") and os.path.exists(msg["edited_image"]):
-            st.image(msg["edited_image"], caption="✨ Image éditée", width=300)
-
-# ======================================================
-# ===============  FORMULAIRE UTILISATEUR ==============
-# ======================================================
-
-with st.form("chat_form", clear_on_submit=True):
-    uploaded_file = st.file_uploader("📤 Upload image", type=["jpg","jpeg","png"])
-    if st.session_state.mode=="describe":
-        user_message = st.text_input("💬 Question sur l'image (optionnel)")
-        submit = st.form_submit_button("🚀 Analyser")
-    else:
-        user_message = st.text_input("✏️ Instruction d'édition", placeholder="ex: rendre le ciel bleu")
-        submit = st.form_submit_button("✏️ Éditer")
-
-# ======================================================
-# ===============  LOGIQUE DU CHAT =====================
-# ======================================================
-
-if submit:
-    if uploaded_file:  # Si une image est envoyée
-        image = Image.open(uploaded_file).convert("RGB")
-        image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
-        image.save(image_path)
-
-        if st.session_state.mode=="describe":
-            # Génération de la légende
-            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
-            
-            # Envoi au modèle Qwen texte
-            response = st.session_state.qwen_client.predict(
-                message=query,
-                param_2=SYSTEM_PROMPT,
-                param_3=0.3,
-                param_4=0,
-                param_5=0,
-                api_name="/chat"
-            )
-            # Ajout à l’historique
-            st.session_state.chat_history.append({"role":"user","content":user_message or "Image envoyée","image":image_path})
-            st.session_state.chat_history.append({"role":"assistant","content":response})
-
-        else:  # Mode édition
-            if not user_message:
-                st.error("⚠️ Spécifiez une instruction d'édition")
-                st.stop()
-            edited_path, msg = edit_image_with_qwen(image_path, user_message, st.session_state.qwen_edit_client)
-            if edited_path:
-                st.image(edited_path, caption="✨ Image éditée")
-                st.session_state.chat_history.append({"role":"user","content":user_message,"image":image_path})
-                st.session_state.chat_history.append({"role":"assistant","content":msg,"edited_image":edited_path})
-            else:
-                st.error(msg)
-
-    elif user_message:  # Si seulement du texte est envoyé
-        response = st.session_state.qwen_client.predict(
-            message=user_message,
-            param_2=SYSTEM_PROMPT,
-            param_3=0.3,
-            param_4=0,
-            param_5=0,
-            api_name="/chat"
-        )
-        st.session_state.chat_history.append({"role":"user","content":user_message})
-        st.session_state.chat_history.append({"role":"assistant","content":response})
-
- 
-
-# ======================================================
-# ===============  RESET CHAT ==========================
-# ======================================================
-
-if st.session_state.chat_history:
-    if st.button("🗑️ Vider la discussion"):
-        st.session_state.chat_history=[]
-        save_chat_history([], st.session_state.chat_id)
-        st.rerun()
-
-# -------------------------
-# Effet dactylographique
-# -------------------------
-def stream_response(text, placeholder):
-    displayed = ""
-    for char in str(text):
-        displayed += char
-        placeholder.markdown(displayed + "▋")
-        time.sleep(0.02)
-    placeholder.markdown(displayed)
-
-# -------------------------
-# Session State
-# -------------------------
+# Init session_state
 if "user" not in st.session_state:
     st.session_state.user = {"id": "guest", "email": "Invité"}
 if "conversation" not in st.session_state:
@@ -397,7 +270,7 @@ if "processor" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
 
 # -------------------------
-# Sidebar Auth & Debug
+# Auth utilisateur
 # -------------------------
 st.sidebar.title("Authentification / Debug")
 if st.session_state.user["id"] == "guest":
@@ -457,11 +330,8 @@ if convs:
     st.session_state.messages_memory = get_messages(st.session_state.conversation["conversation_id"])
 
 # -------------------------
-# Interface principale
-# -------------------------
-st.title("Vision AI Chat")
-
 # Affichage messages
+# -------------------------
 for msg in st.session_state.messages_memory:
     role = "user" if msg["sender"] == "user" else "assistant"
     with st.chat_message(role):
@@ -469,10 +339,13 @@ for msg in st.session_state.messages_memory:
             st.image(base64_to_image(msg["image_data"]), width=300)
         st.markdown(msg["content"])
 
-# Formulaire nouveau message
+# -------------------------
+# Formulaire envoi message
+# -------------------------
 with st.form("msg_form", clear_on_submit=True):
-    user_input = st.text_area("Votre message:", height=100)
+    user_input = st.text_area("Votre message ou instruction d’édition :", height=100)
     uploaded_file = st.file_uploader("Image", type=["png","jpg","jpeg"])
+    mode = st.radio("Mode :", ["Description", "Édition"])
     submit = st.form_submit_button("Envoyer")
 
 if submit and (user_input.strip() or uploaded_file):
@@ -482,13 +355,30 @@ if submit and (user_input.strip() or uploaded_file):
     image_data = None
 
     if uploaded_file:
-        image = Image.open(uploaded_file)
+        image = Image.open(uploaded_file).convert("RGB")
+        image_path = f"temp_{uuid.uuid4().hex}.png"
+        image.save(image_path)
         image_data = image_to_base64(image)
-        caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        message_content = f"[IMAGE] {caption}"
-        if user_input.strip():
-            message_content += f"\n\nQuestion: {user_input.strip()}"
-        msg_type = "image"
+
+        if mode == "Description":
+            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+            message_content = f"[IMAGE] {caption}"
+            if user_input.strip():
+                message_content += f"\n\nQuestion: {user_input.strip()}"
+
+        elif mode == "Édition":
+            if not user_input.strip():
+                st.error("⚠️ Spécifiez une instruction d'édition")
+                st.stop()
+            edited_path, msg = edit_image_with_qwen(image_path, user_input.strip(), qwen_edit_client)
+            if edited_path:
+                st.session_state.messages_memory.append({"sender":"user","content":user_input,"type":"image","image_data":image_data})
+                st.session_state.messages_memory.append({"sender":"assistant","content":msg,"type":"image","image_data":image_to_base64(Image.open(edited_path))})
+                st.image(edited_path, caption="✨ Image éditée")
+                st.stop()
+            else:
+                st.error(msg)
+                st.stop()
 
     # Sauvegarde message utilisateur
     if add_message(conv_id, "user", message_content, msg_type, image_data):
@@ -500,28 +390,18 @@ if submit and (user_input.strip() or uploaded_file):
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         })
 
-    # Affichage utilisateur
-    with st.chat_message("user"):
-        if msg_type == "image" and image_data:
-            st.image(base64_to_image(image_data), width=300)
-        st.markdown(message_content)
-
-    # Placeholder "Thinking"
+    # Réponse IA (texte)
     with st.chat_message("assistant"):
         thinking_placeholder = st.empty()
         thinking_placeholder.markdown("🤖 Vision AI is thinking...")
-        time.sleep(1.5)
+        time.sleep(1)
 
-        # Générer réponse IA
         prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
         ai_response = get_ai_response(prompt)
 
-        # Supprimer placeholder
         thinking_placeholder.empty()
-        response_placeholder = st.empty()
-        stream_response(ai_response, response_placeholder)
+        st.markdown(ai_response)
 
-        # Sauvegarder réponse IA
         if add_message(conv_id, "assistant", ai_response, "text"):
             st.session_state.messages_memory.append({
                 "sender": "assistant",
