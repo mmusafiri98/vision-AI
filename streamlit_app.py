@@ -2,18 +2,20 @@ import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import torch
-from gradio_client import Client
+from gradio_client import Client, handle_file
 import time
 import pandas as pd
 import io
 import base64
 import os
+import uuid
+import traceback
 from supabase import create_client
 
 # -------------------------
 # Config
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Fixed", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Complete", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
@@ -27,6 +29,14 @@ When you receive an image description starting with [IMAGE], you should:
 2. Provide detailed analysis of what you observe
 3. Answer any specific questions about the image
 4. Be helpful and descriptive in your analysis"""
+
+# -------------------------
+# Dossiers locaux
+# -------------------------
+TMP_DIR = "tmp_files"
+EDITED_IMAGES_DIR = "edited_images"
+os.makedirs(TMP_DIR, exist_ok=True)
+os.makedirs(EDITED_IMAGES_DIR, exist_ok=True)
 
 # -------------------------
 # Supabase Connection - Version Corrigée
@@ -122,7 +132,6 @@ def create_user(email, password, name):
             pass
             
         # Fallback table directe
-        import uuid
         user_data = {
             "id": str(uuid.uuid4()),
             "email": email,
@@ -200,8 +209,6 @@ def get_messages(conversation_id):
         return []
     
     try:
-        st.write(f"Chargement messages pour: {conversation_id}")
-        
         response = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
         
         if hasattr(response, 'error') and response.error:
@@ -209,13 +216,12 @@ def get_messages(conversation_id):
             return []
             
         if not response.data:
-            st.info(f"Aucun message trouvé pour {conversation_id}")
             return []
         
         messages = []
         for msg in response.data:
             messages.append({
-                "message_id": msg.get("message_id") or msg.get("id"),
+                "message_id": msg.get("id", str(uuid.uuid4())),
                 "sender": msg.get("sender", "unknown"),
                 "content": msg.get("content", ""),
                 "created_at": msg.get("created_at"),
@@ -223,12 +229,10 @@ def get_messages(conversation_id):
                 "image_data": msg.get("image_data")
             })
         
-        st.success(f"{len(messages)} messages chargés")
         return messages
         
     except Exception as e:
         st.error(f"Erreur get_messages: {e}")
-        import traceback
         st.code(traceback.format_exc())
         return []
 
@@ -243,8 +247,6 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         return False
     
     try:
-        st.info(f"add_message: Début sauvegarde - {sender} dans {conversation_id}")
-        
         # Vérifier que la conversation existe
         conv_check = supabase.table("conversations").select("*").eq("conversation_id", conversation_id).execute()
         
@@ -256,9 +258,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
             st.error(f"add_message: Conversation {conversation_id} n'existe pas")
             return False
         
-        st.success(f"add_message: Conversation {conversation_id} trouvée")
-        
-        # Préparer les données
+        # Préparer les données (sans message_id custom)
         message_data = {
             "conversation_id": conversation_id,
             "sender": str(sender).strip(),
@@ -270,12 +270,8 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         if image_data:
             message_data["image_data"] = image_data
         
-        st.info(f"add_message: Données préparées: {list(message_data.keys())}")
-        
         # Insertion
         response = supabase.table("messages").insert(message_data).execute()
-        
-        st.info(f"add_message: Réponse Supabase: {type(response)}")
         
         # Vérifier les erreurs
         if hasattr(response, 'error') and response.error:
@@ -285,25 +281,12 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         # Vérifier le succès
         if not response.data or len(response.data) == 0:
             st.error("add_message: Aucune donnée retournée - insertion échouée")
-            
-            # Test debug - vérifier les permissions
-            try:
-                test_select = supabase.table("messages").select("*").limit(1).execute()
-                st.info(f"add_message: Test SELECT réussi - {len(test_select.data)} messages accessibles")
-            except Exception as test_e:
-                st.error(f"add_message: Test SELECT échoué: {test_e}")
-            
             return False
         
-        inserted_msg = response.data[0]
-        msg_id = inserted_msg.get("message_id") or inserted_msg.get("id")
-        
-        st.success(f"add_message: Message sauvegardé avec ID: {msg_id}")
         return True
         
     except Exception as e:
         st.error(f"add_message: Exception: {e}")
-        import traceback
         st.code(traceback.format_exc())
         return False
 
@@ -364,6 +347,118 @@ def stream_response(text, placeholder):
     placeholder.markdown(full_text)
 
 # -------------------------
+# Edition d'image avec Qwen
+# -------------------------
+def edit_image_with_qwen(image: Image.Image, edit_instruction: str):
+    client = st.session_state.get("qwen_client")
+    if not client:
+        st.error("Client Qwen non disponible.")
+        return None, "Client Qwen non disponible."
+    try:
+        # Sauvegarde temporaire de l'image
+        temp_path = os.path.join(TMP_DIR, f"input_{uuid.uuid4().hex}.png")
+        image.save(temp_path)
+        
+        # Appel à l'API Qwen avec les bons paramètres
+        result = client.predict(
+            image=handle_file(temp_path),
+            prompt=edit_instruction,
+            seed=0,
+            randomize_seed=True,
+            true_guidance_scale=4,
+            num_inference_steps=50,
+            rewrite_prompt=True,
+            api_name="/infer"
+        )
+        
+        # Traitement du résultat (tuple avec chemin + seed)
+        if isinstance(result, (list, tuple)) and len(result) >= 1:
+            edited_tmp_path = result[0]  # Premier élément = chemin de l'image
+            seed_used = result[1] if len(result) > 1 else "unknown"  # Deuxième = seed utilisé
+            
+            # Chargement et conversion de l'image éditée
+            edited_img = Image.open(edited_tmp_path).convert("RGBA")
+            
+            # Sauvegarde dans le dossier des images éditées
+            final_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
+            edited_img.save(final_path)
+            
+            # Nettoyage du fichier temporaire
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+            return edited_img, f"Image éditée avec succès (seed: {seed_used})"
+        else:
+            return None, f"Résultat inattendu de l'API: {result}"
+            
+    except Exception as e:
+        st.error(f"Erreur lors de l'édition: {e}")
+        st.code(traceback.format_exc())
+        return None, str(e)
+
+def process_image_edit_request(image: Image.Image, user_instruction: str, conv_id: str):
+    """Traite une demande d'édition d'image complète"""
+    
+    # Interface utilisateur pendant l'édition
+    with st.spinner(f"Édition de l'image en cours: '{user_instruction}'..."):
+        
+        # Appel au modèle d'édition
+        edited_img, result_info = edit_image_with_qwen(image, user_instruction)
+        
+        if edited_img:
+            # Affichage des résultats côte à côte
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Image originale")
+                st.image(image, caption="Avant", use_column_width=True)
+            
+            with col2:
+                st.subheader("Image éditée")
+                st.image(edited_img, caption=f"Après: {user_instruction}", use_column_width=True)
+            
+            # Sauvegarde en base de données
+            edited_b64 = image_to_base64(edited_img.convert("RGB"))
+            response_content = f"Image éditée: {result_info}\n\nInstruction: {user_instruction}"
+            
+            success = add_message(conv_id, "assistant", response_content, "image", edited_b64)
+            
+            if success:
+                st.success("Image éditée et sauvegardée avec succès!")
+                
+                # Mise à jour de la mémoire locale
+                st.session_state.messages_memory.append({
+                    "message_id": str(uuid.uuid4()), 
+                    "sender": "assistant", 
+                    "content": response_content, 
+                    "type": "image", 
+                    "image_data": edited_b64, 
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+                
+                # Options de téléchargement
+                st.subheader("Télécharger l'image éditée")
+                
+                # Convertir en bytes pour le téléchargement
+                img_buffer = io.BytesIO()
+                edited_img.convert("RGB").save(img_buffer, format="PNG")
+                
+                st.download_button(
+                    label="Télécharger PNG",
+                    data=img_buffer.getvalue(),
+                    file_name=f"edited_image_{int(time.time())}.png",
+                    mime="image/png"
+                )
+                
+                return True
+            else:
+                st.error("Erreur lors de la sauvegarde en base de données")
+                return False
+        else:
+            st.error(f"Échec de l'édition: {result_info}")
+            return False
+
+# -------------------------
 # Session State
 # -------------------------
 if "user" not in st.session_state:
@@ -379,6 +474,11 @@ if "llama_client" not in st.session_state:
         st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
     except:
         st.session_state.llama_client = None
+if "qwen_client" not in st.session_state:
+    try:
+        st.session_state.qwen_client = Client("Qwen/Qwen-Image-Edit")
+    except:
+        st.session_state.qwen_client = None
 
 # -------------------------
 # Sidebar Debug
@@ -388,13 +488,8 @@ st.sidebar.write(f"Utilisateur: {st.session_state.user.get('email')}")
 st.sidebar.write(f"Conversation: {st.session_state.conversation.get('description') if st.session_state.conversation else 'Aucune'}")
 st.sidebar.write(f"Messages: {len(st.session_state.messages_memory)}")
 st.sidebar.write(f"Supabase: {'OK' if supabase else 'KO'}")
-
-# Test add_message
-if st.sidebar.button("Test add_message"):
-    if st.session_state.conversation:
-        conv_id = st.session_state.conversation.get("conversation_id")
-        result = add_message(conv_id, "test", "Message de test", "text")
-        st.sidebar.write(f"Résultat test: {result}")
+st.sidebar.write(f"LLaMA: {'OK' if st.session_state.llama_client else 'KO'}")
+st.sidebar.write(f"Qwen: {'OK' if st.session_state.qwen_client else 'KO'}")
 
 # -------------------------
 # Authentification
@@ -457,8 +552,6 @@ if st.session_state.user["id"] != "guest":
     # Liste conversations
     convs = get_conversations(st.session_state.user["id"])
     if convs:
-        current_desc = st.session_state.conversation.get('description') if st.session_state.conversation else "Aucune"
-        
         options = [f"{c['description']} ({c['created_at'][:16]})" for c in convs]
         
         # Trouver l'index actuel
@@ -485,41 +578,152 @@ if st.session_state.user["id"] != "guest":
             conv_id = selected_conv.get("conversation_id")
             
             # Charger messages
-            st.info(f"Chargement conversation: {selected_conv.get('description')}")
             messages = get_messages(conv_id)
             st.session_state.messages_memory = messages
             st.rerun()
 
 # -------------------------
-# Interface principale
+# Interface principale avec Tabs
 # -------------------------
-st.title("Vision AI Chat")
+st.title("Vision AI Chat - Analyse & Édition d'Images")
 
 if st.session_state.conversation:
     st.subheader(f"Conversation: {st.session_state.conversation.get('description')}")
 
-# Affichage messages
-if st.session_state.messages_memory:
-    for msg in st.session_state.messages_memory:
-        role = "user" if msg.get("sender") == "user" else "assistant"
-        with st.chat_message(role):
-            if msg.get("type") == "image" and msg.get("image_data"):
-                st.image(base64_to_image(msg["image_data"]), width=300)
-            st.markdown(msg.get("content", ""))
+# Tabs pour différents modes
+tab1, tab2 = st.tabs(["Chat Normal", "Mode Éditeur"])
 
-# Formulaire nouveau message
-with st.form("message_form", clear_on_submit=True):
-    col1, col2 = st.columns([3, 1])
+with tab1:
+    st.write("Mode chat classique avec analyse d'images")
+    
+    # Affichage messages pour le chat normal
+    if st.session_state.messages_memory:
+        for msg in st.session_state.messages_memory:
+            role = "user" if msg.get("sender") == "user" else "assistant"
+            with st.chat_message(role):
+                if msg.get("type") == "image" and msg.get("image_data"):
+                    try:
+                        st.image(base64_to_image(msg["image_data"]), width=300)
+                    except Exception:
+                        st.write(msg.get("content", "Image (non affichable)"))
+                st.markdown(msg.get("content", ""))
+
+    # Formulaire chat normal
+    with st.form("chat_form", clear_on_submit=True):
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            user_input = st.text_area("Votre message:", height=100)
+        with col2:
+            uploaded_file = st.file_uploader("Image", type=["png","jpg","jpeg"], key="chat_upload")
+        
+        submit_chat = st.form_submit_button("Envoyer")
+
+with tab2:
+    st.write("Mode éditeur d'images avec Qwen-Image-Edit")
+    
+    # Interface éditeur d'images
+    col1, col2 = st.columns([1, 1])
     
     with col1:
-        user_input = st.text_area("Votre message:", height=100)
-    with col2:
-        uploaded_file = st.file_uploader("Image", type=["png","jpg","jpeg"])
+        st.subheader("Image à éditer")
+        editor_file = st.file_uploader(
+            "Sélectionnez une image à éditer", 
+            type=["png", "jpg", "jpeg"], 
+            key="editor_upload"
+        )
+        
+        if editor_file:
+            editor_image = Image.open(editor_file).convert("RGBA")
+            st.image(editor_image, caption="Image originale", use_column_width=True)
     
-    submit = st.form_submit_button("Envoyer")
+    with col2:
+        st.subheader("Instructions d'édition")
+        
+        # Exemples prédéfinis
+        st.write("**Exemples d'instructions:**")
+        example_prompts = [
+            "Add a beautiful sunset background",
+            "Change the colors to black and white", 
+            "Add flowers in the scene",
+            "Make it look like a painting",
+            "Add snow falling",
+            "Change to a cyberpunk style",
+            "man in the house!!"
+        ]
+        
+        selected_example = st.selectbox(
+            "Choisir un exemple", 
+            ["Custom..."] + example_prompts
+        )
+        
+        if selected_example == "Custom...":
+            edit_instruction = st.text_area(
+                "Décrivez les modifications souhaitées (en anglais):",
+                height=120,
+                placeholder="ex: Add a man in the house, change the sky to sunset, make it look artistic..."
+            )
+        else:
+            edit_instruction = st.text_area(
+                "Instruction d'édition:",
+                value=selected_example,
+                height=120
+            )
+        
+        # Paramètres avancés
+        with st.expander("Paramètres avancés"):
+            col_seed, col_steps = st.columns(2)
+            with col_seed:
+                use_random_seed = st.checkbox("Seed aléatoire", value=True)
+                if not use_random_seed:
+                    custom_seed = st.number_input("Seed", value=0, min_value=0)
+            with col_steps:
+                num_steps = st.slider("Étapes d'inférence", 20, 100, 50)
+                guidance_scale = st.slider("Guidance Scale", 1.0, 10.0, 4.0)
+        
+        # Bouton d'édition
+        if st.button("Éditer l'image", type="primary", disabled=not (editor_file and edit_instruction.strip())):
+            if not st.session_state.conversation:
+                conv = create_conversation(st.session_state.user["id"], "Édition d'images")
+                if not conv:
+                    st.error("Impossible de créer une conversation")
+                else:
+                    st.session_state.conversation = conv
+            
+            if st.session_state.conversation:
+                # Sauvegarde du message utilisateur
+                user_msg = f"Demande d'édition: {edit_instruction}"
+                original_b64 = image_to_base64(editor_image.convert("RGB"))
+                
+                add_message(
+                    st.session_state.conversation.get("conversation_id"), 
+                    "user", 
+                    user_msg, 
+                    "image", 
+                    original_b64
+                )
+                
+                st.session_state.messages_memory.append({
+                    "message_id": str(uuid.uuid4()), 
+                    "sender": "user", 
+                    "content": user_msg, 
+                    "type": "image", 
+                    "image_data": original_b64, 
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+                
+                # Traitement de l'édition
+                success = process_image_edit_request(
+                    editor_image, 
+                    edit_instruction, 
+                    st.session_state.conversation.get("conversation_id")
+                )
+                
+                if success:
+                    st.rerun()
 
-# Traitement message
-if submit and (user_input.strip() or uploaded_file):
+# Traitement des soumissions de chat normal
+if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded_file):
     # Vérifier conversation active
     if not st.session_state.conversation:
         conv = create_conversation(st.session_state.user["id"], "Discussion automatique")
@@ -550,11 +754,6 @@ if submit and (user_input.strip() or uploaded_file):
         # Sauvegarder message utilisateur
         save_success = add_message(conv_id, "user", message_content, msg_type, image_data)
         
-        if save_success:
-            st.success("Message sauvegardé en DB")
-        else:
-            st.error("Échec sauvegarde DB")
-        
         # Ajouter à la session
         user_msg = {
             "sender": "user",
@@ -565,49 +764,33 @@ if submit and (user_input.strip() or uploaded_file):
         }
         st.session_state.messages_memory.append(user_msg)
         
-        # Afficher message utilisateur
-        with st.chat_message("user"):
-            if msg_type == "image" and image_data:
-                st.image(base64_to_image(image_data), width=300)
-            st.markdown(message_content)
-        
-        # Générer réponse IA
-        prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
-        
-        with st.chat_message("assistant"):
-            placeholder = st.empty()
-            response = get_ai_response(prompt)
-            stream_response(response, placeholder)
-        
-        # Sauvegarder réponse IA
-        ai_save_success = add_message(conv_id, "assistant", response, "text")
-        
-        if ai_save_success:
-            st.success("Réponse IA sauvegardée")
+        # Détection automatique des demandes d'édition
+        lower = user_input.lower()
+        if any(k in lower for k in ["modifie", "modifier", "edit", "changer", "retouche", "retoucher", "change", "add", "remove"]):
+            if uploaded_file:
+                success = process_image_edit_request(Image.open(uploaded_file).convert("RGB"), user_input.strip(), conv_id)
+                if success:
+                    st.rerun()
         else:
-            st.error("Échec sauvegarde réponse IA")
-        
-        # Ajouter réponse à la session
-        ai_msg = {
-            "sender": "assistant",
-            "content": response,
-            "type": "text",
-            "image_data": None,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        st.session_state.messages_memory.append(ai_msg)
-        
-        # Vérification finale
-        verification_messages = get_messages(conv_id)
-        db_count = len(verification_messages) if verification_messages else 0
-        session_count = len(st.session_state.messages_memory)
-        
-        st.info(f"Vérification: DB={db_count}, Session={session_count}")
-        
-        if db_count != session_count:
-            st.warning("Désynchronisation détectée!")
-            if st.button("Synchroniser"):
-                st.session_state.messages_memory = verification_messages
-                st.rerun()
-        
-        st.rerun()
+            # Générer réponse IA
+            prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
+            
+            with st.chat_message("assistant"):
+                placeholder = st.empty()
+                response = get_ai_response(prompt)
+                stream_response(response, placeholder)
+            
+            # Sauvegarder réponse IA
+            ai_save_success = add_message(conv_id, "assistant", response, "text")
+            
+            # Ajouter réponse à la session
+            ai_msg = {
+                "sender": "assistant",
+                "content": response,
+                "type": "text",
+                "image_data": None,
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            st.session_state.messages_memory.append(ai_msg)
+            
+            st.rerun()
