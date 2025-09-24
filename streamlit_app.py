@@ -40,6 +40,32 @@ os.makedirs(EDITED_IMAGES_DIR, exist_ok=True)
 # -------------------------
 # Supabase init
 # -------------------------
+"""
+Structure des tables Supabase requises:
+
+1. Table "users":
+   - id (uuid, primary key, auto-generated)
+   - email (text)
+   - password (text) 
+   - name (text)
+   - created_at (timestamp)
+
+2. Table "conversations":
+   - id (uuid, primary key, auto-generated)
+   - conversation_id (text, unique)
+   - user_id (uuid, foreign key vers users.id)
+   - description (text)
+   - created_at (timestamp)
+
+3. Table "messages":
+   - id (uuid, primary key, auto-generated) 
+   - conversation_id (text, foreign key vers conversations.conversation_id)
+   - sender (text) - "user" ou "assistant"
+   - content (text)
+   - type (text) - "text" ou "image" 
+   - image_data (text) - base64 de l'image
+   - created_at (timestamp)
+"""
 @st.cache_resource
 def init_supabase():
     try:
@@ -160,7 +186,16 @@ def get_messages(conversation_id):
             return []
         msgs = []
         for m in resp.data:
-            msgs.append({"message_id": m.get("message_id") or m.get("id"), "conversation_id": m.get("conversation_id"), "sender": m.get("sender", "unknown"), "content": m.get("content", ""), "type": m.get("type", "text"), "image_data": m.get("image_data"), "created_at": m.get("created_at")})
+            # Utilise l'id par défaut de Supabase au lieu de message_id
+            msgs.append({
+                "message_id": m.get("id", str(uuid.uuid4())), 
+                "conversation_id": m.get("conversation_id"), 
+                "sender": m.get("sender", "unknown"), 
+                "content": m.get("content", ""), 
+                "type": m.get("type", "text"), 
+                "image_data": m.get("image_data"), 
+                "created_at": m.get("created_at")
+            })
         return msgs
     except Exception as e:
         st.error(f"get_messages: {e}")
@@ -179,7 +214,17 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         if not conv_check.data:
             st.error(f"add_message: conversation {conversation_id} introuvable")
             return False
-        message_data = {"message_id": str(uuid.uuid4()), "conversation_id": conversation_id, "sender": sender, "content": content, "type": msg_type, "image_data": image_data, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+        
+        # Structure simplifiée sans message_id custom (utilise l'id auto de Supabase)
+        message_data = {
+            "conversation_id": conversation_id, 
+            "sender": sender, 
+            "content": content, 
+            "type": msg_type, 
+            "image_data": image_data, 
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
         resp = supabase.table("messages").insert(message_data).execute()
         if hasattr(resp, "error") and resp.error:
             st.error(f"add_message supabase error: {resp.error}")
