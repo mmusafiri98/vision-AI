@@ -162,7 +162,7 @@ def get_messages(conversation_id):
         return []
 
 # -------------------------
-# BLIP (Caption)
+# BLIP
 # -------------------------
 @st.cache_resource
 def load_blip():
@@ -191,7 +191,7 @@ def base64_to_image(img_str):
     return Image.open(io.BytesIO(base64.b64decode(img_str)))
 
 # -------------------------
-# LLaMA Client (Texte)
+# LLaMA Client
 # -------------------------
 @st.cache_resource
 def load_llama():
@@ -208,7 +208,7 @@ def get_ai_response(prompt):
     try:
         resp = llama_client.predict(
             message=str(prompt),
-            max_tokens=2048,
+            max_tokens=8192,
             temperature=0.7,
             top_p=0.95,
             api_name="/chat"
@@ -217,24 +217,21 @@ def get_ai_response(prompt):
     except Exception as e:
         return f"Erreur modèle: {e}"
 
-# -------------------------
-# Qwen Image Edit (Édition)
-# -------------------------
-@st.cache_resource
-def load_qwen_edit():
-    try:
-        return Client("Qwen/Qwen-Image-Edit")
-    except:
-        return None
+# ======================================================
+# ===============  ÉDITION D’IMAGE =====================
+# ======================================================
 
-qwen_edit_client = load_qwen_edit()
 EDITED_IMAGES_DIR = "edited_images"
 os.makedirs(EDITED_IMAGES_DIR, exist_ok=True)
 
 def edit_image_with_qwen(image_path, edit_instruction, client):
+    """
+    Édite une image en utilisant Qwen-Image-Edit.
+    Retourne le chemin de l’image éditée et un message de statut.
+    """
     try:
         result = client.predict(
-            image=open(image_path, "rb"),
+            image=image_path,  # <-- correction ici
             prompt=edit_instruction,
             seed=0,
             randomize_seed=True,
@@ -253,165 +250,5 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
             return None, f"❌ Résultat inattendu : {result}"
     except Exception as e:
         return None, f"Erreur édition : {e}"
-
-# ======================================================
-# ===============  AFFICHAGE CHAT ======================
-# ======================================================
-st.title("🎯 Vision AI Chat")
-
-# Init session_state
-if "user" not in st.session_state:
-    st.session_state.user = {"id": "guest", "email": "Invité"}
-if "conversation" not in st.session_state:
-    st.session_state.conversation = None
-if "messages_memory" not in st.session_state:
-    st.session_state.messages_memory = []
-if "processor" not in st.session_state:
-    st.session_state.processor, st.session_state.model = load_blip()
-
-# -------------------------
-# Auth utilisateur
-# -------------------------
-st.sidebar.title("Authentification / Debug")
-if st.session_state.user["id"] == "guest":
-    tab1, tab2 = st.sidebar.tabs(["Connexion", "Inscription"])
-    with tab1:
-        email = st.text_input("Email")
-        password = st.text_input("Mot de passe", type="password")
-        if st.button("Se connecter"):
-            user = verify_user(email, password)
-            if user:
-                st.session_state.user = user
-                st.success("Connexion réussie!")
-                st.rerun()
-            else:
-                st.error("Identifiants invalides")
-    with tab2:
-        email_reg = st.text_input("Email", key="reg_email")
-        name_reg = st.text_input("Nom", key="reg_name")
-        pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
-        if st.button("Créer compte"):
-            if create_user(email_reg, pass_reg, name_reg):
-                st.success("Compte créé!")
-            else:
-                st.error("Erreur création compte")
-    st.stop()
-else:
-    st.sidebar.success(f"Connecté: {st.session_state.user.get('email')}")
-    if st.sidebar.button("Déconnexion"):
-        st.session_state.user = {"id": "guest", "email": "Invité"}
-        st.session_state.conversation = None
-        st.session_state.messages_memory = []
-        st.rerun()
-
-# -------------------------
-# Gestion Conversations
-# -------------------------
-st.sidebar.title("Conversations")
-if st.sidebar.button("Nouvelle conversation"):
-    conv = create_conversation(st.session_state.user["id"])
-    if conv:
-        st.session_state.conversation = conv
-        st.session_state.messages_memory = []
-        st.success("Nouvelle conversation créée!")
-        st.rerun()
-
-convs = get_conversations(st.session_state.user["id"])
-if convs:
-    options = [f"{c['description']} ({c['created_at'][:16]})" for c in convs]
-    current_idx = 0
-    if st.session_state.conversation:
-        for i, c in enumerate(convs):
-            if c["conversation_id"] == st.session_state.conversation.get("conversation_id"):
-                current_idx = i
-                break
-    selected_idx = st.sidebar.selectbox("Vos conversations:", range(len(options)), format_func=lambda i: options[i], index=current_idx)
-    st.session_state.conversation = convs[selected_idx]
-    st.session_state.messages_memory = get_messages(st.session_state.conversation["conversation_id"])
-
-# -------------------------
-# Affichage messages
-# -------------------------
-for msg in st.session_state.messages_memory:
-    role = "user" if msg["sender"] == "user" else "assistant"
-    with st.chat_message(role):
-        if msg["type"] == "image" and msg.get("image_data"):
-            st.image(base64_to_image(msg["image_data"]), width=300)
-        st.markdown(msg["content"])
-
-# -------------------------
-# Formulaire envoi message
-# -------------------------
-with st.form("msg_form", clear_on_submit=True):
-    user_input = st.text_area("Votre message ou instruction d’édition :", height=100)
-    uploaded_file = st.file_uploader("Image", type=["png","jpg","jpeg"])
-    mode = st.radio("Mode :", ["Description", "Édition"])
-    submit = st.form_submit_button("Envoyer")
-
-if submit and (user_input.strip() or uploaded_file):
-    conv_id = st.session_state.conversation["conversation_id"]
-    message_content = user_input.strip()
-    msg_type = "text"
-    image_data = None
-
-    if uploaded_file:
-        image = Image.open(uploaded_file).convert("RGB")
-        image_path = f"temp_{uuid.uuid4().hex}.png"
-        image.save(image_path)
-        image_data = image_to_base64(image)
-
-        if mode == "Description":
-            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            message_content = f"[IMAGE] {caption}"
-            if user_input.strip():
-                message_content += f"\n\nQuestion: {user_input.strip()}"
-
-        elif mode == "Édition":
-            if not user_input.strip():
-                st.error("⚠️ Spécifiez une instruction d'édition")
-                st.stop()
-            edited_path, msg = edit_image_with_qwen(image_path, user_input.strip(), qwen_edit_client)
-            if edited_path:
-                st.session_state.messages_memory.append({"sender":"user","content":user_input,"type":"image","image_data":image_data})
-                st.session_state.messages_memory.append({"sender":"assistant","content":msg,"type":"image","image_data":image_to_base64(Image.open(edited_path))})
-                st.image(edited_path, caption="✨ Image éditée")
-                st.stop()
-            else:
-                st.error(msg)
-                st.stop()
-
-    # Sauvegarde message utilisateur
-    if add_message(conv_id, "user", message_content, msg_type, image_data):
-        st.session_state.messages_memory.append({
-            "sender": "user",
-            "content": message_content,
-            "type": msg_type,
-            "image_data": image_data,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        })
-
-    # Réponse IA (texte)
-    with st.chat_message("assistant"):
-        thinking_placeholder = st.empty()
-        thinking_placeholder.markdown("🤖 Vision AI is thinking...")
-        time.sleep(1)
-
-        prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
-        ai_response = get_ai_response(prompt)
-
-        thinking_placeholder.empty()
-        st.markdown(ai_response)
-
-        if add_message(conv_id, "assistant", ai_response, "text"):
-            st.session_state.messages_memory.append({
-                "sender": "assistant",
-                "content": ai_response,
-                "type": "text",
-                "image_data": None,
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-            })
-
-    st.rerun()
-
 
 
