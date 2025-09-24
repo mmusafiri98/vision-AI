@@ -49,6 +49,10 @@ def init_supabase():
             st.error("SUPABASE_URL ou SUPABASE_SERVICE_KEY manquante.")
             return None
         client = create_client(supabase_url, supabase_key)
+        try:
+            _ = client.table("users").select("*").limit(1).execute()
+        except Exception:
+            pass
         return client
     except Exception as e:
         st.error(f"Erreur init_supabase: {e}")
@@ -57,12 +61,13 @@ def init_supabase():
 supabase = init_supabase()
 
 # -------------------------
-# Fonctions Supabase
+# Fonctions utilitaires DB
 # -------------------------
 def verify_user(email, password):
     if not supabase:
         return None
     try:
+        # Auth avec Supabase
         try:
             resp = supabase.auth.sign_in_with_password({"email": email, "password": password})
             if getattr(resp, "user", None):
@@ -73,15 +78,12 @@ def verify_user(email, password):
                 }
         except Exception:
             pass
+        # Fallback table users
         resp = supabase.table("users").select("*").eq("email", email).execute()
         if resp.data and len(resp.data) > 0:
             user = resp.data[0]
             if user.get("password") == password:
-                return {
-                    "id": user["id"],
-                    "email": user["email"],
-                    "name": user.get("name", email.split("@")[0])
-                }
+                return {"id": user["id"], "email": user["email"], "name": user.get("name", email.split("@")[0])}
         return None
     except Exception as e:
         st.error(f"verify_user: {e}")
@@ -124,12 +126,7 @@ def get_conversations(user_id):
         convs = []
         for conv in resp.data:
             conv_id = conv.get("conversation_id") or conv.get("id")
-            convs.append({
-                "conversation_id": conv_id,
-                "description": conv.get("description", "Conversation"),
-                "created_at": conv.get("created_at"),
-                "user_id": conv.get("user_id")
-            })
+            convs.append({"conversation_id": conv_id, "description": conv.get("description", "Conversation"), "created_at": conv.get("created_at"), "user_id": conv.get("user_id")})
         return convs
     except Exception as e:
         st.error(f"get_conversations: {e}")
@@ -148,12 +145,7 @@ def create_conversation(user_id, description="Nouvelle conversation"):
         resp = supabase.table("conversations").insert(data).execute()
         if resp.data and len(resp.data) > 0:
             conv = resp.data[0]
-            return {
-                "conversation_id": conv.get("conversation_id") or conv.get("id"),
-                "description": conv.get("description"),
-                "created_at": conv.get("created_at"),
-                "user_id": conv.get("user_id")
-            }
+            return {"conversation_id": conv.get("conversation_id") or conv.get("id"), "description": conv.get("description"), "created_at": conv.get("created_at"), "user_id": conv.get("user_id")}
         return None
     except Exception as e:
         st.error(f"create_conversation: {e}")
@@ -168,15 +160,7 @@ def get_messages(conversation_id):
             return []
         msgs = []
         for m in resp.data:
-            msgs.append({
-                "message_id": m.get("message_id") or m.get("id"),
-                "conversation_id": m.get("conversation_id"),
-                "sender": m.get("sender", "unknown"),
-                "content": m.get("content", ""),
-                "type": m.get("type", "text"),
-                "image_data": m.get("image_data"),
-                "created_at": m.get("created_at")
-            })
+            msgs.append({"message_id": m.get("message_id") or m.get("id"), "conversation_id": m.get("conversation_id"), "sender": m.get("sender", "unknown"), "content": m.get("content", ""), "type": m.get("type", "text"), "image_data": m.get("image_data"), "created_at": m.get("created_at")})
         return msgs
     except Exception as e:
         st.error(f"get_messages: {e}")
@@ -195,15 +179,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         if not conv_check.data:
             st.error(f"add_message: conversation {conversation_id} introuvable")
             return False
-        message_data = {
-            "message_id": str(uuid.uuid4()),
-            "conversation_id": conversation_id,
-            "sender": sender,
-            "content": content,
-            "type": msg_type,
-            "image_data": image_data,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
+        message_data = {"message_id": str(uuid.uuid4()), "conversation_id": conversation_id, "sender": sender, "content": content, "type": msg_type, "image_data": image_data, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
         resp = supabase.table("messages").insert(message_data).execute()
         if hasattr(resp, "error") and resp.error:
             st.error(f"add_message supabase error: {resp.error}")
@@ -218,7 +194,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         return False
 
 # -------------------------
-# Utilitaires images <-> base64
+# Utilitaires image <-> base64
 # -------------------------
 def image_to_base64(image: Image.Image) -> str:
     buffer = io.BytesIO()
@@ -247,7 +223,7 @@ def generate_caption(image: Image.Image, processor, model) -> str:
     return processor.decode(out[0], skip_special_tokens=True)
 
 # -------------------------
-# LLaMA client loader (texte)
+# LLaMA client
 # -------------------------
 @st.cache_resource
 def load_llama_client():
@@ -257,7 +233,7 @@ def load_llama_client():
         return None
 
 # -------------------------
-# Qwen Image Edit client loader
+# Qwen Image Edit client
 # -------------------------
 @st.cache_resource
 def load_qwen_client():
@@ -281,7 +257,6 @@ if "llama_client" not in st.session_state:
     st.session_state.llama_client = load_llama_client()
 if "qwen_client" not in st.session_state:
     st.session_state.qwen_client = load_qwen_client()
-
 # -------------------------
 # Fonctions IA / UX
 # -------------------------
@@ -344,7 +319,7 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str):
         return None, str(e)
 
 # -------------------------
-# UI Sidebar - Auth & Debug
+# Sidebar Auth & Debug
 # -------------------------
 st.sidebar.title("⚙️ Paramètres & Auth")
 st.sidebar.write(f"Supabase: {'OK' if supabase else 'KO'}")
@@ -362,7 +337,7 @@ if st.session_state.user["id"] == "guest":
                 if user:
                     st.session_state.user = user
                     st.success("Connexion réussie")
-                    st.rerun()
+                    st.experimental_rerun()
                 else:
                     st.error("Identifiants invalides")
     with tab2:
@@ -383,7 +358,7 @@ else:
         st.session_state.user = {"id": "guest", "email": "Invité", "name": "Invité"}
         st.session_state.conversation = None
         st.session_state.messages_memory = []
-        st.rerun()
+        st.experimental_rerun()
 
 # -------------------------
 # Gestion conversations sidebar
@@ -396,7 +371,7 @@ if st.sidebar.button("Nouvelle conversation"):
         st.session_state.conversation = conv
         st.session_state.messages_memory = []
         st.success("Conversation créée")
-        st.rerun()
+        st.experimental_rerun()
 
 convs = get_conversations(st.session_state.user["id"]) if st.session_state.user["id"] != "guest" else []
 if convs:
@@ -412,7 +387,7 @@ if convs:
     if not st.session_state.conversation or st.session_state.conversation.get("conversation_id") != sel_conv.get("conversation_id"):
         st.session_state.conversation = sel_conv
         st.session_state.messages_memory = get_messages(sel_conv.get("conversation_id"))
-        st.rerun()
+        st.experimental_rerun()
 
 # -------------------------
 # Interface principale
@@ -424,7 +399,7 @@ if st.session_state.conversation:
 else:
     st.info("Sélectionnez ou créez une conversation dans la barre latérale.")
 
-# Afficher messages
+# Affichage messages
 if st.session_state.messages_memory:
     for msg in st.session_state.messages_memory:
         role = "user" if msg.get("sender") == "user" else "assistant"
@@ -444,7 +419,6 @@ with st.form("msg_form", clear_on_submit=True):
     submit = st.form_submit_button("Envoyer")
 
 if submit and (user_input.strip() or uploaded_file):
-    # Assurer conversation
     if not st.session_state.conversation:
         conv = create_conversation(st.session_state.user["id"], "Discussion automatique")
         if not conv:
@@ -457,7 +431,6 @@ if submit and (user_input.strip() or uploaded_file):
     image_b64 = None
     message_content = user_input.strip()
 
-    # Si image uploadée : caption + potentielle édition
     if uploaded_file:
         img = Image.open(uploaded_file).convert("RGBA")
         try:
@@ -470,16 +443,13 @@ if submit and (user_input.strip() or uploaded_file):
             message_content += f"\n\nQuestion: {user_input.strip()}"
         msg_type = "image"
         image_b64 = image_to_base64(img.convert("RGB"))
+
         saved = add_message(conv_id, "user", message_content, msg_type, image_b64)
-        if saved:
-            st.session_state.messages_memory.append({
-                "message_id": str(uuid.uuid4()),
-                "sender": "user",
-                "content": message_content,
-                "type": msg_type,
-                "image_data": image_b64,
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-            })
+        if not saved:
+            st.error("Impossible de sauvegarder le message image en DB.")
+        else:
+            st.session_state.messages_memory.append({"message_id": str(uuid.uuid4()), "sender": "user", "content": message_content, "type": msg_type, "image_data": image_b64, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+
         lower = user_input.lower()
         if any(k in lower for k in ["modifie", "modifier", "edit", "changer", "retouche", "retoucher"]):
             with st.spinner("Édition de l'image via Qwen..."):
@@ -489,17 +459,10 @@ if submit and (user_input.strip() or uploaded_file):
                     add_message(conv_id, "assistant", f"Image éditée selon la demande: {user_input.strip()}", "image", edited_b64)
                     st.success("Image éditée avec succès.")
                     st.image(edited_img, caption="Image éditée", use_column_width=True)
-                    st.session_state.messages_memory.append({
-                        "message_id": str(uuid.uuid4()),
-                        "sender": "assistant",
-                        "content": f"Image éditée selon la demande: {user_input.strip()}",
-                        "type": "image",
-                        "image_data": edited_b64,
-                        "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                    })
+                    st.session_state.messages_memory.append({"message_id": str(uuid.uuid4()), "sender": "assistant", "content": f"Image éditée selon la demande: {user_input.strip()}", "type": "image", "image_data": edited_b64, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
                 else:
                     st.error(f"Échec édition : {info}")
-            st.rerun()
+            st.experimental_rerun()
         else:
             prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
             with st.chat_message("assistant"):
@@ -507,39 +470,22 @@ if submit and (user_input.strip() or uploaded_file):
                 ai_resp = get_ai_response(prompt)
                 stream_response(ai_resp, ph)
             add_message(conv_id, "assistant", ai_resp, "text")
-            st.session_state.messages_memory.append({
-                "message_id": str(uuid.uuid4()),
-                "sender": "assistant",
-                "content": ai_resp,
-                "type": "text",
-                "image_data": None,
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-            })
-            st.rerun()
+            st.session_state.messages_memory.append({"message_id": str(uuid.uuid4()), "sender": "assistant", "content": ai_resp, "type": "text", "image_data": None, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+            st.experimental_rerun()
     else:
         if message_content:
             saved = add_message(conv_id, "user", message_content, "text", None)
-            if saved:
-                st.session_state.messages_memory.append({
-                    "message_id": str(uuid.uuid4()),
-                    "sender": "user",
-                    "content": message_content,
-                    "type": "text",
-                    "image_data": None,
-                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                })
+            if not saved:
+                st.error("Impossible de sauvegarder le message texte.")
+            else:
+                st.session_state.messages_memory.append({"message_id": str(uuid.uuid4()), "sender": "user", "content": message_content, "type": "text", "image_data": None, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+
             prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
             with st.chat_message("assistant"):
                 ph = st.empty()
                 ai_resp = get_ai_response(prompt)
                 stream_response(ai_resp, ph)
             add_message(conv_id, "assistant", ai_resp, "text", None)
-            st.session_state.messages_memory.append({
-                "message_id": str(uuid.uuid4()),
-                "sender": "assistant",
-                "content": ai_resp,
-                "type": "text",
-                "image_data": None,
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-            })
-            st.rerun()
+            st.session_state.messages_memory.append({"message_id": str(uuid.uuid4()), "sender": "assistant", "content": ai_resp, "type": "text", "image_data": None, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+            st.experimental_rerun()
+
