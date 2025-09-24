@@ -217,6 +217,162 @@ def get_ai_response(prompt):
     except Exception as e:
         return f"Erreur modèle: {e}"
 
+# ======================================================
+# ===============  ÉDITION D’IMAGE =====================
+# ======================================================
+
+def edit_image_with_qwen(image_path, edit_instruction, client):
+    """
+    Édite une image en utilisant Qwen-Image-Edit.
+    Retourne le chemin de l’image éditée et un message de statut.
+    """
+    try:
+        result = client.predict(
+            image=handle_file(image_path),
+            prompt=edit_instruction,
+            seed=0,
+            randomize_seed=True,
+            true_guidance_scale=4,
+            num_inference_steps=50,
+            rewrite_prompt=True,
+            api_name="/infer"
+        )
+        # Le modèle retourne un tuple : (chemin_temp_image, taille)
+        if isinstance(result, tuple) and len(result) >= 1:
+            temp_image_path = result[0]
+            edited_image_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
+            img = Image.open(temp_image_path)
+            img.save(edited_image_path)
+            return edited_image_path, f"✅ Image éditée selon : '{edit_instruction}'"
+        else:
+            return None, f"❌ Résultat inattendu : {result}"
+    except Exception as e:
+        return None, f"Erreur édition : {e}"
+
+# ======================================================
+# ===============  SIDEBAR =============================
+# ======================================================
+
+# Gestion des chats sauvegardés
+st.sidebar.title("📂 Gestion des chats")
+if st.sidebar.button("➕ Nouveau chat"):
+    st.session_state.chat_id = str(uuid.uuid4())  # Nouveau chat_id
+    st.session_state.chat_history = []           # Vide l’historique
+    save_chat_history([], st.session_state.chat_id)
+    st.rerun()
+
+# Liste et sélection des anciens chats
+available_chats = list_chats()
+if available_chats:
+    selected = st.sidebar.selectbox(
+        "Vos discussions:", available_chats,
+        index=available_chats.index(st.session_state.chat_id) if st.session_state.chat_id in available_chats else 0
+    )
+    if selected != st.session_state.chat_id:
+        st.session_state.chat_id = selected
+        st.session_state.chat_history = load_chat_history(selected)
+        st.rerun()
+
+# Choix du mode (Description ou Édition)
+st.sidebar.title("🎛️ Mode")
+mode = st.sidebar.radio("Choisir:", ["📝 Description", "✏️ Édition"],
+                        index=0 if st.session_state.mode=="describe" else 1)
+st.session_state.mode = "describe" if "Description" in mode else "edit"
+
+# ======================================================
+# ===============  AFFICHAGE DU CHAT ==================
+# ======================================================
+
+st.markdown("<h1 style='text-align:center'>🎯 Vision AI Chat</h1>", unsafe_allow_html=True)
+
+# Affiche l’historique des messages
+for msg in st.session_state.chat_history:
+    if msg["role"] == "user":
+        st.markdown(f"**👤 Vous:** {msg['content']}")
+        if msg.get("image") and os.path.exists(msg["image"]):
+            st.image(msg["image"], caption="📤 Image", width=300)
+    else:
+        st.markdown(f"**🤖 Vision AI:** {msg['content']}")
+        if msg.get("edited_image") and os.path.exists(msg["edited_image"]):
+            st.image(msg["edited_image"], caption="✨ Image éditée", width=300)
+
+# ======================================================
+# ===============  FORMULAIRE UTILISATEUR ==============
+# ======================================================
+
+with st.form("chat_form", clear_on_submit=True):
+    uploaded_file = st.file_uploader("📤 Upload image", type=["jpg","jpeg","png"])
+    if st.session_state.mode=="describe":
+        user_message = st.text_input("💬 Question sur l'image (optionnel)")
+        submit = st.form_submit_button("🚀 Analyser")
+    else:
+        user_message = st.text_input("✏️ Instruction d'édition", placeholder="ex: rendre le ciel bleu")
+        submit = st.form_submit_button("✏️ Éditer")
+
+# ======================================================
+# ===============  LOGIQUE DU CHAT =====================
+# ======================================================
+
+if submit:
+    if uploaded_file:  # Si une image est envoyée
+        image = Image.open(uploaded_file).convert("RGB")
+        image_path = os.path.join(CHAT_DIR, f"img_{uuid.uuid4().hex}.png")
+        image.save(image_path)
+
+        if st.session_state.mode=="describe":
+            # Génération de la légende
+            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+            query = f"Description image: {caption}. {user_message}" if user_message else f"Description image: {caption}"
+            
+            # Envoi au modèle Qwen texte
+            response = st.session_state.qwen_client.predict(
+                message=query,
+                param_2=SYSTEM_PROMPT,
+                param_3=0.3,
+                param_4=0,
+                param_5=0,
+                api_name="/chat"
+            )
+            # Ajout à l’historique
+            st.session_state.chat_history.append({"role":"user","content":user_message or "Image envoyée","image":image_path})
+            st.session_state.chat_history.append({"role":"assistant","content":response})
+
+        else:  # Mode édition
+            if not user_message:
+                st.error("⚠️ Spécifiez une instruction d'édition")
+                st.stop()
+            edited_path, msg = edit_image_with_qwen(image_path, user_message, st.session_state.qwen_edit_client)
+            if edited_path:
+                st.image(edited_path, caption="✨ Image éditée")
+                st.session_state.chat_history.append({"role":"user","content":user_message,"image":image_path})
+                st.session_state.chat_history.append({"role":"assistant","content":msg,"edited_image":edited_path})
+            else:
+                st.error(msg)
+
+    elif user_message:  # Si seulement du texte est envoyé
+        response = st.session_state.qwen_client.predict(
+            message=user_message,
+            param_2=SYSTEM_PROMPT,
+            param_3=0.3,
+            param_4=0,
+            param_5=0,
+            api_name="/chat"
+        )
+        st.session_state.chat_history.append({"role":"user","content":user_message})
+        st.session_state.chat_history.append({"role":"assistant","content":response})
+
+ 
+
+# ======================================================
+# ===============  RESET CHAT ==========================
+# ======================================================
+
+if st.session_state.chat_history:
+    if st.button("🗑️ Vider la discussion"):
+        st.session_state.chat_history=[]
+        save_chat_history([], st.session_state.chat_id)
+        st.rerun()
+
 # -------------------------
 # Effet dactylographique
 # -------------------------
