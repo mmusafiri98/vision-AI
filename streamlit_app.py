@@ -13,7 +13,7 @@ from supabase import create_client
 # -------------------------
 # Configuration Streamlit
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Typing Effect", layout="wide")
+st.set_page_config(page_title="Vision AI Chat", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI.
 You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
@@ -162,7 +162,7 @@ def get_messages(conversation_id):
         return []
 
 # -------------------------
-# BLIP
+# BLIP (Image Captioning)
 # -------------------------
 @st.cache_resource
 def load_blip():
@@ -217,21 +217,16 @@ def get_ai_response(prompt):
     except Exception as e:
         return f"Erreur modèle: {e}"
 
-# ======================================================
-# ===============  ÉDITION D’IMAGE =====================
-# ======================================================
-
+# -------------------------
+# Qwen Image Edit
+# -------------------------
 EDITED_IMAGES_DIR = "edited_images"
 os.makedirs(EDITED_IMAGES_DIR, exist_ok=True)
 
 def edit_image_with_qwen(image_path, edit_instruction, client):
-    """
-    Édite une image en utilisant Qwen-Image-Edit.
-    Retourne le chemin de l’image éditée et un message de statut.
-    """
     try:
         result = client.predict(
-            image=image_path,  # <-- correction ici
+            image=image_path,  # ✅ correction
             prompt=edit_instruction,
             seed=0,
             randomize_seed=True,
@@ -251,4 +246,81 @@ def edit_image_with_qwen(image_path, edit_instruction, client):
     except Exception as e:
         return None, f"Erreur édition : {e}"
 
+# -------------------------
+# Interface Streamlit
+# -------------------------
+def main():
+    st.title("🧠 Vision AI - Analyse et Édition d’Images")
+
+    # Auth utilisateur
+    if "user" not in st.session_state:
+        choice = st.sidebar.radio("Connexion / Inscription", ["Connexion", "Inscription"])
+        if choice == "Inscription":
+            email = st.text_input("Email")
+            password = st.text_input("Mot de passe", type="password")
+            name = st.text_input("Nom")
+            if st.button("Créer un compte"):
+                if create_user(email, password, name):
+                    st.success("Compte créé, connectez-vous.")
+                else:
+                    st.error("Erreur lors de l’inscription")
+        else:
+            email = st.text_input("Email")
+            password = st.text_input("Mot de passe", type="password")
+            if st.button("Connexion"):
+                user = verify_user(email, password)
+                if user:
+                    st.session_state.user = user
+                    st.success(f"Bienvenue {user['name']}")
+                else:
+                    st.error("Identifiants incorrects")
+        return
+
+    st.sidebar.success(f"Connecté en tant que {st.session_state.user['name']}")
+
+    # Gestion des conversations
+    convs = get_conversations(st.session_state.user["id"])
+    conv_choice = st.sidebar.selectbox("Conversations", ["Nouvelle"] + [c["description"] for c in convs])
+    if conv_choice == "Nouvelle":
+        if st.button("Créer conversation"):
+            conv = create_conversation(st.session_state.user["id"], "Nouvelle conversation")
+            if conv:
+                st.session_state.conversation = conv
+    else:
+        conv = [c for c in convs if c["description"] == conv_choice][0]
+        st.session_state.conversation = conv
+
+    if "conversation" not in st.session_state:
+        st.info("Créez une nouvelle conversation.")
+        return
+
+    conv_id = st.session_state.conversation["conversation_id"]
+    messages = get_messages(conv_id)
+
+    for m in messages:
+        if m["type"] == "image":
+            st.image(base64_to_image(m["image_data"]), caption=f"{m['sender']}: {m['content']}")
+        else:
+            st.write(f"**{m['sender']}**: {m['content']}")
+
+    # Upload d'image
+    uploaded = st.file_uploader("Uploader une image", type=["png", "jpg", "jpeg"])
+    if uploaded:
+        image = Image.open(uploaded).convert("RGB")
+        st.image(image, caption="Image téléchargée")
+        processor, model = load_blip()
+        caption = generate_caption(image, processor, model)
+        st.write("📷 Description générée :", caption)
+        add_message(conv_id, "user", f"[IMAGE] {caption}", "image", image_to_base64(image))
+
+    # Chat texte
+    user_input = st.text_input("Votre message :")
+    if st.button("Envoyer"):
+        if user_input.strip():
+            add_message(conv_id, "user", user_input)
+            response = get_ai_response(SYSTEM_PROMPT + "\n\n" + user_input)
+            add_message(conv_id, "assistant", response)
+
+if __name__ == "__main__":
+    main()
 
