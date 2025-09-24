@@ -583,7 +583,7 @@ if submit and (user_input.strip() or uploaded_file):
                 "image_data": None,
                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
             })
-            st.experimental_rerun()
+            st.rerun()
 
 # -------------------------
 # Fin du fichier
