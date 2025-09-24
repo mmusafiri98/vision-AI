@@ -257,6 +257,7 @@ if "llama_client" not in st.session_state:
     st.session_state.llama_client = load_llama_client()
 if "qwen_client" not in st.session_state:
     st.session_state.qwen_client = load_qwen_client()
+
 # -------------------------
 # Fonctions IA / UX
 # -------------------------
@@ -337,7 +338,7 @@ if st.session_state.user["id"] == "guest":
                 if user:
                     st.session_state.user = user
                     st.success("Connexion réussie")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Identifiants invalides")
     with tab2:
@@ -358,7 +359,7 @@ else:
         st.session_state.user = {"id": "guest", "email": "Invité", "name": "Invité"}
         st.session_state.conversation = None
         st.session_state.messages_memory = []
-        st.experimental_rerun()
+        st.rerun()
 
 # -------------------------
 # Gestion conversations sidebar
@@ -371,7 +372,7 @@ if st.sidebar.button("Nouvelle conversation"):
         st.session_state.conversation = conv
         st.session_state.messages_memory = []
         st.success("Conversation créée")
-        st.experimental_rerun()
+        st.rerun()
 
 convs = get_conversations(st.session_state.user["id"]) if st.session_state.user["id"] != "guest" else []
 if convs:
@@ -387,7 +388,7 @@ if convs:
     if not st.session_state.conversation or st.session_state.conversation.get("conversation_id") != sel_conv.get("conversation_id"):
         st.session_state.conversation = sel_conv
         st.session_state.messages_memory = get_messages(sel_conv.get("conversation_id"))
-        st.experimental_rerun()
+        st.rerun()
 
 # -------------------------
 # Interface principale
@@ -462,7 +463,7 @@ if submit and (user_input.strip() or uploaded_file):
                     st.session_state.messages_memory.append({"message_id": str(uuid.uuid4()), "sender": "assistant", "content": f"Image éditée selon la demande: {user_input.strip()}", "type": "image", "image_data": edited_b64, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
                 else:
                     st.error(f"Échec édition : {info}")
-            st.experimental_rerun()
+            st.rerun()
         else:
             prompt = f"{SYSTEM_PROMPT}\n\nUtilisateur: {message_content}"
             with st.chat_message("assistant"):
@@ -471,7 +472,7 @@ if submit and (user_input.strip() or uploaded_file):
                 stream_response(ai_resp, ph)
             add_message(conv_id, "assistant", ai_resp, "text")
             st.session_state.messages_memory.append({"message_id": str(uuid.uuid4()), "sender": "assistant", "content": ai_resp, "type": "text", "image_data": None, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
-            st.experimental_rerun()
+            st.rerun()
     else:
         if message_content:
             saved = add_message(conv_id, "user", message_content, "text", None)
@@ -487,5 +488,4 @@ if submit and (user_input.strip() or uploaded_file):
                 stream_response(ai_resp, ph)
             add_message(conv_id, "assistant", ai_resp, "text", None)
             st.session_state.messages_memory.append({"message_id": str(uuid.uuid4()), "sender": "assistant", "content": ai_resp, "type": "text", "image_data": None, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
-            st.experimental_rerun()
-
+            st.rerun()
