@@ -353,10 +353,10 @@ def stream_response(text, placeholder):
     placeholder.markdown(full_text)
 
 # -------------------------
-# Edition d'image avec Qwen - VERSION CORRIGÉE
+# Edition d'image avec Qwen - VERSION CORRIGÉE avec /global_edit
 # -------------------------
 def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
-    """Édite une image avec Qwen selon le nouveau format d'API"""
+    """Édite une image avec Qwen en utilisant l'API /global_edit avec prompt personnalisé"""
     client = st.session_state.get("qwen_client")
     if not client:
         st.error("Client Qwen non disponible.")
@@ -367,37 +367,45 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
         temp_path = os.path.join(TMP_DIR, f"input_{uuid.uuid4().hex}.png")
         image.save(temp_path)
         
-        # Appel à l'API Qwen avec le nouveau format
+        # Utiliser une instruction par défaut si aucune n'est fournie
+        prompt_message = edit_instruction if edit_instruction.strip() else "enhance and improve the image"
+        
+        # Appel à l'API Qwen avec l'endpoint /global_edit
         result = client.predict(
-            output_img=handle_file(temp_path),
-            api_name="/simple_use_as_input"
+            input_image=handle_file(temp_path),
+            prompt=prompt_message,
+            api_name="/global_edit"
         )
         
-        # Traitement du résultat
+        # Traitement du résultat selon le format de votre exemple
         if result:
-            # Si result est un chemin de fichier
-            if isinstance(result, str) and os.path.exists(result):
-                edited_img = Image.open(result).convert("RGBA")
-            # Si result est une liste/tuple avec le chemin
-            elif isinstance(result, (list, tuple)) and len(result) >= 1:
-                result_path = result[0]
-                edited_img = Image.open(result_path).convert("RGBA")
+            # Le résultat est un tuple: (chemin_image, statut, info_html)
+            if isinstance(result, (list, tuple)) and len(result) >= 2:
+                result_path = result[0]  # Chemin de l'image éditée
+                status_message = result[1]  # Message de statut (ex: "✅ image edit completed")
+                html_info = result[2] if len(result) > 2 else None  # Info HTML additionnelle
+                
+                # Vérifier que le fichier image existe
+                if isinstance(result_path, str) and os.path.exists(result_path):
+                    edited_img = Image.open(result_path).convert("RGBA")
+                    
+                    # Sauvegarde dans le dossier des images éditées
+                    final_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
+                    edited_img.save(final_path)
+                    
+                    # Nettoyage du fichier temporaire
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    
+                    edit_msg = f"Image éditée avec succès - {status_message}"
+                    if edit_instruction:
+                        edit_msg += f" (instruction: {edit_instruction})"
+                    
+                    return edited_img, edit_msg
+                else:
+                    return None, f"Fichier image non trouvé: {result_path}"
             else:
-                return None, f"Format de résultat inattendu: {type(result)}"
-            
-            # Sauvegarde dans le dossier des images éditées
-            final_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
-            edited_img.save(final_path)
-            
-            # Nettoyage du fichier temporaire
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            
-            edit_msg = f"Image éditée avec succès"
-            if edit_instruction:
-                edit_msg += f" (instruction: {edit_instruction})"
-            
-            return edited_img, edit_msg
+                return None, f"Format de résultat inattendu: {type(result)} - {result}"
         else:
             return None, "Aucun résultat retourné par l'API"
             
@@ -434,7 +442,7 @@ def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_i
             # Créer le contexte d'édition
             edit_context = create_edit_context(original_caption, edit_instruction, edited_caption, result_info)
             
-            # Affichage des résultats côte à côte avec descriptions
+            # Affichage des résultats côte à côte avec descriptions et informations détaillées
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("Image originale")
@@ -446,6 +454,20 @@ def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_i
                 st.image(edited_img, caption=f"Après: {edit_instruction}", use_column_width=True)
                 st.write(f"**Description:** {edited_caption}")
                 st.write(f"**Info technique:** {result_info}")
+            
+            # Affichage du résultat de prédiction complet
+            st.subheader("📊 Détails de l'édition")
+            st.success("✅ Édition terminée avec succès !")
+            
+            with st.expander("🔍 Voir les détails techniques de la prédiction"):
+                st.write("**Résultat de l'API Qwen:**")
+                st.json({
+                    "instruction": edit_instruction,
+                    "statut": "Succès",
+                    "image_originale": original_caption,
+                    "image_editee": edited_caption,
+                    "info_technique": result_info
+                })
             
             # Préparer le contenu de réponse avec analyse détaillée
             response_content = f"""✨ **Édition d'image terminée !**
@@ -783,10 +805,24 @@ with tab2:
         
         # Note importante sur l'API Qwen
         st.info("""
-        **Note:** Le modèle Qwen applique des transformations automatiques. 
-        Bien que vous puissiez spécifier des instructions, le résultat peut varier 
-        car l'API `/simple_use_as_input` fonctionne de manière autonome.
+        **📝 Instructions pour l'édition:**
+        - Décrivez en anglais les modifications souhaitées
+        - Exemples: "add flowers", "change background to sunset", "woman in the car"
+        - Plus l'instruction est précise, meilleur sera le résultat
+        - L'API `/global_edit` utilise votre prompt pour guider l'édition
         """)
+        
+        # Paramètres avancés (optionnels)
+        with st.expander("⚙️ Paramètres avancés"):
+            st.write("**Mode d'édition:** Global Edit (modification complète de l'image)")
+            st.write("**API utilisée:** /global_edit")
+            col_info1, col_info2 = st.columns(2)
+            with col_info1:
+                st.write("✅ Supporte les prompts personnalisés")
+                st.write("✅ Édition guidée par instruction")
+            with col_info2:
+                st.write("✅ Qualité haute définition")
+                st.write("✅ Modifications complexes")
         
         # Affichage des éditions précédentes dans cette conversation
         edit_history = get_editing_context_from_conversation()
@@ -958,9 +994,9 @@ with col2:
     st.write("- Discussion sur les modifications")
 
 with col3:
-    st.write("**🎨 Mode Éditeur:**")
-    st.write("- Édition automatique avec description")
-    st.write("- Historique des modifications")
+    st.write("    **🎨 Mode Éditeur:**")
+    st.write("- Édition avec prompts personnalisés")
+    st.write("- API /global_edit de Qwen")
     st.write("- Analyse comparative avant/après")
 
 # -------------------------
@@ -988,9 +1024,33 @@ with st.expander("ℹ️ Guide d'utilisation"):
     
     **Modèles utilisés:**
     - **BLIP**: Description automatique d'images
-    - **LLaMA 3.1 70B**: Conversations intelligentes
-    - **Qwen ImageEditPro**: Édition d'images
+    - **LLaMA 3.1 70B**: Conversations intelligentes  
+    - **Qwen ImageEditPro**: Édition d'images avec prompts (/global_edit)
+    
+    **Exemple d'instruction:** "woman in the car!!" ou "add flowers to the garden"
     """)
+
+# -------------------------
+# Test de l'API Qwen pour debug
+# -------------------------
+if st.sidebar.button("🧪 Test API Qwen"):
+    if st.session_state.qwen_client:
+        try:
+            # Test simple avec une image par défaut
+            st.sidebar.write("Test en cours...")
+            test_result = st.session_state.qwen_client.predict(
+                input_image=handle_file('https://raw.githubusercontent.com/gradio-app/gradio/main/test/test_files/bus.png'),
+                prompt="woman in the car!!",
+                api_name="/global_edit"
+            )
+            st.sidebar.success("✅ API Qwen fonctionnelle")
+            st.sidebar.write(f"Type de résultat: {type(test_result)}")
+            if isinstance(test_result, (list, tuple)):
+                st.sidebar.write(f"Nombre d'éléments: {len(test_result)}")
+        except Exception as e:
+            st.sidebar.error(f"❌ Erreur API Qwen: {e}")
+    else:
+        st.sidebar.error("❌ Client Qwen non disponible")
 
 # -------------------------
 # Gestion des erreurs et diagnostics
