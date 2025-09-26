@@ -559,7 +559,7 @@ if "llama_client" not in st.session_state:
         st.session_state.llama_client = None
 if "qwen_client" not in st.session_state:
     try:
-        st.session_state.qwen_client = Client("Qwen/Qwen-Image-Edit")
+        st.session_state.qwen_client = Client("Selfit/ImageEditPro")
     except:
         st.session_state.qwen_client = None
 
