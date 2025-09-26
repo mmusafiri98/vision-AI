@@ -378,7 +378,7 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str):
             true_guidance_scale=4,
             num_inference_steps=50,
             rewrite_prompt=True,
-            api_name="/infer"
+            api_name="/simple_use_as_input"
         )
         
         # Traitement du résultat (tuple avec chemin + seed)
