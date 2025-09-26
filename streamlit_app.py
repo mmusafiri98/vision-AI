@@ -17,11 +17,8 @@ from supabase import create_client
 # -------------------------
 st.set_page_config(page_title="Vision AI Chat - Complete", layout="wide")
 
-SYSTEM_PROMPT = """You are Vision AI.
-You were created by Pepe Musafiri, an Artificial Intelligence Engineer,
-with contributions from Meta AI.
-Your role is to help users with any task they need, from image analysis
-and editing to answering questions clearly and helpfully.
+SYSTEM_PROMPT = """You are Vision AI. You were created by Pepe Musafiri, an Artificial Intelligence Engineer, with contributions from Meta AI. Your role is to help users with any task they need, from image analysis and editing to answering questions clearly and helpfully.
+
 Always answer naturally as Vision AI.
 
 When you receive an image description starting with [IMAGE], you should:
@@ -57,9 +54,8 @@ def init_supabase():
         if not supabase_url:
             st.error("Variable SUPABASE_URL manquante")
             return None
-            
         if not supabase_key:
-            st.error("Variable SUPABASE_SERVICE_KEY manquante") 
+            st.error("Variable SUPABASE_SERVICE_KEY manquante")
             return None
             
         client = create_client(supabase_url, supabase_key)
@@ -84,15 +80,14 @@ def verify_user(email, password):
     if not supabase:
         st.error("Supabase non connecté")
         return None
-        
+    
     try:
         # Méthode auth Supabase
         try:
             response = supabase.auth.sign_in_with_password({
-                "email": email, 
+                "email": email,
                 "password": password
             })
-            
             if response.user:
                 return {
                     "id": response.user.id,
@@ -101,10 +96,9 @@ def verify_user(email, password):
                 }
         except:
             pass
-            
+        
         # Fallback table directe
         response = supabase.table("users").select("*").eq("email", email).execute()
-        
         if response.data and len(response.data) > 0:
             user = response.data[0]
             if user.get("password") == password:
@@ -123,7 +117,7 @@ def create_user(email, password, name):
     """Crée un nouvel utilisateur"""
     if not supabase:
         return False
-        
+    
     try:
         # Méthode auth admin
         try:
@@ -136,7 +130,7 @@ def create_user(email, password, name):
             return response.user is not None
         except:
             pass
-            
+        
         # Fallback table directe
         user_data = {
             "id": str(uuid.uuid4()),
@@ -145,7 +139,6 @@ def create_user(email, password, name):
             "name": name,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
-        
         response = supabase.table("users").insert(user_data).execute()
         return bool(response.data and len(response.data) > 0)
         
@@ -157,13 +150,13 @@ def get_conversations(user_id):
     """Récupère les conversations d'un utilisateur"""
     if not supabase or not user_id:
         return []
-        
+    
     try:
         response = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
         
         if not response.data:
             return []
-            
+        
         conversations = []
         for conv in response.data:
             conv_id = conv.get("conversation_id") or conv.get("id")
@@ -185,14 +178,13 @@ def create_conversation(user_id, description):
     """Crée une nouvelle conversation"""
     if not supabase or not user_id:
         return None
-        
+    
     try:
         data = {
             "user_id": user_id,
             "description": description,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
-        
         response = supabase.table("conversations").insert(data).execute()
         
         if response.data and len(response.data) > 0:
@@ -220,7 +212,7 @@ def get_messages(conversation_id):
         if hasattr(response, 'error') and response.error:
             st.error(f"Erreur Supabase get_messages: {response.error}")
             return []
-            
+        
         if not response.data:
             return []
         
@@ -233,7 +225,7 @@ def get_messages(conversation_id):
                 "created_at": msg.get("created_at"),
                 "type": msg.get("type", "text"),
                 "image_data": msg.get("image_data"),
-                "edit_context": msg.get("edit_context")  # Nuovo campo per il contesto di editing
+                "edit_context": msg.get("edit_context")
             })
         
         return messages
@@ -248,7 +240,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
     if not supabase:
         st.error("add_message: Supabase non connecté")
         return False
-        
+    
     if not conversation_id or not content:
         st.error(f"add_message: Paramètres manquants - conv_id: {conversation_id}, content: {bool(content)}")
         return False
@@ -260,7 +252,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         if hasattr(conv_check, 'error') and conv_check.error:
             st.error(f"add_message: Erreur vérification conversation: {conv_check.error}")
             return False
-            
+        
         if not conv_check.data:
             st.error(f"add_message: Conversation {conversation_id} n'existe pas")
             return False
@@ -276,7 +268,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         
         if image_data:
             message_data["image_data"] = image_data
-            
+        
         if edit_context:
             message_data["edit_context"] = edit_context
         
@@ -323,11 +315,14 @@ def load_blip():
 
 def generate_caption(image, processor, model):
     inputs = processor(image, return_tensors="pt")
+    
     if torch.cuda.is_available():
         inputs = inputs.to("cuda")
         model = model.to("cuda")
+    
     with torch.no_grad():
         out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
+    
     return processor.decode(out[0], skip_special_tokens=True)
 
 # -------------------------
@@ -336,6 +331,7 @@ def generate_caption(image, processor, model):
 def get_ai_response(query):
     if not st.session_state.get('llama_client'):
         return "Vision AI non disponible."
+    
     try:
         resp = st.session_state.llama_client.predict(
             message=query,
@@ -357,37 +353,37 @@ def stream_response(text, placeholder):
     placeholder.markdown(full_text)
 
 # -------------------------
-# Edition d'image avec Qwen
+# Edition d'image avec Qwen - VERSION CORRIGÉE
 # -------------------------
-def edit_image_with_qwen(image: Image.Image, edit_instruction: str):
+def edit_image_with_qwen(image: Image.Image):
+    """Édite une image avec Qwen selon le nouveau format d'API"""
     client = st.session_state.get("qwen_client")
     if not client:
         st.error("Client Qwen non disponible.")
         return None, "Client Qwen non disponible."
+    
     try:
         # Sauvegarde temporaire de l'image
         temp_path = os.path.join(TMP_DIR, f"input_{uuid.uuid4().hex}.png")
         image.save(temp_path)
         
-        # Appel à l'API Qwen avec les bons paramètres
+        # Appel à l'API Qwen avec le nouveau format
         result = client.predict(
-            image=handle_file(temp_path),
-            prompt=edit_instruction,
-            seed=0,
-            randomize_seed=True,
-            true_guidance_scale=4,
-            num_inference_steps=50,
-            rewrite_prompt=True,
+            output_img=handle_file(temp_path),
             api_name="/simple_use_as_input"
         )
         
-        # Traitement du résultat (tuple avec chemin + seed)
-        if isinstance(result, (list, tuple)) and len(result) >= 1:
-            edited_tmp_path = result[0]  # Premier élément = chemin de l'image
-            seed_used = result[1] if len(result) > 1 else "unknown"  # Deuxième = seed utilisé
-            
-            # Chargement et conversion de l'image éditée
-            edited_img = Image.open(edited_tmp_path).convert("RGBA")
+        # Traitement du résultat
+        if result:
+            # Si result est un chemin de fichier
+            if isinstance(result, str) and os.path.exists(result):
+                edited_img = Image.open(result).convert("RGBA")
+            # Si result est une liste/tuple avec le chemin
+            elif isinstance(result, (list, tuple)) and len(result) >= 1:
+                result_path = result[0]
+                edited_img = Image.open(result_path).convert("RGBA")
+            else:
+                return None, f"Format de résultat inattendu: {type(result)}"
             
             # Sauvegarde dans le dossier des images éditées
             final_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
@@ -396,49 +392,45 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str):
             # Nettoyage du fichier temporaire
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-                
-            return edited_img, f"Image éditée avec succès (seed: {seed_used})"
+            
+            return edited_img, "Image éditée avec succès"
         else:
-            return None, f"Résultat inattendu de l'API: {result}"
+            return None, "Aucun résultat retourné par l'API"
             
     except Exception as e:
         st.error(f"Erreur lors de l'édition: {e}")
         st.code(traceback.format_exc())
         return None, str(e)
 
-def create_edit_context(original_caption, edit_instruction, edited_caption, success_info):
+def create_edit_context(original_caption, edited_caption, success_info):
     """Crée un contexte détaillé de l'édition pour la mémoire de l'AI"""
     context = {
         "original_description": original_caption,
-        "edit_instruction": edit_instruction,
         "edited_description": edited_caption,
         "edit_info": success_info,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }
     return context
 
-def process_image_edit_request(image: Image.Image, user_instruction: str, conv_id: str):
+def process_image_edit_request(image: Image.Image, conv_id: str):
     """Traite une demande d'édition d'image complète avec description automatique"""
-    
     # Interface utilisateur pendant l'édition
-    with st.spinner(f"Édition de l'image en cours: '{user_instruction}'..."):
-        
+    with st.spinner("Édition de l'image en cours avec Qwen..."):
         # Générer description de l'image originale
         original_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
         
         # Appel au modèle d'édition
-        edited_img, result_info = edit_image_with_qwen(image, user_instruction)
+        edited_img, result_info = edit_image_with_qwen(image)
         
         if edited_img:
             # Générer description de l'image éditée
             edited_caption = generate_caption(edited_img, st.session_state.processor, st.session_state.model)
             
             # Créer le contexte d'édition
-            edit_context = create_edit_context(original_caption, user_instruction, edited_caption, result_info)
+            edit_context = create_edit_context(original_caption, edited_caption, result_info)
             
             # Affichage des résultats côte à côte avec descriptions
             col1, col2 = st.columns(2)
-            
             with col1:
                 st.subheader("Image originale")
                 st.image(image, caption="Avant", use_column_width=True)
@@ -446,21 +438,19 @@ def process_image_edit_request(image: Image.Image, user_instruction: str, conv_i
             
             with col2:
                 st.subheader("Image éditée")
-                st.image(edited_img, caption=f"Après: {user_instruction}", use_column_width=True)
+                st.image(edited_img, caption="Après édition automatique", use_column_width=True)
                 st.write(f"**Description:** {edited_caption}")
                 st.write(f"**Info technique:** {result_info}")
             
             # Préparer le contenu de réponse avec analyse détaillée
-            response_content = f"""✨ **Édition d'image terminée !**
-
-**Instruction d'édition:** {user_instruction}
+            response_content = f"""✨ **Édition d'image automatique terminée !**
 
 **Analyse comparative:**
 - **Image originale:** {original_caption}
 - **Image éditée:** {edited_caption}
 
 **Modifications détectées:**
-J'ai appliqué votre demande "{user_instruction}" à l'image. L'image éditée montre maintenant: {edited_caption}
+L'image a été transformée automatiquement par Qwen. L'image éditée montre maintenant: {edited_caption}
 
 **Info technique:** {result_info}
 
@@ -468,14 +458,13 @@ Je garde en mémoire cette édition et peux discuter des changements apportés o
             
             # Sauvegarde en base de données avec contexte d'édition
             edited_b64 = image_to_base64(edited_img.convert("RGB"))
-            
             success = add_message(
-                conv_id, 
-                "assistant", 
-                response_content, 
-                "image", 
+                conv_id,
+                "assistant",
+                response_content,
+                "image",
                 edited_b64,
-                str(edit_context)  # Sauvegarde du contexte d'édition
+                str(edit_context)
             )
             
             if success:
@@ -483,22 +472,20 @@ Je garde en mémoire cette édition et peux discuter des changements apportés o
                 
                 # Mise à jour de la mémoire locale avec contexte
                 st.session_state.messages_memory.append({
-                    "message_id": str(uuid.uuid4()), 
-                    "sender": "assistant", 
-                    "content": response_content, 
-                    "type": "image", 
-                    "image_data": edited_b64, 
+                    "message_id": str(uuid.uuid4()),
+                    "sender": "assistant",
+                    "content": response_content,
+                    "type": "image",
+                    "image_data": edited_b64,
                     "edit_context": str(edit_context),
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
                 
                 # Options de téléchargement
                 st.subheader("Télécharger l'image éditée")
-                
                 # Convertir en bytes pour le téléchargement
                 img_buffer = io.BytesIO()
                 edited_img.convert("RGB").save(img_buffer, format="PNG")
-                
                 st.download_button(
                     label="Télécharger PNG",
                     data=img_buffer.getvalue(),
@@ -531,7 +518,6 @@ def get_editing_context_from_conversation():
                 context_info.append(f"""
 Édition précédente:
 - Image originale: {edit_ctx.get('original_description', 'N/A')}
-- Instruction: {edit_ctx.get('edit_instruction', 'N/A')}
 - Résultat: {edit_ctx.get('edited_description', 'N/A')}
 - Date: {edit_ctx.get('timestamp', 'N/A')}
 """)
@@ -546,17 +532,22 @@ def get_editing_context_from_conversation():
 # -------------------------
 if "user" not in st.session_state:
     st.session_state.user = {"id": "guest", "email": "Invité"}
+
 if "conversation" not in st.session_state:
     st.session_state.conversation = None
+
 if "messages_memory" not in st.session_state:
     st.session_state.messages_memory = []
+
 if "processor" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
+
 if "llama_client" not in st.session_state:
     try:
         st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
     except:
         st.session_state.llama_client = None
+
 if "qwen_client" not in st.session_state:
     try:
         st.session_state.qwen_client = Client("Selfit/ImageEditPro")
@@ -613,6 +604,7 @@ if st.session_state.user["id"] == "guest":
                     st.success("Compte créé!")
                 else:
                     st.error("Erreur création")
+    
     st.stop()
 
 else:
@@ -652,10 +644,12 @@ if st.session_state.user["id"] != "guest":
                     current_idx = i
                     break
         
-        selected_idx = st.sidebar.selectbox("Vos conversations:", 
-                                          range(len(options)), 
-                                          format_func=lambda i: options[i],
-                                          index=current_idx)
+        selected_idx = st.sidebar.selectbox(
+            "Vos conversations:",
+            range(len(options)),
+            format_func=lambda i: options[i],
+            index=current_idx
+        )
         
         selected_conv = convs[selected_idx]
         
@@ -702,15 +696,22 @@ with tab1:
                     st.markdown(content)
                 else:
                     st.markdown(content)
-
+    
     # Formulaire chat normal
     with st.form("chat_form", clear_on_submit=True):
         col1, col2 = st.columns([3, 1])
-        
         with col1:
-            user_input = st.text_area("Votre message:", height=100, placeholder="Posez des questions sur les images, demandez des informations sur les éditions précédentes...")
+            user_input = st.text_area(
+                "Votre message:",
+                height=100,
+                placeholder="Posez des questions sur les images, demandez des informations sur les éditions précédentes..."
+            )
         with col2:
-            uploaded_file = st.file_uploader("Image", type=["png","jpg","jpeg"], key="chat_upload")
+            uploaded_file = st.file_uploader(
+                "Image",
+                type=["png","jpg","jpeg"],
+                key="chat_upload"
+            )
         
         submit_chat = st.form_submit_button("Envoyer")
 
@@ -723,8 +724,8 @@ with tab2:
     with col1:
         st.subheader("Image à éditer")
         editor_file = st.file_uploader(
-            "Sélectionnez une image à éditer", 
-            type=["png", "jpg", "jpeg"], 
+            "Sélectionnez une image à éditer",
+            type=["png", "jpg", "jpeg"],
             key="editor_upload"
         )
         
@@ -735,54 +736,17 @@ with tab2:
             # Affichage automatique de la description
             with st.spinner("Analyse de l'image..."):
                 original_desc = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
-            st.write(f"**Description automatique:** {original_desc}")
+                st.write(f"**Description automatique:** {original_desc}")
     
     with col2:
-        st.subheader("Instructions d'édition")
+        st.subheader("Édition automatique avec Qwen")
         
-        # Exemples prédéfinis
-        st.write("**Exemples d'instructions:**")
-        example_prompts = [
-            "Add a beautiful sunset background",
-            "Change the colors to black and white", 
-            "Add flowers in the scene",
-            "Make it look like a painting",
-            "Add snow falling",
-            "Change to a cyberpunk style",
-            "Remove the background",
-            "Add a person in the image",
-            "Make it more colorful",
-            "Add magic effects"
-        ]
-        
-        selected_example = st.selectbox(
-            "Choisir un exemple", 
-            ["Custom..."] + example_prompts
-        )
-        
-        if selected_example == "Custom...":
-            edit_instruction = st.text_area(
-                "Décrivez les modifications souhaitées (en anglais):",
-                height=120,
-                placeholder="ex: Add a man in the house, change the sky to sunset, make it look artistic..."
-            )
-        else:
-            edit_instruction = st.text_area(
-                "Instruction d'édition:",
-                value=selected_example,
-                height=120
-            )
-        
-        # Paramètres avancés
-        with st.expander("Paramètres avancés"):
-            col_seed, col_steps = st.columns(2)
-            with col_seed:
-                use_random_seed = st.checkbox("Seed aléatoire", value=True)
-                if not use_random_seed:
-                    custom_seed = st.number_input("Seed", value=0, min_value=0)
-            with col_steps:
-                num_steps = st.slider("Étapes d'inférence", 20, 100, 50)
-                guidance_scale = st.slider("Guidance Scale", 1.0, 10.0, 4.0)
+        st.write("""
+        **Fonctionnement de l'éditeur:**
+        - L'éditeur Qwen applique des modifications automatiques intelligentes
+        - Aucune instruction spécifique n'est requise
+        - L'AI analyse l'image et applique des améliorations
+        """)
         
         # Affichage des éditions précédentes dans cette conversation
         edit_history = get_editing_context_from_conversation()
@@ -791,7 +755,7 @@ with tab2:
                 st.text(edit_history)
         
         # Bouton d'édition
-        if st.button("🎨 Éditer l'image", type="primary", disabled=not (editor_file and edit_instruction.strip())):
+        if st.button("🎨 Éditer l'image automatiquement", type="primary", disabled=not editor_file):
             if not st.session_state.conversation:
                 conv = create_conversation(st.session_state.user["id"], "Édition d'images")
                 if not conv:
@@ -802,30 +766,29 @@ with tab2:
             if st.session_state.conversation:
                 # Sauvegarde du message utilisateur avec description de l'image originale
                 original_caption = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
-                user_msg = f"📸 **Demande d'édition d'image**\n\n**Image originale:** {original_caption}\n\n**Instruction:** {edit_instruction}"
-                original_b64 = image_to_base64(editor_image.convert("RGB"))
+                user_msg = f"📸 **Demande d'édition automatique**\n\n**Image originale:** {original_caption}"
                 
+                original_b64 = image_to_base64(editor_image.convert("RGB"))
                 add_message(
-                    st.session_state.conversation.get("conversation_id"), 
-                    "user", 
-                    user_msg, 
-                    "image", 
+                    st.session_state.conversation.get("conversation_id"),
+                    "user",
+                    user_msg,
+                    "image",
                     original_b64
                 )
                 
                 st.session_state.messages_memory.append({
-                    "message_id": str(uuid.uuid4()), 
-                    "sender": "user", 
-                    "content": user_msg, 
-                    "type": "image", 
-                    "image_data": original_b64, 
+                    "message_id": str(uuid.uuid4()),
+                    "sender": "user",
+                    "content": user_msg,
+                    "type": "image",
+                    "image_data": original_b64,
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
                 
                 # Traitement de l'édition
                 success = process_image_edit_request(
-                    editor_image, 
-                    edit_instruction, 
+                    editor_image,
                     st.session_state.conversation.get("conversation_id")
                 )
                 
@@ -858,8 +821,10 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         image_data = image_to_base64(image)
         caption = generate_caption(image, st.session_state.processor, st.session_state.model)
         message_content = f"[IMAGE] {caption}"
+        
         if user_input.strip():
             message_content += f"\n\nQuestion: {user_input.strip()}"
+        
         msg_type = "image"
     
     if message_content:
@@ -876,13 +841,18 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         }
         st.session_state.messages_memory.append(user_msg)
         
-        # Détection automatique des demandes d'édition
+        # Détection automatique des demandes d'édition d'image uploadée
         lower = user_input.lower()
-        if any(k in lower for k in ["modifie", "modifier", "edit", "changer", "retouche", "retoucher", "change", "add", "remove"]):
-            if uploaded_file:
-                success = process_image_edit_request(Image.open(uploaded_file).convert("RGB"), user_input.strip(), conv_id)
-                if success:
-                    st.rerun()
+        if (any(k in lower for k in ["edit", "édite", "modifie", "transformer", "améliorer"]) 
+            and uploaded_file):
+            
+            success = process_image_edit_request(
+                Image.open(uploaded_file).convert("RGBA"), 
+                conv_id
+            )
+            if success:
+                st.rerun()
+        
         else:
             # Récupérer le contexte d'édition pour l'AI
             edit_context = get_editing_context_from_conversation()
@@ -900,7 +870,9 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
                 placeholder = st.empty()
                 
                 # Ajouter un indicateur si l'AI utilise le contexte d'édition
-                if edit_context and any(word in user_input.lower() for word in ["edit", "édition", "modif", "image", "avant", "après", "changement", "précédent"]):
+                if edit_context and any(word in user_input.lower() 
+                    for word in ["edit", "édition", "modif", "image", "avant", "après", 
+                                "changement", "précédent", "transformation", "amélioration"]):
                     with st.spinner("Consultation de la mémoire des éditions..."):
                         time.sleep(1)
                 
@@ -945,3 +917,128 @@ with col3:
     st.write("- Édition automatique avec description")
     st.write("- Historique des modifications")
     st.write("- Analyse comparative avant/après")
+
+# -------------------------
+# Section d'aide et informations supplémentaires
+# -------------------------
+with st.expander("ℹ️ Guide d'utilisation"):
+    st.markdown("""
+    ### 🚀 Comment utiliser Vision AI Chat
+    
+    **Mode Chat Normal:**
+    1. Uploadez une image pour l'analyser
+    2. Posez des questions sur l'image
+    3. Discutez des éditions précédentes
+    
+    **Mode Éditeur:**
+    1. Uploadez une image à éditer
+    2. Cliquez sur "Éditer automatiquement"
+    3. Téléchargez le résultat
+    
+    **Fonctionnalités avancées:**
+    - Mémoire persistante des conversations
+    - Analyse comparative avant/après édition
+    - Contexte d'édition pour discussions ultérieures
+    - Sauvegarde automatique en base de données
+    
+    **Modèles utilisés:**
+    - **BLIP**: Description automatique d'images
+    - **LLaMA 3.1 70B**: Conversations intelligentes
+    - **Qwen ImageEditPro**: Édition d'images
+    """)
+
+# -------------------------
+# Gestion des erreurs et diagnostics
+# -------------------------
+if st.sidebar.button("🔧 Diagnostics"):
+    st.sidebar.subheader("Tests de connexion")
+    
+    # Test Supabase
+    if supabase:
+        try:
+            test_result = supabase.table("users").select("*").limit(1).execute()
+            st.sidebar.success("✅ Supabase OK")
+        except Exception as e:
+            st.sidebar.error(f"❌ Supabase: {e}")
+    else:
+        st.sidebar.error("❌ Supabase non connecté")
+    
+    # Test LLaMA
+    if st.session_state.llama_client:
+        st.sidebar.success("✅ LLaMA Client OK")
+    else:
+        st.sidebar.error("❌ LLaMA Client non disponible")
+    
+    # Test Qwen
+    if st.session_state.qwen_client:
+        st.sidebar.success("✅ Qwen Client OK")
+    else:
+        st.sidebar.error("❌ Qwen Client non disponible")
+    
+    # Test BLIP
+    try:
+        if st.session_state.processor and st.session_state.model:
+            st.sidebar.success("✅ BLIP Models OK")
+        else:
+            st.sidebar.error("❌ BLIP Models non chargés")
+    except:
+        st.sidebar.error("❌ Erreur BLIP Models")
+
+# -------------------------
+# Nettoyage des fichiers temporaires
+# -------------------------
+def cleanup_temp_files():
+    """Nettoie les fichiers temporaires anciens"""
+    try:
+        current_time = time.time()
+        
+        # Nettoyage TMP_DIR (fichiers > 1 heure)
+        for filename in os.listdir(TMP_DIR):
+            filepath = os.path.join(TMP_DIR, filename)
+            if os.path.isfile(filepath):
+                file_time = os.path.getctime(filepath)
+                if current_time - file_time > 3600:  # 1 heure
+                    os.remove(filepath)
+        
+        # Nettoyage EDITED_IMAGES_DIR (fichiers > 24 heures)
+        for filename in os.listdir(EDITED_IMAGES_DIR):
+            filepath = os.path.join(EDITED_IMAGES_DIR, filename)
+            if os.path.isfile(filepath):
+                file_time = os.path.getctime(filepath)
+                if current_time - file_time > 86400:  # 24 heures
+                    os.remove(filepath)
+                    
+    except Exception as e:
+        st.sidebar.warning(f"Nettoyage fichiers: {e}")
+
+# Exécuter le nettoyage périodiquement
+if st.sidebar.button("🧹 Nettoyer fichiers temp"):
+    cleanup_temp_files()
+    st.sidebar.success("Nettoyage effectué!")
+
+# -------------------------
+# Statistiques utilisateur (optionnel)
+# -------------------------
+if st.session_state.user["id"] != "guest" and supabase:
+    try:
+        # Compter conversations
+        conv_count = len(get_conversations(st.session_state.user["id"]))
+        
+        # Compter messages total
+        if st.session_state.conversation:
+            msg_count = len(get_messages(st.session_state.conversation.get("conversation_id")))
+        else:
+            msg_count = 0
+        
+        # Affichage stats dans sidebar
+        with st.sidebar.expander("📊 Vos statistiques"):
+            st.write(f"Conversations: {conv_count}")
+            st.write(f"Messages (conversation actuelle): {msg_count}")
+            
+            # Stats éditions dans conversation actuelle
+            edit_count = sum(1 for msg in st.session_state.messages_memory 
+                           if msg.get("edit_context"))
+            st.write(f"Éditions d'images: {edit_count}")
+            
+    except Exception as e:
+        pass  # Ignorer les erreurs de stats
