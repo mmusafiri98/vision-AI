@@ -355,7 +355,7 @@ def stream_response(text, placeholder):
 # -------------------------
 # Edition d'image avec Qwen - VERSION CORRIGÉE
 # -------------------------
-def edit_image_with_qwen(image: Image.Image):
+def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
     """Édite une image avec Qwen selon le nouveau format d'API"""
     client = st.session_state.get("qwen_client")
     if not client:
@@ -393,7 +393,11 @@ def edit_image_with_qwen(image: Image.Image):
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             
-            return edited_img, "Image éditée avec succès"
+            edit_msg = f"Image éditée avec succès"
+            if edit_instruction:
+                edit_msg += f" (instruction: {edit_instruction})"
+            
+            return edited_img, edit_msg
         else:
             return None, "Aucun résultat retourné par l'API"
             
@@ -402,32 +406,33 @@ def edit_image_with_qwen(image: Image.Image):
         st.code(traceback.format_exc())
         return None, str(e)
 
-def create_edit_context(original_caption, edited_caption, success_info):
+def create_edit_context(original_caption, edit_instruction, edited_caption, success_info):
     """Crée un contexte détaillé de l'édition pour la mémoire de l'AI"""
     context = {
         "original_description": original_caption,
+        "edit_instruction": edit_instruction,
         "edited_description": edited_caption,
         "edit_info": success_info,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }
     return context
 
-def process_image_edit_request(image: Image.Image, conv_id: str):
+def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_id: str):
     """Traite une demande d'édition d'image complète avec description automatique"""
     # Interface utilisateur pendant l'édition
-    with st.spinner("Édition de l'image en cours avec Qwen..."):
+    with st.spinner(f"Édition de l'image en cours: '{edit_instruction}'..."):
         # Générer description de l'image originale
         original_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
         
         # Appel au modèle d'édition
-        edited_img, result_info = edit_image_with_qwen(image)
+        edited_img, result_info = edit_image_with_qwen(image, edit_instruction)
         
         if edited_img:
             # Générer description de l'image éditée
             edited_caption = generate_caption(edited_img, st.session_state.processor, st.session_state.model)
             
             # Créer le contexte d'édition
-            edit_context = create_edit_context(original_caption, edited_caption, result_info)
+            edit_context = create_edit_context(original_caption, edit_instruction, edited_caption, result_info)
             
             # Affichage des résultats côte à côte avec descriptions
             col1, col2 = st.columns(2)
@@ -438,25 +443,27 @@ def process_image_edit_request(image: Image.Image, conv_id: str):
             
             with col2:
                 st.subheader("Image éditée")
-                st.image(edited_img, caption="Après édition automatique", use_column_width=True)
+                st.image(edited_img, caption=f"Après: {edit_instruction}", use_column_width=True)
                 st.write(f"**Description:** {edited_caption}")
                 st.write(f"**Info technique:** {result_info}")
             
             # Préparer le contenu de réponse avec analyse détaillée
-            response_content = f"""✨ **Édition d'image automatique terminée !**
+            response_content = f"""✨ **Édition d'image terminée !**
+
+**Instruction d'édition:** {edit_instruction}
 
 **Analyse comparative:**
 - **Image originale:** {original_caption}
 - **Image éditée:** {edited_caption}
 
 **Modifications détectées:**
-L'image a été transformée automatiquement par Qwen. L'image éditée montre maintenant: {edited_caption}
+J'ai appliqué votre demande "{edit_instruction}" à l'image. L'image éditée montre maintenant: {edited_caption}
 
 **Info technique:** {result_info}
 
 Je garde en mémoire cette édition et peux discuter des changements apportés ou suggérer d'autres améliorations si vous le souhaitez!"""
             
-            # Sauvegarde en base de données avec contexte d'édition
+            # Sauvegarde en base de données SANS edit_context pour éviter l'erreur
             edited_b64 = image_to_base64(edited_img.convert("RGB"))
             success = add_message(
                 conv_id,
@@ -464,20 +471,20 @@ Je garde en mémoire cette édition et peux discuter des changements apportés o
                 response_content,
                 "image",
                 edited_b64,
-                str(edit_context)
+                None  # Pas de edit_context pour éviter l'erreur DB
             )
             
             if success:
                 st.success("Image éditée et analysée avec succès!")
                 
-                # Mise à jour de la mémoire locale avec contexte
+                # Mise à jour de la mémoire locale avec contexte (en local seulement)
                 st.session_state.messages_memory.append({
                     "message_id": str(uuid.uuid4()),
                     "sender": "assistant",
                     "content": response_content,
                     "type": "image",
                     "image_data": edited_b64,
-                    "edit_context": str(edit_context),
+                    "edit_context": str(edit_context),  # Gardé en local pour la session
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
                 
@@ -739,13 +746,46 @@ with tab2:
                 st.write(f"**Description automatique:** {original_desc}")
     
     with col2:
-        st.subheader("Édition automatique avec Qwen")
+        st.subheader("Instructions d'édition")
         
-        st.write("""
-        **Fonctionnement de l'éditeur:**
-        - L'éditeur Qwen applique des modifications automatiques intelligentes
-        - Aucune instruction spécifique n'est requise
-        - L'AI analyse l'image et applique des améliorations
+        # Exemples prédéfinis
+        st.write("**Exemples d'instructions:**")
+        example_prompts = [
+            "Add a beautiful sunset background",
+            "Change the colors to black and white",
+            "Add flowers in the scene",
+            "Make it look like a painting",
+            "Add snow falling",
+            "Change to a cyberpunk style",
+            "Remove the background",
+            "Add a person in the image",
+            "Make it more colorful",
+            "Add magic effects"
+        ]
+        
+        selected_example = st.selectbox(
+            "Choisir un exemple",
+            ["Custom..."] + example_prompts
+        )
+        
+        if selected_example == "Custom...":
+            edit_instruction = st.text_area(
+                "Décrivez les modifications souhaitées (en anglais):",
+                height=120,
+                placeholder="ex: Add a man in the house, change the sky to sunset, make it look artistic..."
+            )
+        else:
+            edit_instruction = st.text_area(
+                "Instruction d'édition:",
+                value=selected_example,
+                height=120
+            )
+        
+        # Note importante sur l'API Qwen
+        st.info("""
+        **Note:** Le modèle Qwen applique des transformations automatiques. 
+        Bien que vous puissiez spécifier des instructions, le résultat peut varier 
+        car l'API `/simple_use_as_input` fonctionne de manière autonome.
         """)
         
         # Affichage des éditions précédentes dans cette conversation
@@ -755,7 +795,7 @@ with tab2:
                 st.text(edit_history)
         
         # Bouton d'édition
-        if st.button("🎨 Éditer l'image automatiquement", type="primary", disabled=not editor_file):
+        if st.button("🎨 Éditer l'image", type="primary", disabled=not (editor_file and edit_instruction.strip())):
             if not st.session_state.conversation:
                 conv = create_conversation(st.session_state.user["id"], "Édition d'images")
                 if not conv:
@@ -764,9 +804,9 @@ with tab2:
                     st.session_state.conversation = conv
             
             if st.session_state.conversation:
-                # Sauvegarde du message utilisateur avec description de l'image originale
+                # Sauvegarde du message utilisateur avec description de l'image originale et instruction
                 original_caption = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
-                user_msg = f"📸 **Demande d'édition automatique**\n\n**Image originale:** {original_caption}"
+                user_msg = f"📸 **Demande d'édition d'image**\n\n**Image originale:** {original_caption}\n\n**Instruction:** {edit_instruction}"
                 
                 original_b64 = image_to_base64(editor_image.convert("RGB"))
                 add_message(
@@ -786,9 +826,10 @@ with tab2:
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
                 
-                # Traitement de l'édition
+                # Traitement de l'édition avec instruction
                 success = process_image_edit_request(
                     editor_image,
+                    edit_instruction,
                     st.session_state.conversation.get("conversation_id")
                 )
                 
@@ -846,8 +887,12 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         if (any(k in lower for k in ["edit", "édite", "modifie", "transformer", "améliorer"]) 
             and uploaded_file):
             
+            # Extraire l'instruction d'édition du message utilisateur
+            edit_instruction = user_input.strip()
+            
             success = process_image_edit_request(
                 Image.open(uploaded_file).convert("RGBA"), 
+                edit_instruction,
                 conv_id
             )
             if success:
