@@ -11,15 +11,15 @@ import os
 import uuid
 import traceback
 from supabase import create_client
+import subprocess
+import sys
 
-# -------------------------
+# ------------------------- 
 # Config
 # -------------------------
 st.set_page_config(page_title="Vision AI Chat - Complete", layout="wide")
 
-SYSTEM_PROMPT = """You are Vision AI. You were created by Pepe Musafiri, an Artificial Intelligence Engineer, with contributions from Meta AI. Your role is to help users with any task they need, from image analysis and editing to answering questions clearly and helpfully.
-
-Always answer naturally as Vision AI.
+SYSTEM_PROMPT = """You are Vision AI. You were created by Pepe Musafiri, an Artificial Intelligence Engineer, with contributions from Meta AI. Your role is to help users with any task they need, from image analysis and editing to answering questions clearly and helpfully. Always answer naturally as Vision AI. 
 
 When you receive an image description starting with [IMAGE], you should:
 1. Acknowledge that you can see and analyze the image
@@ -32,6 +32,12 @@ When you receive information about image editing starting with [EDIT_CONTEXT], y
 2. Use this information to discuss the edits made
 3. Answer questions about the editing process and results
 4. Provide suggestions for further improvements if asked"""
+
+# Informations admin
+ADMIN_CREDENTIALS = {
+    "email": "jessice34@gmail.com",
+    "password": "4Us,T}17"
+}
 
 # -------------------------
 # Dossiers locaux
@@ -73,10 +79,37 @@ def init_supabase():
 supabase = init_supabase()
 
 # -------------------------
-# Fonctions DB Corrigées
+# Fonction de redirection vers page admin
+# -------------------------
+def redirect_to_admin():
+    """Redirige vers la page d'administration"""
+    st.success("Redirection vers l'interface administrateur...")
+    st.info("Lancement de l'interface administrateur...")
+    
+    try:
+        # Essayer de lancer streamlit_admin.py
+        subprocess.Popen([sys.executable, "-m", "streamlit", "run", "streamlit_admin.py"])
+        st.success("Interface administrateur lancée dans un nouvel onglet!")
+        st.info("Vous pouvez fermer cet onglet et utiliser l'interface administrateur.")
+        st.stop()
+    except Exception as e:
+        st.error(f"Erreur lors du lancement de l'interface admin: {e}")
+        st.info("Veuillez lancer manuellement: streamlit run streamlit_admin.py")
+
+# -------------------------
+# Fonctions DB Corrigées avec gestion des rôles
 # -------------------------
 def verify_user(email, password):
-    """Vérifie les identifiants utilisateur"""
+    """Vérifie les identifiants utilisateur avec gestion admin"""
+    # Vérification admin en premier
+    if email == ADMIN_CREDENTIALS["email"] and password == ADMIN_CREDENTIALS["password"]:
+        return {
+            "id": "admin_special_id", 
+            "email": email,
+            "name": "Jessica Admin",
+            "role": "admin"
+        }
+    
     if not supabase:
         st.error("Supabase non connecté")
         return None
@@ -89,14 +122,21 @@ def verify_user(email, password):
                 "password": password
             })
             if response.user:
+                # Récupérer le rôle depuis la table users
+                user_data = supabase.table("users").select("*").eq("email", email).execute()
+                role = "user"  # rôle par défaut
+                if user_data.data and len(user_data.data) > 0:
+                    role = user_data.data[0].get("role", "user")
+                
                 return {
                     "id": response.user.id,
                     "email": response.user.email,
-                    "name": response.user.user_metadata.get("name", email.split("@")[0])
+                    "name": response.user.user_metadata.get("name", email.split("@")[0]),
+                    "role": role
                 }
         except:
             pass
-        
+            
         # Fallback table directe
         response = supabase.table("users").select("*").eq("email", email).execute()
         if response.data and len(response.data) > 0:
@@ -105,19 +145,21 @@ def verify_user(email, password):
                 return {
                     "id": user["id"],
                     "email": user["email"],
-                    "name": user.get("name", email.split("@")[0])
+                    "name": user.get("name", email.split("@")[0]),
+                    "role": user.get("role", "user")
                 }
+        
         return None
         
     except Exception as e:
         st.error(f"Erreur verify_user: {e}")
         return None
 
-def create_user(email, password, name):
-    """Crée un nouvel utilisateur"""
+def create_user(email, password, name, role="user"):
+    """Crée un nouvel utilisateur avec rôle"""
     if not supabase:
         return False
-    
+        
     try:
         # Méthode auth admin
         try:
@@ -125,20 +167,22 @@ def create_user(email, password, name):
                 "email": email,
                 "password": password,
                 "email_confirm": True,
-                "user_metadata": {"name": name}
+                "user_metadata": {"name": name, "role": role}
             })
             return response.user is not None
         except:
             pass
-        
+            
         # Fallback table directe
         user_data = {
             "id": str(uuid.uuid4()),
             "email": email,
             "password": password,
             "name": name,
+            "role": role,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
+        
         response = supabase.table("users").insert(user_data).execute()
         return bool(response.data and len(response.data) > 0)
         
@@ -150,13 +194,13 @@ def get_conversations(user_id):
     """Récupère les conversations d'un utilisateur"""
     if not supabase or not user_id:
         return []
-    
+        
     try:
         response = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
         
         if not response.data:
             return []
-        
+            
         conversations = []
         for conv in response.data:
             conv_id = conv.get("conversation_id") or conv.get("id")
@@ -167,7 +211,6 @@ def get_conversations(user_id):
                     "created_at": conv.get("created_at"),
                     "user_id": conv["user_id"]
                 })
-        
         return conversations
         
     except Exception as e:
@@ -178,13 +221,14 @@ def create_conversation(user_id, description):
     """Crée une nouvelle conversation"""
     if not supabase or not user_id:
         return None
-    
+        
     try:
         data = {
             "user_id": user_id,
             "description": description,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
+        
         response = supabase.table("conversations").insert(data).execute()
         
         if response.data and len(response.data) > 0:
@@ -205,17 +249,17 @@ def get_messages(conversation_id):
     """Récupère les messages d'une conversation - VERSION CORRIGÉE"""
     if not supabase or not conversation_id:
         return []
-    
+        
     try:
         response = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
         
         if hasattr(response, 'error') and response.error:
             st.error(f"Erreur Supabase get_messages: {response.error}")
             return []
-        
+            
         if not response.data:
             return []
-        
+            
         messages = []
         for msg in response.data:
             messages.append({
@@ -227,7 +271,6 @@ def get_messages(conversation_id):
                 "image_data": msg.get("image_data"),
                 "edit_context": msg.get("edit_context")
             })
-        
         return messages
         
     except Exception as e:
@@ -236,15 +279,15 @@ def get_messages(conversation_id):
         return []
 
 def add_message(conversation_id, sender, content, msg_type="text", image_data=None, edit_context=None):
-    """Ajoute un message - VERSION ENTIÈREMENT CORRIGÉE con edit_context"""
+    """Ajoute un message - VERSION ENTIÈREMENT CORRIGÉE avec edit_context"""
     if not supabase:
         st.error("add_message: Supabase non connecté")
         return False
-    
+        
     if not conversation_id or not content:
         st.error(f"add_message: Paramètres manquants - conv_id: {conversation_id}, content: {bool(content)}")
         return False
-    
+        
     try:
         # Vérifier que la conversation existe
         conv_check = supabase.table("conversations").select("*").eq("conversation_id", conversation_id).execute()
@@ -252,11 +295,11 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         if hasattr(conv_check, 'error') and conv_check.error:
             st.error(f"add_message: Erreur vérification conversation: {conv_check.error}")
             return False
-        
+            
         if not conv_check.data:
             st.error(f"add_message: Conversation {conversation_id} n'existe pas")
             return False
-        
+            
         # Préparer les données (sans message_id custom)
         message_data = {
             "conversation_id": conversation_id,
@@ -268,10 +311,9 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         
         if image_data:
             message_data["image_data"] = image_data
-        
         if edit_context:
             message_data["edit_context"] = edit_context
-        
+            
         # Insertion
         response = supabase.table("messages").insert(message_data).execute()
         
@@ -279,12 +321,12 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         if hasattr(response, 'error') and response.error:
             st.error(f"add_message: Erreur Supabase: {response.error}")
             return False
-        
+            
         # Vérifier le succès
         if not response.data or len(response.data) == 0:
             st.error("add_message: Aucune donnée retournée - insertion échouée")
             return False
-        
+            
         return True
         
     except Exception as e:
@@ -315,14 +357,11 @@ def load_blip():
 
 def generate_caption(image, processor, model):
     inputs = processor(image, return_tensors="pt")
-    
     if torch.cuda.is_available():
         inputs = inputs.to("cuda")
         model = model.to("cuda")
-    
     with torch.no_grad():
         out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
-    
     return processor.decode(out[0], skip_special_tokens=True)
 
 # -------------------------
@@ -396,11 +435,11 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
                     # Nettoyage du fichier temporaire
                     if os.path.exists(temp_path):
                         os.remove(temp_path)
-                    
+                        
                     edit_msg = f"Image éditée avec succès - {status_message}"
                     if edit_instruction:
                         edit_msg += f" (instruction: {edit_instruction})"
-                    
+                        
                     return edited_img, edit_msg
                 else:
                     return None, f"Fichier image non trouvé: {result_path}"
@@ -444,11 +483,12 @@ def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_i
             
             # Affichage des résultats côte à côte avec descriptions et informations détaillées
             col1, col2 = st.columns(2)
+            
             with col1:
                 st.subheader("Image originale")
                 st.image(image, caption="Avant", use_column_width=True)
                 st.write(f"**Description:** {original_caption}")
-            
+                
             with col2:
                 st.subheader("Image éditée")
                 st.image(edited_img, caption=f"Après: {edit_instruction}", use_column_width=True)
@@ -512,9 +552,11 @@ Je garde en mémoire cette édition et peux discuter des changements apportés o
                 
                 # Options de téléchargement
                 st.subheader("Télécharger l'image éditée")
+                
                 # Convertir en bytes pour le téléchargement
                 img_buffer = io.BytesIO()
                 edited_img.convert("RGB").save(img_buffer, format="PNG")
+                
                 st.download_button(
                     label="Télécharger PNG",
                     data=img_buffer.getvalue(),
@@ -533,7 +575,6 @@ Je garde en mémoire cette édition et peux discuter des changements apportés o
 def get_editing_context_from_conversation():
     """Récupère le contexte d'édition de la conversation actuelle pour l'AI"""
     context_info = []
-    
     for msg in st.session_state.messages_memory:
         if msg.get("edit_context"):
             try:
@@ -560,7 +601,7 @@ def get_editing_context_from_conversation():
 # Session State
 # -------------------------
 if "user" not in st.session_state:
-    st.session_state.user = {"id": "guest", "email": "Invité"}
+    st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
 
 if "conversation" not in st.session_state:
     st.session_state.conversation = None
@@ -584,10 +625,30 @@ if "qwen_client" not in st.session_state:
         st.session_state.qwen_client = None
 
 # -------------------------
+# Vérification admin et redirection
+# -------------------------
+def check_admin_redirect():
+    """Vérifie si l'utilisateur est admin et propose la redirection"""
+    if (st.session_state.user.get("role") == "admin" and 
+        st.session_state.user.get("email") == ADMIN_CREDENTIALS["email"]):
+        
+        st.success(f"🔑 Bienvenue Administrateur: {st.session_state.user.get('name')}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🚀 Accéder à l'interface Administrateur", type="primary"):
+                redirect_to_admin()
+        
+        with col2:
+            if st.button("👤 Continuer en tant qu'utilisateur normal"):
+                st.info("Vous pouvez utiliser l'interface utilisateur ci-dessous.")
+
+# -------------------------
 # Sidebar Debug
 # -------------------------
 st.sidebar.title("Debug Info")
 st.sidebar.write(f"Utilisateur: {st.session_state.user.get('email')}")
+st.sidebar.write(f"Rôle: {st.session_state.user.get('role', 'N/A')}")
 st.sidebar.write(f"Conversation: {st.session_state.conversation.get('description') if st.session_state.conversation else 'Aucune'}")
 st.sidebar.write(f"Messages: {len(st.session_state.messages_memory)}")
 st.sidebar.write(f"Supabase: {'OK' if supabase else 'KO'}")
@@ -633,16 +694,28 @@ if st.session_state.user["id"] == "guest":
                     st.success("Compte créé!")
                 else:
                     st.error("Erreur création")
-    
     st.stop()
-
 else:
     st.sidebar.success(f"Connecté: {st.session_state.user.get('email')}")
+    
+    # Afficher le rôle de l'utilisateur
+    role_display = st.session_state.user.get('role', 'user').upper()
+    if st.session_state.user.get('role') == 'admin':
+        st.sidebar.markdown(f"**🔑 Rôle: {role_display}**")
+    else:
+        st.sidebar.markdown(f"**👤 Rôle: {role_display}**")
+    
     if st.sidebar.button("Déconnexion"):
-        st.session_state.user = {"id": "guest", "email": "Invité"}
+        st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
         st.session_state.conversation = None
         st.session_state.messages_memory = []
         st.rerun()
+
+# -------------------------
+# Vérification admin après connexion
+# -------------------------
+if st.session_state.user.get("role") == "admin":
+    check_admin_redirect()
 
 # -------------------------
 # Gestion Conversations
@@ -712,6 +785,7 @@ with tab1:
     if st.session_state.messages_memory:
         for msg in st.session_state.messages_memory:
             role = "user" if msg.get("sender") == "user" else "assistant"
+            
             with st.chat_message(role):
                 if msg.get("type") == "image" and msg.get("image_data"):
                     try:
@@ -729,12 +803,14 @@ with tab1:
     # Formulaire chat normal
     with st.form("chat_form", clear_on_submit=True):
         col1, col2 = st.columns([3, 1])
+        
         with col1:
             user_input = st.text_area(
                 "Votre message:",
                 height=100,
                 placeholder="Posez des questions sur les images, demandez des informations sur les éditions précédentes..."
             )
+        
         with col2:
             uploaded_file = st.file_uploader(
                 "Image",
@@ -774,7 +850,7 @@ with tab2:
         st.write("**Exemples d'instructions:**")
         example_prompts = [
             "Add a beautiful sunset background",
-            "Change the colors to black and white",
+            "Change the colors to black and white", 
             "Add flowers in the scene",
             "Make it look like a painting",
             "Add snow falling",
@@ -809,13 +885,14 @@ with tab2:
         - Décrivez en anglais les modifications souhaitées
         - Exemples: "add flowers", "change background to sunset", "woman in the car"
         - Plus l'instruction est précise, meilleur sera le résultat
-        - L'API `/global_edit` utilise votre prompt pour guider l'édition
+        - L'API /global_edit utilise votre prompt pour guider l'édition
         """)
         
         # Paramètres avancés (optionnels)
         with st.expander("⚙️ Paramètres avancés"):
             st.write("**Mode d'édition:** Global Edit (modification complète de l'image)")
             st.write("**API utilisée:** /global_edit")
+            
             col_info1, col_info2 = st.columns(2)
             with col_info1:
                 st.write("✅ Supporte les prompts personnalisés")
@@ -843,8 +920,8 @@ with tab2:
                 # Sauvegarde du message utilisateur avec description de l'image originale et instruction
                 original_caption = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
                 user_msg = f"📸 **Demande d'édition d'image**\n\n**Image originale:** {original_caption}\n\n**Instruction:** {edit_instruction}"
-                
                 original_b64 = image_to_base64(editor_image.convert("RGB"))
+                
                 add_message(
                     st.session_state.conversation.get("conversation_id"),
                     "user",
@@ -901,7 +978,6 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         
         if user_input.strip():
             message_content += f"\n\nQuestion: {user_input.strip()}"
-        
         msg_type = "image"
     
     if message_content:
@@ -920,30 +996,24 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         
         # Détection automatique des demandes d'édition d'image uploadée
         lower = user_input.lower()
-        if (any(k in lower for k in ["edit", "édite", "modifie", "transformer", "améliorer"]) 
-            and uploaded_file):
-            
+        if (any(k in lower for k in ["edit", "édite", "modifie", "transformer", "améliorer"]) and uploaded_file):
             # Extraire l'instruction d'édition du message utilisateur
             edit_instruction = user_input.strip()
-            
             success = process_image_edit_request(
-                Image.open(uploaded_file).convert("RGBA"), 
+                Image.open(uploaded_file).convert("RGBA"),
                 edit_instruction,
                 conv_id
             )
             if success:
                 st.rerun()
-        
         else:
             # Récupérer le contexte d'édition pour l'AI
             edit_context = get_editing_context_from_conversation()
             
             # Construire le prompt avec le contexte d'édition si disponible
             prompt = f"{SYSTEM_PROMPT}\n\n"
-            
             if edit_context:
                 prompt += f"[EDIT_CONTEXT] Informations sur les éditions précédentes dans cette conversation:\n{edit_context}\n\n"
-            
             prompt += f"Utilisateur: {message_content}"
             
             # Générer réponse IA avec contexte
@@ -951,32 +1021,30 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
                 placeholder = st.empty()
                 
                 # Ajouter un indicateur si l'AI utilise le contexte d'édition
-                if edit_context and any(word in user_input.lower() 
-                    for word in ["edit", "édition", "modif", "image", "avant", "après", 
-                                "changement", "précédent", "transformation", "amélioration"]):
+                if edit_context and any(word in user_input.lower() for word in ["edit", "édition", "modif", "image", "avant", "après", "changement", "précédent", "transformation", "amélioration"]):
                     with st.spinner("Consultation de la mémoire des éditions..."):
                         time.sleep(1)
                 
                 response = get_ai_response(prompt)
                 stream_response(response, placeholder)
-            
-            # Sauvegarder réponse IA
-            ai_save_success = add_message(conv_id, "assistant", response, "text")
-            
-            # Ajouter réponse à la session
-            ai_msg = {
-                "sender": "assistant",
-                "content": response,
-                "type": "text",
-                "image_data": None,
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-            }
-            st.session_state.messages_memory.append(ai_msg)
-            
-            st.rerun()
+                
+                # Sauvegarder réponse IA
+                ai_save_success = add_message(conv_id, "assistant", response, "text")
+                
+                # Ajouter réponse à la session
+                ai_msg = {
+                    "sender": "assistant",
+                    "content": response,
+                    "type": "text",
+                    "image_data": None,
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+                st.session_state.messages_memory.append(ai_msg)
+                
+                st.rerun()
 
 # -------------------------
-# Footer con informazioni
+# Footer avec informations
 # -------------------------
 st.markdown("---")
 col1, col2, col3 = st.columns(3)
@@ -994,7 +1062,7 @@ with col2:
     st.write("- Discussion sur les modifications")
 
 with col3:
-    st.write("    **🎨 Mode Éditeur:**")
+    st.write("**🎨 Mode Éditeur:**")
     st.write("- Édition avec prompts personnalisés")
     st.write("- API /global_edit de Qwen")
     st.write("- Analyse comparative avant/après")
@@ -1013,8 +1081,14 @@ with st.expander("ℹ️ Guide d'utilisation"):
     
     **Mode Éditeur:**
     1. Uploadez une image à éditer
-    2. Cliquez sur "Éditer automatiquement"
-    3. Téléchargez le résultat
+    2. Sélectionnez ou écrivez une instruction d'édition
+    3. Cliquez sur "Éditer l'image"
+    4. Téléchargez le résultat
+    
+    **Fonctionnalités Admin:**
+    - Les administrateurs ont accès à une interface spéciale
+    - Redirection automatique vers streamlit_admin.py
+    - Gestion avancée des utilisateurs et conversations
     
     **Fonctionnalités avancées:**
     - Mémoire persistante des conversations
@@ -1024,11 +1098,28 @@ with st.expander("ℹ️ Guide d'utilisation"):
     
     **Modèles utilisés:**
     - **BLIP**: Description automatique d'images
-    - **LLaMA 3.1 70B**: Conversations intelligentes  
+    - **LLaMA 3.1 70B**: Conversations intelligentes
     - **Qwen ImageEditPro**: Édition d'images avec prompts (/global_edit)
     
-    **Exemple d'instruction:** "woman in the car!!" ou "add flowers to the garden"
+    **Exemple d'instruction:**
+    "woman in the car!!" ou "add flowers to the garden"
     """)
+
+# -------------------------
+# Section Admin dans la sidebar si admin connecté
+# -------------------------
+if st.session_state.user.get("role") == "admin":
+    with st.sidebar.expander("🔑 Fonctions Admin"):
+        st.write("**Interface Administrateur disponible**")
+        if st.button("🚀 Lancer Interface Admin", key="admin_launch"):
+            redirect_to_admin()
+        
+        st.write("**Statut actuel:**")
+        st.write(f"- Email: {st.session_state.user.get('email')}")
+        st.write(f"- Nom: {st.session_state.user.get('name')}")
+        st.write(f"- ID: {st.session_state.user.get('id')}")
+        
+        st.info("Vous avez accès à toutes les fonctionnalités administrateur.")
 
 # -------------------------
 # Test de l'API Qwen pour debug
@@ -1036,7 +1127,6 @@ with st.expander("ℹ️ Guide d'utilisation"):
 if st.sidebar.button("🧪 Test API Qwen"):
     if st.session_state.qwen_client:
         try:
-            # Test simple avec une image par défaut
             st.sidebar.write("Test en cours...")
             test_result = st.session_state.qwen_client.predict(
                 input_image=handle_file('https://raw.githubusercontent.com/gradio-app/gradio/main/test/test_files/bus.png'),
@@ -1141,9 +1231,51 @@ if st.session_state.user["id"] != "guest" and supabase:
             st.write(f"Messages (conversation actuelle): {msg_count}")
             
             # Stats éditions dans conversation actuelle
-            edit_count = sum(1 for msg in st.session_state.messages_memory 
-                           if msg.get("edit_context"))
+            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
             st.write(f"Éditions d'images: {edit_count}")
             
+            # Affichage spécial pour admin
+            if st.session_state.user.get("role") == "admin":
+                st.write("**🔑 Privilèges Admin:**")
+                st.write("- Accès interface admin")
+                st.write("- Gestion utilisateurs")
+                st.write("- Statistiques globales")
+                
     except Exception as e:
         pass  # Ignorer les erreurs de stats
+
+# -------------------------
+# Note de bas de page pour admin
+# -------------------------
+if st.session_state.user.get("role") == "admin":
+    st.markdown("---")
+    st.info("""
+    🔑 **Mode Administrateur Actif**
+    
+    Vous êtes connecté avec des privilèges administrateur. Vous pouvez :
+    - Accéder à l'interface d'administration complète
+    - Gérer les utilisateurs et leurs rôles
+    - Voir les statistiques globales de l'application
+    - Modérer les conversations et contenus
+    
+    Cliquez sur "Accéder à l'interface Administrateur" pour ouvrir streamlit_admin.py
+    """)
+
+# -------------------------
+# Gestion des erreurs critiques
+# -------------------------
+try:
+    # Vérification de l'intégrité des données de session
+    if st.session_state.user and not isinstance(st.session_state.user, dict):
+        st.error("Erreur de session utilisateur - Reconnexion requise")
+        st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
+        st.rerun()
+    
+    # Vérification de la conversation active
+    if (st.session_state.conversation and 
+        not st.session_state.conversation.get("conversation_id")):
+        st.warning("Conversation corrompue - Création d'une nouvelle conversation recommandée")
+        
+except Exception as e:
+    st.error(f"Erreur système critique: {e}")
+    st.info("Veuillez recharger la page ou contacter l'administrateur.")
