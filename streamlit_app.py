@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
@@ -741,7 +739,7 @@ def show_admin_page():
             st.error("Connexion Supabase non disponible")
     
     with tab2:
-        st.subheader("Toutes les Conversations")
+        st.subheader("Toutes les Conversations & Messages")
         
         if supabase:
             try:
@@ -751,48 +749,197 @@ def show_admin_page():
                 if convs_response.data:
                     st.write(f"**{len(convs_response.data)} conversations récentes**")
                     
-                    for idx, conv in enumerate(convs_response.data):
+                    # Filtre par utilisateur
+                    all_users = list(set([conv.get('user_id') for conv in convs_response.data if conv.get('user_id')]))
+                    
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        selected_user = st.selectbox(
+                            "Filtrer par utilisateur:",
+                            ["Tous"] + all_users,
+                            key="user_filter"
+                        )
+                    with col2:
+                        show_messages = st.checkbox("Afficher les messages", value=True)
+                    
+                    # Filtrer les conversations
+                    filtered_convs = convs_response.data
+                    if selected_user != "Tous":
+                        filtered_convs = [conv for conv in convs_response.data if conv.get('user_id') == selected_user]
+                    
+                    st.write(f"**{len(filtered_convs)} conversations affichées**")
+                    
+                    for idx, conv in enumerate(filtered_convs):
                         # Créer un ID unique pour éviter les collisions
                         conv_id = conv.get('conversation_id') or conv.get('id') or f"conv_{idx}"
                         conv_display_id = str(conv_id)[:8] if conv_id != f"conv_{idx}" else f"conv_{idx}"
                         
-                        with st.expander(f"💬 {conv.get('description', 'Sans titre')} - {conv.get('created_at', '')[:16]}"):
-                            col1, col2 = st.columns(2)
+                        # Récupérer info utilisateur
+                        user_id = conv.get('user_id', 'N/A')
+                        try:
+                            user_info = supabase.table("users").select("name, email").eq("id", user_id).execute()
+                            if user_info.data:
+                                user_display = f"{user_info.data[0].get('name', 'N/A')} ({user_info.data[0].get('email', 'N/A')})"
+                            else:
+                                user_display = f"User ID: {user_id}"
+                        except:
+                            user_display = f"User ID: {user_id}"
+                        
+                        # Compter les messages
+                        try:
+                            if conv_id and conv_id != f"conv_{idx}":
+                                messages = get_messages(conv_id)
+                                msg_count = len(messages)
+                            else:
+                                messages = []
+                                msg_count = 0
+                        except Exception as e:
+                            messages = []
+                            msg_count = f"Erreur ({str(e)[:30]}...)"
+                        
+                        # Expander principal pour la conversation
+                        with st.expander(f"💬 {conv.get('description', 'Sans titre')} | {user_display} | {msg_count} msg | {conv.get('created_at', '')[:16]}"):
+                            
+                            # Informations de la conversation
+                            col1, col2, col3 = st.columns(3)
                             
                             with col1:
-                                st.write(f"**ID Conv:** {conv_display_id}")
-                                st.write(f"**User ID:** {conv.get('user_id', 'N/A')}")
-                                st.write(f"**Créée le:** {conv.get('created_at', 'N/A')}")
+                                st.write("**📋 Info Conversation:**")
+                                st.write(f"- **ID Conv:** {conv_display_id}")
+                                st.write(f"- **Description:** {conv.get('description', 'N/A')}")
+                                st.write(f"- **Créée le:** {conv.get('created_at', 'N/A')}")
                             
                             with col2:
-                                # Compter les messages
-                                try:
-                                    if conv_id and conv_id != f"conv_{idx}":
-                                        msg_count = len(get_messages(conv_id))
-                                        st.write(f"**Messages:** {msg_count}")
-                                    else:
-                                        st.write(f"**Messages:** ID invalide")
-                                except Exception as e:
-                                    st.write(f"**Messages:** Erreur ({str(e)[:30]}...)")
+                                st.write("**👤 Info Utilisateur:**")
+                                st.write(f"- **User ID:** {user_id}")
+                                st.write(f"- **Utilisateur:** {user_display}")
+                                st.write(f"- **Messages:** {msg_count}")
+                            
+                            with col3:
+                                st.write("**🛠️ Actions Admin:**")
                                 
-                                # Option de suppression avec clé unique
-                                if st.button("🗑️ Supprimer", key=f"del_conv_{idx}_{conv_id}"):
+                                # Bouton de suppression avec clé unique
+                                if st.button("🗑️ Supprimer Conv", key=f"del_conv_{idx}_{conv_id}"):
                                     if conv_id and conv_id != f"conv_{idx}":
                                         try:
                                             # Supprimer d'abord les messages
-                                            supabase.table("messages").delete().eq("conversation_id", conv_id).execute()
+                                            msg_del = supabase.table("messages").delete().eq("conversation_id", conv_id).execute()
                                             # Puis supprimer la conversation
-                                            delete_result = supabase.table("conversations").delete().eq("conversation_id", conv_id).execute()
+                                            conv_del = supabase.table("conversations").delete().eq("conversation_id", conv_id).execute()
                                             
-                                            if delete_result.data:
-                                                st.success(f"Conversation {conv_display_id} supprimée!")
+                                            if conv_del.data is not None:  # Supabase peut retourner [] pour un succès
+                                                st.success(f"✅ Conversation {conv_display_id} supprimée!")
                                                 st.rerun()
                                             else:
-                                                st.error("Erreur lors de la suppression")
+                                                st.error("❌ Erreur lors de la suppression")
                                         except Exception as e:
-                                            st.error(f"Erreur suppression: {e}")
+                                            st.error(f"❌ Erreur suppression: {e}")
                                     else:
-                                        st.error("ID de conversation invalide")
+                                        st.error("❌ ID de conversation invalide")
+                                
+                                # Bouton d'export de la conversation
+                                if st.button("📄 Exporter", key=f"export_conv_{idx}_{conv_id}"):
+                                    if messages:
+                                        # Créer un DataFrame des messages
+                                        export_data = []
+                                        for msg in messages:
+                                            export_data.append({
+                                                "Timestamp": msg.get('created_at', 'N/A'),
+                                                "Sender": msg.get('sender', 'N/A'),
+                                                "Type": msg.get('type', 'text'),
+                                                "Content": msg.get('content', 'N/A')[:100] + "..." if len(msg.get('content', '')) > 100 else msg.get('content', 'N/A'),
+                                                "Full_Content": msg.get('content', 'N/A')
+                                            })
+                                        
+                                        df_export = pd.DataFrame(export_data)
+                                        csv_data = df_export.to_csv(index=False)
+                                        
+                                        st.download_button(
+                                            label="⬇️ Télécharger CSV",
+                                            data=csv_data,
+                                            file_name=f"conversation_{conv_display_id}_{int(time.time())}.csv",
+                                            mime="text/csv",
+                                            key=f"download_conv_{idx}"
+                                        )
+                                    else:
+                                        st.info("Pas de messages à exporter")
+                            
+                            # Affichage des messages si demandé
+                            if show_messages and messages and len(messages) > 0:
+                                st.markdown("---")
+                                st.write("**💬 Messages de la conversation:**")
+                                
+                                # Pagination pour les longues conversations
+                                messages_per_page = 10
+                                total_pages = (len(messages) + messages_per_page - 1) // messages_per_page
+                                
+                                if total_pages > 1:
+                                    page_num = st.selectbox(
+                                        f"Page (Total: {len(messages)} messages):",
+                                        range(1, total_pages + 1),
+                                        key=f"page_conv_{idx}"
+                                    )
+                                    start_idx = (page_num - 1) * messages_per_page
+                                    end_idx = min(start_idx + messages_per_page, len(messages))
+                                    display_messages = messages[start_idx:end_idx]
+                                else:
+                                    display_messages = messages
+                                
+                                # Affichage des messages
+                                for msg_idx, msg in enumerate(display_messages):
+                                    sender = msg.get('sender', 'unknown')
+                                    content = msg.get('content', 'Contenu vide')
+                                    msg_type = msg.get('type', 'text')
+                                    timestamp = msg.get('created_at', 'N/A')
+                                    
+                                    # Style selon le sender
+                                    if sender == "user":
+                                        icon = "👤"
+                                        color = "#e3f2fd"  # Bleu clair
+                                    else:
+                                        icon = "🤖"
+                                        color = "#f3e5f5"  # Violet clair
+                                    
+                                    # Affichage du message avec style
+                                    st.markdown(f"""
+                                    <div style="
+                                        background-color: {color}; 
+                                        padding: 10px; 
+                                        border-radius: 8px; 
+                                        margin: 5px 0;
+                                        border-left: 4px solid {'#2196f3' if sender == 'user' else '#9c27b0'};
+                                    ">
+                                        <strong>{icon} {sender.title()}</strong> 
+                                        <small style="color: #666;">({timestamp[:16]})</small><br>
+                                        <div style="margin-top: 5px;">
+                                            {content[:300] + "..." if len(content) > 300 else content}
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                    
+                                    # Afficher image si c'est un message image
+                                    if msg_type == "image" and msg.get('image_data'):
+                                        try:
+                                            col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
+                                            with col_img2:
+                                                img = base64_to_image(msg['image_data'])
+                                                st.image(img, caption=f"Image - {sender}", width=200)
+                                        except Exception as e:
+                                            st.error(f"Erreur affichage image: {e}")
+                                    
+                                    # Bouton pour voir le message complet si tronqué
+                                    if len(content) > 300:
+                                        if st.button(f"Voir message complet", key=f"show_full_{idx}_{msg_idx}"):
+                                            st.text_area(
+                                                "Message complet:",
+                                                content,
+                                                height=200,
+                                                key=f"full_content_{idx}_{msg_idx}"
+                                            )
+                            
+                            elif show_messages and (not messages or len(messages) == 0):
+                                st.info("🔍 Aucun message dans cette conversation")
+                
                 else:
                     st.info("Aucune conversation trouvée")
                     
@@ -800,6 +947,8 @@ def show_admin_page():
                 st.error(f"Erreur lors du chargement des conversations: {e}")
                 st.write("**Détails de l'erreur:**")
                 st.code(str(e))
+                st.write("**Trace complète:**")
+                st.code(traceback.format_exc())
     
     with tab3:
         st.subheader("Statistiques Globales")
