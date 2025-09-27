@@ -1347,13 +1347,14 @@ with st.expander("ℹ️ Guide d'utilisation"):
     """)
 
 # -------------------------
-# Section Admin dans la sidebar si admin connecté
+# Section Admin dans la sidebar si admin connecté - VERSION CORRIGÉE
 # -------------------------
 if st.session_state.user.get("role") == "admin":
     with st.sidebar.expander("🔑 Fonctions Admin"):
         st.write("**Interface Administrateur disponible**")
-        if st.button("🚀 Lancer Interface Admin", key="admin_launch"):
-            redirect_to_admin()
+        if st.button("🚀 Accéder Interface Admin", key="admin_launch"):
+            st.session_state.page = "admin"
+            st.rerun()
         
         st.write("**Statut actuel:**")
         st.write(f"- Email: {st.session_state.user.get('email')}")
