@@ -83,18 +83,59 @@ supabase = init_supabase()
 # -------------------------
 def redirect_to_admin():
     """Redirige vers la page d'administration"""
-    st.success("Redirection vers l'interface administrateur...")
-    st.info("Lancement de l'interface administrateur...")
+    st.success("🚀 Redirection vers l'interface administrateur...")
     
+    # Méthode 1: Utiliser st.switch_page si disponible (Streamlit >= 1.28)
     try:
-        # Essayer de lancer streamlit_admin.py
-        subprocess.Popen([sys.executable, "-m", "streamlit", "run", "streamlit_admin.py"])
-        st.success("Interface administrateur lancée dans un nouvel onglet!")
-        st.info("Vous pouvez fermer cet onglet et utiliser l'interface administrateur.")
-        st.stop()
-    except Exception as e:
-        st.error(f"Erreur lors du lancement de l'interface admin: {e}")
-        st.info("Veuillez lancer manuellement: streamlit run streamlit_admin.py")
+        st.switch_page("streamlit_admin.py")
+        return
+    except AttributeError:
+        pass
+    
+    # Méthode 2: JavaScript redirect
+    st.markdown("""
+    <script type="text/javascript">
+        window.location.href = window.location.origin + "/?page=admin";
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # Méthode 3: Lien direct avec instructions
+    admin_url = f"http://localhost:8501"  # URL par défaut de Streamlit
+    
+    st.markdown(f"""
+    ### 🔗 Accès Interface Administrateur
+    
+    **Option 1: Cliquez sur le lien ci-dessous**
+    """)
+    
+    # Bouton avec lien externe
+    st.link_button(
+        "🚀 Ouvrir Interface Admin",
+        "http://localhost:8501",  # Vous devrez adapter cette URL
+        help="Ouvre l'interface admin dans un nouvel onglet"
+    )
+    
+    st.markdown("""
+    **Option 2: Ouvrez manuellement**
+    1. Ouvrez un nouveau terminal
+    2. Lancez: `streamlit run streamlit_admin.py`
+    3. L'interface s'ouvrira sur un port différent (généralement 8502)
+    
+    **Option 3: Même onglet (recommandé)**
+    Utilisez la navigation par pages Streamlit ci-dessous.
+    """)
+    
+    # Afficher les instructions d'accès
+    with st.expander("ℹ️ Instructions détaillées"):
+        st.code("""
+# Dans votre terminal, lancez:
+streamlit run streamlit_admin.py --server.port 8502
+
+# Puis accédez à: http://localhost:8502
+        """)
+    
+    # Option alternative: navigation interne
+    st.info("💡 **Recommandation**: Utilisez la navigation par pages intégrée ci-dessous")
 
 # -------------------------
 # Fonctions DB Corrigées avec gestion des rôles
@@ -625,7 +666,7 @@ if "qwen_client" not in st.session_state:
         st.session_state.qwen_client = None
 
 # -------------------------
-# Vérification admin et redirection
+# Vérification admin et redirection - VERSION AMÉLIORÉE
 # -------------------------
 def check_admin_redirect():
     """Vérifie si l'utilisateur est admin et propose la redirection"""
@@ -634,14 +675,243 @@ def check_admin_redirect():
         
         st.success(f"🔑 Bienvenue Administrateur: {st.session_state.user.get('name')}")
         
-        col1, col2 = st.columns(2)
+        # Navigation par pages si disponible
+        col1, col2, col3 = st.columns(3)
+        
         with col1:
-            if st.button("🚀 Accéder à l'interface Administrateur", type="primary"):
-                redirect_to_admin()
+            if st.button("🚀 Interface Admin (Même onglet)", type="primary"):
+                # Méthode 1: Navigation interne
+                st.session_state.page = "admin"
+                st.rerun()
         
         with col2:
-            if st.button("👤 Continuer en tant qu'utilisateur normal"):
+            if st.button("🔗 Interface Admin (Nouveau port)"):
+                redirect_to_admin()
+        
+        with col3:
+            if st.button("👤 Continuer ici"):
                 st.info("Vous pouvez utiliser l'interface utilisateur ci-dessous.")
+
+# -------------------------
+# Gestion de navigation par pages
+# -------------------------
+def show_admin_page():
+    """Affiche l'interface administrateur intégrée"""
+    st.title("🔑 Interface Administrateur")
+    st.write(f"Connecté en tant que: **{st.session_state.user.get('name')}**")
+    
+    # Bouton retour
+    if st.button("← Retour à l'interface utilisateur"):
+        st.session_state.page = "main"
+        st.rerun()
+    
+    # Tabs admin
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "👥 Utilisateurs", 
+        "💬 Conversations", 
+        "📊 Statistiques", 
+        "⚙️ Paramètres"
+    ])
+    
+    with tab1:
+        st.subheader("Gestion des Utilisateurs")
+        
+        if supabase:
+            try:
+                # Récupérer tous les utilisateurs
+                users_response = supabase.table("users").select("*").order("created_at", desc=True).execute()
+                
+                if users_response.data:
+                    users_df = pd.DataFrame(users_response.data)
+                    
+                    # Affichage des utilisateurs
+                    st.write(f"**Total utilisateurs: {len(users_df)}**")
+                    
+                    # Tableau des utilisateurs avec options de modification
+                    for idx, user in users_df.iterrows():
+                        with st.expander(f"👤 {user.get('name', 'N/A')} ({user.get('email')})"):
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.write(f"**ID:** {user.get('id', 'N/A')[:8]}...")
+                                st.write(f"**Email:** {user.get('email')}")
+                                st.write(f"**Nom:** {user.get('name')}")
+                            
+                            with col2:
+                                current_role = user.get('role', 'user')
+                                st.write(f"**Rôle actuel:** {current_role}")
+                                st.write(f"**Créé le:** {user.get('created_at', 'N/A')[:10]}")
+                            
+                            with col3:
+                                # Changer le rôle
+                                new_role = st.selectbox(
+                                    "Nouveau rôle:",
+                                    ["user", "admin"],
+                                    index=0 if current_role == "user" else 1,
+                                    key=f"role_{user.get('id')}"
+                                )
+                                
+                                if st.button("Mettre à jour", key=f"update_{user.get('id')}"):
+                                    try:
+                                        update_response = supabase.table("users").update(
+                                            {"role": new_role}
+                                        ).eq("id", user.get('id')).execute()
+                                        
+                                        if update_response.data:
+                                            st.success(f"Rôle mis à jour: {new_role}")
+                                            st.rerun()
+                                        else:
+                                            st.error("Erreur lors de la mise à jour")
+                                    except Exception as e:
+                                        st.error(f"Erreur: {e}")
+                else:
+                    st.info("Aucun utilisateur trouvé")
+                    
+            except Exception as e:
+                st.error(f"Erreur lors du chargement des utilisateurs: {e}")
+        else:
+            st.error("Connexion Supabase non disponible")
+    
+    with tab2:
+        st.subheader("Toutes les Conversations")
+        
+        if supabase:
+            try:
+                # Récupérer toutes les conversations avec informations utilisateur
+                convs_response = supabase.table("conversations").select("*").order("created_at", desc=True).limit(50).execute()
+                
+                if convs_response.data:
+                    st.write(f"**{len(convs_response.data)} conversations récentes**")
+                    
+                    for conv in convs_response.data:
+                        with st.expander(f"💬 {conv.get('description', 'Sans titre')} - {conv.get('created_at', '')[:16]}"):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.write(f"**ID Conv:** {conv.get('conversation_id', conv.get('id', 'N/A'))}")
+                                st.write(f"**User ID:** {conv.get('user_id', 'N/A')}")
+                                st.write(f"**Créée le:** {conv.get('created_at')}")
+                            
+                            with col2:
+                                # Compter les messages
+                                try:
+                                    msg_count = len(get_messages(conv.get('conversation_id', conv.get('id'))))
+                                    st.write(f"**Messages:** {msg_count}")
+                                except:
+                                    st.write("**Messages:** Erreur de comptage")
+                                
+                                # Option de suppression
+                                if st.button("🗑️ Supprimer", key=f"del_conv_{conv.get('id')}"):
+                                    # Ici vous pouvez ajouter la logique de suppression
+                                    st.warning("Fonctionnalité de suppression à implémenter")
+                else:
+                    st.info("Aucune conversation trouvée")
+                    
+            except Exception as e:
+                st.error(f"Erreur lors du chargement des conversations: {e}")
+    
+    with tab3:
+        st.subheader("Statistiques Globales")
+        
+        if supabase:
+            try:
+                # Statistiques utilisateurs
+                users_count = supabase.table("users").select("id", count="exact").execute()
+                
+                # Statistiques conversations
+                convs_count = supabase.table("conversations").select("id", count="exact").execute()
+                
+                # Statistiques messages
+                msgs_count = supabase.table("messages").select("id", count="exact").execute()
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("👥 Utilisateurs", users_count.count if users_count.count else "N/A")
+                
+                with col2:
+                    st.metric("💬 Conversations", convs_count.count if convs_count.count else "N/A")
+                
+                with col3:
+                    st.metric("💬 Messages Total", msgs_count.count if msgs_count.count else "N/A")
+                
+                # Graphiques (si vous avez des données temporelles)
+                st.subheader("📈 Activité Récente")
+                
+                # Récupérer les données des 7 derniers jours
+                try:
+                    recent_convs = supabase.table("conversations").select("created_at").gte("created_at", 
+                        (pd.Timestamp.now() - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+                    ).execute()
+                    
+                    if recent_convs.data:
+                        df_recent = pd.DataFrame(recent_convs.data)
+                        df_recent['date'] = pd.to_datetime(df_recent['created_at']).dt.date
+                        daily_counts = df_recent['date'].value_counts().sort_index()
+                        
+                        st.bar_chart(daily_counts)
+                    else:
+                        st.info("Pas d'activité récente à afficher")
+                        
+                except Exception as e:
+                    st.error(f"Erreur graphiques: {e}")
+                    
+            except Exception as e:
+                st.error(f"Erreur statistiques: {e}")
+    
+    with tab4:
+        st.subheader("Paramètres Système")
+        
+        # Informations système
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**🔗 Connexions:**")
+            st.write(f"- Supabase: {'✅ OK' if supabase else '❌ KO'}")
+            st.write(f"- LLaMA: {'✅ OK' if st.session_state.llama_client else '❌ KO'}")
+            st.write(f"- Qwen: {'✅ OK' if st.session_state.qwen_client else '❌ KO'}")
+            st.write(f"- BLIP: {'✅ OK' if st.session_state.processor else '❌ KO'}")
+        
+        with col2:
+            st.write("**📁 Fichiers:**")
+            try:
+                tmp_count = len([f for f in os.listdir(TMP_DIR) if os.path.isfile(os.path.join(TMP_DIR, f))])
+                edited_count = len([f for f in os.listdir(EDITED_IMAGES_DIR) if os.path.isfile(os.path.join(EDITED_IMAGES_DIR, f))])
+                st.write(f"- Fichiers temp: {tmp_count}")
+                st.write(f"- Images éditées: {edited_count}")
+            except:
+                st.write("- Erreur accès fichiers")
+        
+        # Actions admin
+        st.subheader("🛠️ Actions Administrateur")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🧹 Nettoyer fichiers"):
+                cleanup_temp_files()
+                st.success("Nettoyage effectué!")
+        
+        with col2:
+            if st.button("🔄 Tester connexions"):
+                # Tester toutes les connexions
+                st.write("Test en cours...")
+                # Ajouter vos tests ici
+        
+        with col3:
+            if st.button("📊 Exporter données"):
+                st.info("Fonctionnalité d'export à implémenter")
+
+# -------------------------
+# Gestion de la navigation
+# -------------------------
+if "page" not in st.session_state:
+    st.session_state.page = "main"
+
+# Affichage selon la page
+if st.session_state.page == "admin":
+    show_admin_page()
+    st.stop()  # Empêche l'affichage du reste
 
 # -------------------------
 # Sidebar Debug
