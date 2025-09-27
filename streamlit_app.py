@@ -1414,5 +1414,5 @@ with st.sidebar.expander("🔑 Améliorations futures"):
 # Footer final avec version
 # -------------------------
 st.markdown("---")
-st.markdown("**Vision AI Chat v2.0** - *Créé par Pepe Musafiri avec accès aux informations 2025* 🚀")
-st.markdown("*Modèles: BLIP + LLaMA 3.1 70B + Qwen ImageEditPro + Web Search*") "
+st.markdown("Vision AI Chat v2.0 - Créé par Pepe Musafiri avec accès aux informations 2025")
+st.markdown("Modèles: BLIP + LLaMA 3.1 70B + Qwen ImageEditPro + Web Search") "
