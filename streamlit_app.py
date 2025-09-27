@@ -1,3 +1,5 @@
+
+
 import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
@@ -11,8 +13,6 @@ import os
 import uuid
 import traceback
 from supabase import create_client
-import subprocess
-import sys
 
 # ------------------------- 
 # Config
@@ -751,32 +751,55 @@ def show_admin_page():
                 if convs_response.data:
                     st.write(f"**{len(convs_response.data)} conversations récentes**")
                     
-                    for conv in convs_response.data:
+                    for idx, conv in enumerate(convs_response.data):
+                        # Créer un ID unique pour éviter les collisions
+                        conv_id = conv.get('conversation_id') or conv.get('id') or f"conv_{idx}"
+                        conv_display_id = str(conv_id)[:8] if conv_id != f"conv_{idx}" else f"conv_{idx}"
+                        
                         with st.expander(f"💬 {conv.get('description', 'Sans titre')} - {conv.get('created_at', '')[:16]}"):
                             col1, col2 = st.columns(2)
                             
                             with col1:
-                                st.write(f"**ID Conv:** {conv.get('conversation_id', conv.get('id', 'N/A'))}")
+                                st.write(f"**ID Conv:** {conv_display_id}")
                                 st.write(f"**User ID:** {conv.get('user_id', 'N/A')}")
-                                st.write(f"**Créée le:** {conv.get('created_at')}")
+                                st.write(f"**Créée le:** {conv.get('created_at', 'N/A')}")
                             
                             with col2:
                                 # Compter les messages
                                 try:
-                                    msg_count = len(get_messages(conv.get('conversation_id', conv.get('id'))))
-                                    st.write(f"**Messages:** {msg_count}")
-                                except:
-                                    st.write("**Messages:** Erreur de comptage")
+                                    if conv_id and conv_id != f"conv_{idx}":
+                                        msg_count = len(get_messages(conv_id))
+                                        st.write(f"**Messages:** {msg_count}")
+                                    else:
+                                        st.write(f"**Messages:** ID invalide")
+                                except Exception as e:
+                                    st.write(f"**Messages:** Erreur ({str(e)[:30]}...)")
                                 
-                                # Option de suppression
-                                if st.button("🗑️ Supprimer", key=f"del_conv_{conv.get('id')}"):
-                                    # Ici vous pouvez ajouter la logique de suppression
-                                    st.warning("Fonctionnalité de suppression à implémenter")
+                                # Option de suppression avec clé unique
+                                if st.button("🗑️ Supprimer", key=f"del_conv_{idx}_{conv_id}"):
+                                    if conv_id and conv_id != f"conv_{idx}":
+                                        try:
+                                            # Supprimer d'abord les messages
+                                            supabase.table("messages").delete().eq("conversation_id", conv_id).execute()
+                                            # Puis supprimer la conversation
+                                            delete_result = supabase.table("conversations").delete().eq("conversation_id", conv_id).execute()
+                                            
+                                            if delete_result.data:
+                                                st.success(f"Conversation {conv_display_id} supprimée!")
+                                                st.rerun()
+                                            else:
+                                                st.error("Erreur lors de la suppression")
+                                        except Exception as e:
+                                            st.error(f"Erreur suppression: {e}")
+                                    else:
+                                        st.error("ID de conversation invalide")
                 else:
                     st.info("Aucune conversation trouvée")
                     
             except Exception as e:
                 st.error(f"Erreur lors du chargement des conversations: {e}")
+                st.write("**Détails de l'erreur:**")
+                st.code(str(e))
     
     with tab3:
         st.subheader("Statistiques Globales")
