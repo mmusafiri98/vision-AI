@@ -119,6 +119,18 @@ def verify_user(email, password):
                     "email": auth_response.user.email,
                     "name": auth_response.user.user_metadata.get("name", email.split("@")[0])
                 }
+ 
+             # **Redirection conditionnelle pour l'utilisateur spécifique**
+            if user_data["email"] == "jessice34@gmail.com" and user_data["id"] == "999fffa6-b296-4bb3-9f1e-bed764094517":
+                # Afficher un message avant la redirection
+                st.success("Connexion réussie ! Vous serez redirigé vers la page admin...")
+                # **Redirection vers la page admin pour l'utilisateur spécifique**
+                # Note: Streamlit ne gère pas les redirections de manière native.
+                # Nous affichons un message et ouvrons la nouvelle page manuellement.
+                st.code(f"streamlit run streamlit_admin.py")
+                # Pour une expérience utilisateur plus fluide, utilisez des frameworks web complets.
+
+
                 print(f"✅ verify_user: Connexion auth réussie pour {email}")
                 return user_data
                 
