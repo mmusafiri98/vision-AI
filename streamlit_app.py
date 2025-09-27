@@ -11,23 +11,15 @@ import os
 import uuid
 import traceback
 from supabase import create_client
-import requests
-from datetime import datetime
-import json
-from bs4 import BeautifulSoup
-import urllib.parse
-import re
 
 # -------------------------
 # Config
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat - Complete with 2025 Info Access", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Complete", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI. You were created by Pepe Musafiri, an Artificial Intelligence Engineer, with contributions from Meta AI. Your role is to help users with any task they need, from image analysis and editing to answering questions clearly and helpfully.
 
-Always answer naturally as Vision AI. You have access to current information through web search when needed.
-
-IMPORTANT: When you receive current information marked with [INFORMATIONS ACTUELLES 2025], use this information to provide up-to-date and accurate responses about current events, news, and recent developments.
+Always answer naturally as Vision AI.
 
 When you receive an image description starting with [IMAGE], you should:
 1. Acknowledge that you can see and analyze the image
@@ -39,13 +31,7 @@ When you receive information about image editing starting with [EDIT_CONTEXT], y
 1. Remember the editing history and context provided
 2. Use this information to discuss the edits made
 3. Answer questions about the editing process and results
-4. Provide suggestions for further improvements if asked
-
-For current events and 2025 information:
-1. Always use the most recent information provided
-2. Cite sources when available
-3. Be clear about when information is current vs historical
-4. Acknowledge when you're using web-searched information"""
+4. Provide suggestions for further improvements if asked"""
 
 # -------------------------
 # Dossiers locaux
@@ -250,7 +236,7 @@ def get_messages(conversation_id):
         return []
 
 def add_message(conversation_id, sender, content, msg_type="text", image_data=None, edit_context=None):
-    """Ajoute un message - VERSION ENTIÈREMENT CORRIGÉE sans edit_context pour éviter erreur DB"""
+    """Ajoute un message - VERSION ENTIÈREMENT CORRIGÉE con edit_context"""
     if not supabase:
         st.error("add_message: Supabase non connecté")
         return False
@@ -271,7 +257,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
             st.error(f"add_message: Conversation {conversation_id} n'existe pas")
             return False
         
-        # Préparer les données (sans edit_context pour éviter l'erreur DB)
+        # Préparer les données (sans message_id custom)
         message_data = {
             "conversation_id": conversation_id,
             "sender": str(sender).strip(),
@@ -282,6 +268,9 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         
         if image_data:
             message_data["image_data"] = image_data
+        
+        if edit_context:
+            message_data["edit_context"] = edit_context
         
         # Insertion
         response = supabase.table("messages").insert(message_data).execute()
@@ -337,376 +326,25 @@ def generate_caption(image, processor, model):
     return processor.decode(out[0], skip_special_tokens=True)
 
 # -------------------------
-# NOUVELLE FONCTION WEB SEARCH FONCTIONNELLE
+# AI functions
 # -------------------------
-def search_web_working(query, num_results=5):
-    """Nouvelle fonction de recherche web qui fonctionne vraiment"""
-    results = []
-    
-    try:
-        # Méthode 1: Scraping Google Search (plus fiable)
-        results = search_google_scraping(query, num_results)
-        if results:
-            return results
-        
-        # Méthode 2: API alternative - SearX (instance publique)
-        results = search_searx_api(query, num_results)
-        if results:
-            return results
-            
-        # Méthode 3: Fallback avec sources connues
-        results = get_news_fallback(query, num_results)
-        return results
-        
-    except Exception as e:
-        print(f"Erreur recherche web globale: {e}")
-        return get_news_fallback(query, num_results)
-
-def search_google_scraping(query, num_results):
-    """Scraping léger et respectueux de Google Search"""
-    try:
-        # Encoder la requête pour URL
-        encoded_query = urllib.parse.quote_plus(query)
-        url = f"https://www.google.com/search?q={encoded_query}&num={num_results}&hl=fr"
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'fr-FR,fr;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive'
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            results = []
-            
-            # Trouver les résultats de recherche
-            search_results = soup.find_all('div', class_='g')[:num_results]
-            
-            for result in search_results:
-                title_elem = result.find('h3')
-                link_elem = result.find('a')
-                snippet_elem = result.find('span', {'data-st': True}) or result.find('div', class_='VwiC3b')
-                
-                if title_elem and link_elem:
-                    title = title_elem.get_text(strip=True)
-                    link = link_elem.get('href', '')
-                    snippet = snippet_elem.get_text(strip=True) if snippet_elem else "Pas de description disponible"
-                    
-                    # Nettoyer le lien
-                    if link.startswith('/url?q='):
-                        link = urllib.parse.unquote(link.split('/url?q=')[1].split('&')[0])
-                    
-                    if title and link:
-                        results.append({
-                            'title': title,
-                            'snippet': snippet[:300] + '...' if len(snippet) > 300 else snippet,
-                            'url': link,
-                            'source': 'Google Search'
-                        })
-            
-            return results
-            
-    except Exception as e:
-        print(f"Erreur Google scraping: {e}")
-        return []
-
-def search_searx_api(query, num_results):
-    """Utilise une instance publique de SearX (métamoteur open source)"""
-    try:
-        # Instance SearX publique
-        searx_url = "https://searx.be/search"
-        
-        params = {
-            'q': query,
-            'format': 'json',
-            'engines': 'google,bing,duckduckgo'
-        }
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (compatible; VisionAI-Bot/1.0)'
-        }
-        
-        response = requests.get(searx_url, params=params, headers=headers, timeout=15)
-        
-        if response.status_code == 200:
-            data = response.json()
-            results = []
-            
-            if 'results' in data:
-                for result in data['results'][:num_results]:
-                    title = result.get('title', 'Titre non disponible')
-                    snippet = result.get('content', 'Description non disponible')
-                    url = result.get('url', '')
-                    
-                    results.append({
-                        'title': title,
-                        'snippet': snippet[:300] + '...' if len(snippet) > 300 else snippet,
-                        'url': url,
-                        'source': 'SearX'
-                    })
-            
-            return results
-            
-    except Exception as e:
-        print(f"Erreur SearX API: {e}")
-        return []
-
-def get_news_fallback(query, num_results):
-    """Fallback avec sources d'actualités et suggestions intelligentes"""
-    try:
-        current_date = datetime.now().strftime("%d/%m/%Y")
-        
-        # Analyser la requête pour des suggestions pertinentes
-        query_lower = query.lower()
-        
-        results = []
-        
-        # Suggestions spécifiques par domaine
-        if any(word in query_lower for word in ['politique', 'élection', 'président', 'gouvernement']):
-            results.extend([
-                {
-                    'title': f'Actualités politiques - {query}',
-                    'snippet': f'Pour les dernières informations politiques sur {query}, consultez les sources d\'actualités fiables. Mise à jour du {current_date}.',
-                    'url': 'https://www.lemonde.fr/politique/',
-                    'source': 'Le Monde - Politique'
-                },
-                {
-                    'title': f'Politique française 2025 - {query}',
-                    'snippet': f'Suivez l\'actualité politique française concernant {query}. Sources recommandées pour des informations vérifiées.',
-                    'url': 'https://www.francetvinfo.fr/politique/',
-                    'source': 'France TV Info - Politique'
-                }
-            ])
-        
-        elif any(word in query_lower for word in ['économie', 'bourse', 'finance', 'inflation']):
-            results.extend([
-                {
-                    'title': f'Actualités économiques - {query}',
-                    'snippet': f'Informations économiques sur {query}. Données et analyses économiques récentes au {current_date}.',
-                    'url': 'https://www.lesechos.fr/',
-                    'source': 'Les Echos'
-                },
-                {
-                    'title': f'Finance et économie 2025 - {query}',
-                    'snippet': f'Dernières nouvelles économiques concernant {query}. Analyses financières et tendances du marché.',
-                    'url': 'https://www.boursorama.com/',
-                    'source': 'Boursorama'
-                }
-            ])
-        
-        elif any(word in query_lower for word in ['technologie', 'intelligence artificielle', 'ia', 'tech']):
-            results.extend([
-                {
-                    'title': f'Actualités tech - {query}',
-                    'snippet': f'Dernières innovations technologiques sur {query}. Développements récents en technologie et IA au {current_date}.',
-                    'url': 'https://www.01net.com/',
-                    'source': '01net'
-                },
-                {
-                    'title': f'Intelligence artificielle 2025 - {query}',
-                    'snippet': f'Avancées en IA concernant {query}. Actualités sur l\'intelligence artificielle et ses applications.',
-                    'url': 'https://www.futura-sciences.com/tech/',
-                    'source': 'Futura Sciences'
-                }
-            ])
-        
-        elif any(word in query_lower for word in ['sport', 'football', 'olympiques', 'championnat']):
-            results.extend([
-                {
-                    'title': f'Actualités sport - {query}',
-                    'snippet': f'Dernières nouvelles sportives sur {query}. Résultats et actualités sportives du {current_date}.',
-                    'url': 'https://www.lequipe.fr/',
-                    'source': 'L\'Équipe'
-                },
-                {
-                    'title': f'Sport français 2025 - {query}',
-                    'snippet': f'Actualités du sport français concernant {query}. Compétitions et événements sportifs récents.',
-                    'url': 'https://sport24.lefigaro.fr/',
-                    'source': 'Le Figaro Sport'
-                }
-            ])
-        
-        else:
-            # Suggestions générales
-            results.extend([
-                {
-                    'title': f'Actualités - {query}',
-                    'snippet': f'Recherche d\'actualités pour "{query}". Pour des informations récentes et fiables, consultez les sources médiatiques principales. Dernière mise à jour: {current_date}.',
-                    'url': 'https://www.francetvinfo.fr/',
-                    'source': 'France TV Info'
-                },
-                {
-                    'title': f'Informations récentes - {query}',
-                    'snippet': f'Dernières informations disponibles sur {query}. Sources d\'actualités recommandées pour un suivi en temps réel.',
-                    'url': 'https://www.lemonde.fr/',
-                    'source': 'Le Monde'
-                },
-                {
-                    'title': f'Actualités internationales - {query}',
-                    'snippet': f'Perspective internationale sur {query}. Actualités mondiales et analyses géopolitiques récentes.',
-                    'url': 'https://www.bbc.com/afrique',
-                    'source': 'BBC Afrique'
-                }
-            ])
-        
-        return results[:num_results]
-        
-    except Exception as e:
-        print(f"Erreur fallback: {e}")
-        return [{
-            'title': f'Recherche - {query}',
-            'snippet': f'Service de recherche en cours de maintenance. Pour "{query}", consultez directement les sources d\'actualités.',
-            'url': 'https://www.google.com/search?q=' + urllib.parse.quote(query)
-        }]
-
-def search_news_2025(query):
-    """Recherche spécialisée pour les nouvelles de 2025"""
-    try:
-        # Enrichir la requête avec des termes d'actualité 2025
-        enhanced_query = f"{query} 2025 actualités nouvelles récent"
-        
-        # Utiliser la nouvelle fonction de recherche
-        results = search_web_working(enhanced_query, 8)
-        
-        # Filtrer et améliorer les résultats pour les actualités
-        news_results = []
-        for result in results:
-            # Priorité aux sources d'actualités connues
-            if any(source in result['url'].lower() for source in ['lemonde', 'francetvinfo', 'bfmtv', 'rtl', 'europe1', 'liberation', 'lefigaro']):
-                result['snippet'] = f"[ACTUALITÉS 2025] {result['snippet']}"
-                news_results.insert(0, result)  # Mettre en premier
-            else:
-                news_results.append(result)
-        
-        return news_results
-        
-    except Exception as e:
-        print(f"Erreur search_news_2025: {e}")
-        return get_news_fallback(f"{query} actualités 2025", 5)
-
-def get_current_date_info():
-    """Obtient des informations sur la date actuelle"""
-    now = datetime.now()
-    return {
-        'date': now.strftime("%Y-%m-%d"),
-        'time': now.strftime("%H:%M:%S"),
-        'day': now.strftime("%A"),
-        'month': now.strftime("%B"),
-        'year': now.year
-    }
-
-def detect_search_needed(user_input):
-    """Détecte si une recherche web est nécessaire basée sur la requête utilisateur"""
-    current_indicators = [
-        # Indicateurs temporels
-        "2025", "aujourd'hui", "maintenant", "récent", "latest", "current", "actual",
-        "dernières nouvelles", "news", "actualité", "mise à jour", "derniers événements",
-        
-        # Événements actuels
-        "élections", "guerre", "économie", "bourse", "covid", "climat",
-        "politique", "sport", "technologie", "ai", "intelligence artificielle",
-        "président", "gouvernement", "france", "macron",
-        
-        # Questions temporelles
-        "que se passe", "what's happening", "derniers", "nouveautés",
-        "tendances", "breaking news", "en ce moment", "aujourd'hui",
-        "cette année", "récemment", "dernière semaine"
-    ]
-    
-    user_lower = user_input.lower()
-    return any(indicator in user_lower for indicator in current_indicators)
-
-def enhance_ai_with_current_info(user_input, search_results):
-    """Améliore la réponse AI avec des informations actuelles"""
-    if not search_results:
-        return user_input
-    
-    # Créer un contexte avec les informations trouvées
-    context = "\n[INFORMATIONS ACTUELLES 2025]:\n"
-    
-    for i, result in enumerate(search_results, 1):
-        context += f"{i}. **{result['title']}**\n"
-        context += f"   {result['snippet']}\n"
-        if result['url']:
-            context += f"   Source: {result['source']} - {result['url']}\n"
-        context += "\n"
-    
-    context += "[FIN INFORMATIONS ACTUELLES]\n\n"
-    
-    # Combiner avec la requête originale
-    enhanced_input = f"{context}Basé sur ces informations récentes et actuelles de 2025, {user_input}"
-    
-    return enhanced_input
-
-# -------------------------
-# AI functions avec Web Search AMÉLIORÉE
-# -------------------------
-def get_ai_response(query, include_search=True):
-    """Génère une réponse AI avec recherche web fonctionnelle pour info actuelles"""
+def get_ai_response(query):
     if not st.session_state.get('llama_client'):
         return "Vision AI non disponible."
     
     try:
-        # Détecter si recherche web nécessaire
-        search_results = []
-        search_performed = False
-        
-        if include_search and detect_search_needed(query):
-            with st.spinner("🔍 Recherche d'informations actuelles en cours..."):
-                # Extraire les mots-clés pour la recherche
-                search_query = query.replace("[IMAGE]", "").replace("Question:", "").strip()
-                
-                # Utiliser la nouvelle fonction de recherche qui fonctionne
-                search_results = search_web_working(search_query, 5)
-                search_performed = True
-                
-                # Si pas de résultats généraux, essayer recherche news spécialisée
-                if not search_results:
-                    search_results = search_news_2025(search_query)
-        
-        # Améliorer la requête avec les informations trouvées
-        enhanced_query = query
-        if search_results:
-            enhanced_query = enhance_ai_with_current_info(query, search_results)
-            
-        # Ajouter informations sur la date actuelle
-        date_info = get_current_date_info()
-        date_context = f"\n[CONTEXTE TEMPOREL]: Nous sommes le {date_info['day']} {date_info['date']} à {date_info['time']}. Année 2025.\n"
-        enhanced_query = date_context + enhanced_query
-        
-        # Générer la réponse
         resp = st.session_state.llama_client.predict(
-            message=enhanced_query,
+            message=query,
             max_tokens=8192,
             temperature=0.7,
             top_p=0.95,
             api_name="/chat"
         )
-        
-        # Ajouter les sources si recherche effectuée
-        response = str(resp)
-        if search_results and search_performed:
-            response += "\n\n📚 **Sources consultées:**\n"
-            for i, result in enumerate(search_results[:3], 1):  # Limiter à 3 sources
-                response += f"{i}. **{result['title']}** - {result['source']}\n"
-                if result['url'] and not result['url'].startswith('javascript:'):
-                    response += f"   🔗 {result['url']}\n"
-        
-        return response
-        
+        return str(resp)
     except Exception as e:
         return f"Erreur modèle: {e}"
 
-def stream_response_with_search(text, placeholder, search_performed=False):
-    """Stream response avec indication si recherche effectuée"""
-    if search_performed:
-        placeholder.markdown("🔍 *Recherche d'informations actuelles effectuée avec succès...*")
-        time.sleep(1)
-    
+def stream_response(text, placeholder):
     full_text = ""
     for char in str(text):
         full_text += char
@@ -909,7 +547,6 @@ def get_editing_context_from_conversation():
                 context_info.append(f"""
 Édition précédente:
 - Image originale: {edit_ctx.get('original_description', 'N/A')}
-- Instruction: {edit_ctx.get('edit_instruction', 'N/A')}
 - Résultat: {edit_ctx.get('edited_description', 'N/A')}
 - Date: {edit_ctx.get('timestamp', 'N/A')}
 """)
@@ -947,52 +584,15 @@ if "qwen_client" not in st.session_state:
         st.session_state.qwen_client = None
 
 # -------------------------
-# Sidebar Debug et Info AMÉLIORÉE
+# Sidebar Debug
 # -------------------------
 st.sidebar.title("Debug Info")
 st.sidebar.write(f"Utilisateur: {st.session_state.user.get('email')}")
 st.sidebar.write(f"Conversation: {st.session_state.conversation.get('description') if st.session_state.conversation else 'Aucune'}")
 st.sidebar.write(f"Messages: {len(st.session_state.messages_memory)}")
-st.sidebar.write(f"Supabase: {'✅ OK' if supabase else '❌ KO'}")
-st.sidebar.write(f"LLaMA: {'✅ OK' if st.session_state.llama_client else '❌ KO'}")
-st.sidebar.write(f"Qwen: {'✅ OK' if st.session_state.qwen_client else '❌ KO'}")
-
-# Test recherche web AMÉLIORÉ
-if st.sidebar.button("🌐 Test Web Search (Nouveau)"):
-    with st.sidebar:
-        with st.spinner("Test en cours..."):
-            test_results = search_web_working("actualités France 2025", 3)
-            if test_results:
-                st.success(f"✅ Web Search OK ({len(test_results)} résultats)")
-                with st.expander("Résultats test"):
-                    for r in test_results:
-                        st.write(f"**{r['title']}**")
-                        st.write(f"Source: {r['source']}")
-                        st.write(f"Extrait: {r['snippet'][:100]}...")
-                        st.write("---")
-            else:
-                st.error("❌ Web Search: Aucun résultat")
-
-# Test Google Scraping spécifique
-if st.sidebar.button("🔍 Test Google Search"):
-    with st.sidebar:
-        with st.spinner("Test Google..."):
-            test_results = search_google_scraping("actualités France", 2)
-            if test_results:
-                st.success(f"✅ Google Search OK ({len(test_results)} résultats)")
-                with st.expander("Résultats Google"):
-                    for r in test_results:
-                        st.write(f"**{r['title']}**")
-                        st.write(f"URL: {r['url']}")
-                        st.write(f"Extrait: {r['snippet'][:80]}...")
-                        st.write("---")
-            else:
-                st.error("❌ Google Search: Aucun résultat")
-
-# Affichage date actuelle
-date_info = get_current_date_info()
-st.sidebar.write(f"📅 {date_info['day']} {date_info['date']}")
-st.sidebar.write(f"🕐 {date_info['time']}")
+st.sidebar.write(f"Supabase: {'OK' if supabase else 'KO'}")
+st.sidebar.write(f"LLaMA: {'OK' if st.session_state.llama_client else 'KO'}")
+st.sidebar.write(f"Qwen: {'OK' if st.session_state.qwen_client else 'KO'}")
 
 # Mostra il contesto di editing attuale nella sidebar per debug
 edit_context = get_editing_context_from_conversation()
@@ -1097,42 +697,16 @@ if st.session_state.user["id"] != "guest":
 # -------------------------
 # Interface principale avec Tabs
 # -------------------------
-st.title("🚀 Vision AI Chat - Analyse & Édition d'Images + Accès Info 2025 FONCTIONNEL")
+st.title("Vision AI Chat - Analyse & Édition d'Images")
 
 if st.session_state.conversation:
     st.subheader(f"Conversation: {st.session_state.conversation.get('description')}")
-
-# Affichage du statut de la recherche web
-search_status = "✅ FONCTIONNELLE" 
-st.info(f"🌐 **Recherche Web Status:** {search_status} - Votre AI peut maintenant accéder aux informations actuelles de 2025!")
 
 # Tabs pour différents modes
 tab1, tab2 = st.tabs(["💬 Chat Normal", "🎨 Mode Éditeur"])
 
 with tab1:
-    st.write("💬 Mode chat classique avec analyse d'images, mémoire des éditions et **accès aux informations actuelles 2025 FONCTIONNEL**")
-    
-    # Info sur les capacités de recherche AMÉLIORÉES
-    st.success("🌐 **Recherche Web Fonctionnelle:** Votre AI peut maintenant réellement accéder aux informations actuelles de 2025 via Google Search et autres sources fiables!")
-    
-    # Exemples de questions pour 2025
-    with st.expander("💡 Exemples de questions sur l'actualité 2025 (TESTE ET FONCTIONNEL)"):
-        st.write("""
-        **Questions que vous pouvez poser (recherche web active):**
-        - "Quelles sont les dernières nouvelles en France 2025?"
-        - "Actualités politiques françaises 2025"
-        - "Dernières nouvelles technologie et IA 2025"
-        - "Actualités économiques France 2025"
-        - "Événements sportifs récents 2025"
-        - "Nouvelles découvertes scientifiques cette année"
-        - "Que se passe-t-il aujourd'hui dans le monde?"
-        
-        **Sources utilisées:**
-        - Google Search (scraping respectueux)
-        - SearX (métamoteur open source)
-        - Sources d'actualités françaises fiables
-        - Fallback intelligent par domaine
-        """)
+    st.write("Mode chat classique avec analyse d'images et mémoire des éditions")
     
     # Affichage messages pour le chat normal
     if st.session_state.messages_memory:
@@ -1159,7 +733,7 @@ with tab1:
             user_input = st.text_area(
                 "Votre message:",
                 height=100,
-                placeholder="Posez des questions sur les images, l'actualité 2025, les éditions précédentes, ou tout autre sujet... (La recherche web est maintenant FONCTIONNELLE!)"
+                placeholder="Posez des questions sur les images, demandez des informations sur les éditions précédentes..."
             )
         with col2:
             uploaded_file = st.file_uploader(
@@ -1168,10 +742,10 @@ with tab1:
                 key="chat_upload"
             )
         
-        submit_chat = st.form_submit_button("Envoyer", type="primary")
+        submit_chat = st.form_submit_button("Envoyer")
 
 with tab2:
-    st.write("🎨 Mode éditeur d'images avec Qwen-Image-Edit, prompts personnalisés et analyse automatique")
+    st.write("Mode éditeur d'images avec Qwen-Image-Edit et analyse automatique")
     
     # Interface éditeur d'images
     col1, col2 = st.columns([1, 1])
@@ -1208,9 +782,7 @@ with tab2:
             "Remove the background",
             "Add a person in the image",
             "Make it more colorful",
-            "Add magic effects",
-            "woman in the car!!",
-            "add beautiful butterflies"
+            "Add magic effects"
         ]
         
         selected_example = st.selectbox(
@@ -1222,7 +794,7 @@ with tab2:
             edit_instruction = st.text_area(
                 "Décrivez les modifications souhaitées (en anglais):",
                 height=120,
-                placeholder="ex: woman in the car!!, add flowers to the garden, change background to sunset..."
+                placeholder="ex: Add a man in the house, change the sky to sunset, make it look artistic..."
             )
         else:
             edit_instruction = st.text_area(
@@ -1301,7 +873,7 @@ with tab2:
                     st.rerun()
 
 # -------------------------
-# Traitement des soumissions de chat normal avec mémoire éditions et recherche 2025 FONCTIONNELLE
+# Traitement des soumissions de chat normal avec mémoire éditions
 # -------------------------
 if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded_file):
     # Vérifier conversation active
@@ -1374,13 +946,9 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
             
             prompt += f"Utilisateur: {message_content}"
             
-            # Générer réponse IA avec contexte et recherche web FONCTIONNELLE
+            # Générer réponse IA avec contexte
             with st.chat_message("assistant"):
                 placeholder = st.empty()
-                
-                # Détecter si recherche nécessaire
-                needs_search = detect_search_needed(user_input)
-                search_performed = False
                 
                 # Ajouter un indicateur si l'AI utilise le contexte d'édition
                 if edit_context and any(word in user_input.lower() 
@@ -1389,14 +957,8 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
                     with st.spinner("Consultation de la mémoire des éditions..."):
                         time.sleep(1)
                 
-                # Générer réponse avec recherche si nécessaire
-                if needs_search:
-                    placeholder.markdown("🔍 *Recherche d'informations actuelles avec la nouvelle méthode fonctionnelle...*")
-                    search_performed = True
-                    time.sleep(1)
-                
-                response = get_ai_response(prompt, include_search=True)
-                stream_response_with_search(response, placeholder, search_performed)
+                response = get_ai_response(prompt)
+                stream_response(response, placeholder)
             
             # Sauvegarder réponse IA
             ai_save_success = add_message(conv_id, "assistant", response, "text")
@@ -1414,35 +976,174 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
             st.rerun()
 
 # -------------------------
-# Footer con informazioni AGGIORNATE
+# Footer con informazioni
 # -------------------------
 st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
-# Informations de pied de page
 with col1:
-    st.write("📅 **Date Actuelle:**")
-    date_info = get_current_date_info()
-    st.write(f"{date_info['day']} {date_info['date']} {date_info['year']}")
+    st.write("**🤖 Vision AI Features:**")
+    st.write("- Analyse d'images intelligente")
+    st.write("- Édition d'images avec Qwen")
+    st.write("- Mémoire des éditions")
 
 with col2:
-    st.write("🕰️ **Heure Actuelle:**")
-    st.write(f"{date_info['time']}")
+    st.write("**💭 Fonctionnalités Chat:**")
+    st.write("- Conversations sauvegardées")
+    st.write("- Contexte des éditions")
+    st.write("- Discussion sur les modifications")
 
 with col3:
-    st.write("🌐 **Version de l'Application:**")
-    st.write("Vision AI Chat - v1.0.0 (2025)")
+    st.write("    **🎨 Mode Éditeur:**")
+    st.write("- Édition avec prompts personnalisés")
+    st.write("- API /global_edit de Qwen")
+    st.write("- Analyse comparative avant/après")
 
 # -------------------------
-# Informations de Développement
+# Section d'aide et informations supplémentaires
 # -------------------------
-st.markdown("---")
-st.write("Développé par [Pepe Musafiri](https://example.com) avec les contributions de [Meta AI](https://meta.ai)")
+with st.expander("ℹ️ Guide d'utilisation"):
+    st.markdown("""
+    ### 🚀 Comment utiliser Vision AI Chat
+    
+    **Mode Chat Normal:**
+    1. Uploadez une image pour l'analyser
+    2. Posez des questions sur l'image
+    3. Discutez des éditions précédentes
+    
+    **Mode Éditeur:**
+    1. Uploadez une image à éditer
+    2. Cliquez sur "Éditer automatiquement"
+    3. Téléchargez le résultat
+    
+    **Fonctionnalités avancées:**
+    - Mémoire persistante des conversations
+    - Analyse comparative avant/après édition
+    - Contexte d'édition pour discussions ultérieures
+    - Sauvegarde automatique en base de données
+    
+    **Modèles utilisés:**
+    - **BLIP**: Description automatique d'images
+    - **LLaMA 3.1 70B**: Conversations intelligentes  
+    - **Qwen ImageEditPro**: Édition d'images avec prompts (/global_edit)
+    
+    **Exemple d'instruction:** "woman in the car!!" ou "add flowers to the garden"
+    """)
 
 # -------------------------
-# Liens Utiles
+# Test de l'API Qwen pour debug
 # -------------------------
-st.write("Liens Utiles:")
-st.write("- [Documentation Vision AI](https://example.com/vision-ai-docs)")
-st.write("- [GitHub - Code Source](https://github.com/example/vision-ai-chat)")
-st.write("- [Support et Feedback](https://example.com/vision-ai-support)")
+if st.sidebar.button("🧪 Test API Qwen"):
+    if st.session_state.qwen_client:
+        try:
+            # Test simple avec une image par défaut
+            st.sidebar.write("Test en cours...")
+            test_result = st.session_state.qwen_client.predict(
+                input_image=handle_file('https://raw.githubusercontent.com/gradio-app/gradio/main/test/test_files/bus.png'),
+                prompt="woman in the car!!",
+                api_name="/global_edit"
+            )
+            st.sidebar.success("✅ API Qwen fonctionnelle")
+            st.sidebar.write(f"Type de résultat: {type(test_result)}")
+            if isinstance(test_result, (list, tuple)):
+                st.sidebar.write(f"Nombre d'éléments: {len(test_result)}")
+        except Exception as e:
+            st.sidebar.error(f"❌ Erreur API Qwen: {e}")
+    else:
+        st.sidebar.error("❌ Client Qwen non disponible")
+
+# -------------------------
+# Gestion des erreurs et diagnostics
+# -------------------------
+if st.sidebar.button("🔧 Diagnostics"):
+    st.sidebar.subheader("Tests de connexion")
+    
+    # Test Supabase
+    if supabase:
+        try:
+            test_result = supabase.table("users").select("*").limit(1).execute()
+            st.sidebar.success("✅ Supabase OK")
+        except Exception as e:
+            st.sidebar.error(f"❌ Supabase: {e}")
+    else:
+        st.sidebar.error("❌ Supabase non connecté")
+    
+    # Test LLaMA
+    if st.session_state.llama_client:
+        st.sidebar.success("✅ LLaMA Client OK")
+    else:
+        st.sidebar.error("❌ LLaMA Client non disponible")
+    
+    # Test Qwen
+    if st.session_state.qwen_client:
+        st.sidebar.success("✅ Qwen Client OK")
+    else:
+        st.sidebar.error("❌ Qwen Client non disponible")
+    
+    # Test BLIP
+    try:
+        if st.session_state.processor and st.session_state.model:
+            st.sidebar.success("✅ BLIP Models OK")
+        else:
+            st.sidebar.error("❌ BLIP Models non chargés")
+    except:
+        st.sidebar.error("❌ Erreur BLIP Models")
+
+# -------------------------
+# Nettoyage des fichiers temporaires
+# -------------------------
+def cleanup_temp_files():
+    """Nettoie les fichiers temporaires anciens"""
+    try:
+        current_time = time.time()
+        
+        # Nettoyage TMP_DIR (fichiers > 1 heure)
+        for filename in os.listdir(TMP_DIR):
+            filepath = os.path.join(TMP_DIR, filename)
+            if os.path.isfile(filepath):
+                file_time = os.path.getctime(filepath)
+                if current_time - file_time > 3600:  # 1 heure
+                    os.remove(filepath)
+        
+        # Nettoyage EDITED_IMAGES_DIR (fichiers > 24 heures)
+        for filename in os.listdir(EDITED_IMAGES_DIR):
+            filepath = os.path.join(EDITED_IMAGES_DIR, filename)
+            if os.path.isfile(filepath):
+                file_time = os.path.getctime(filepath)
+                if current_time - file_time > 86400:  # 24 heures
+                    os.remove(filepath)
+                    
+    except Exception as e:
+        st.sidebar.warning(f"Nettoyage fichiers: {e}")
+
+# Exécuter le nettoyage périodiquement
+if st.sidebar.button("🧹 Nettoyer fichiers temp"):
+    cleanup_temp_files()
+    st.sidebar.success("Nettoyage effectué!")
+
+# -------------------------
+# Statistiques utilisateur (optionnel)
+# -------------------------
+if st.session_state.user["id"] != "guest" and supabase:
+    try:
+        # Compter conversations
+        conv_count = len(get_conversations(st.session_state.user["id"]))
+        
+        # Compter messages total
+        if st.session_state.conversation:
+            msg_count = len(get_messages(st.session_state.conversation.get("conversation_id")))
+        else:
+            msg_count = 0
+        
+        # Affichage stats dans sidebar
+        with st.sidebar.expander("📊 Vos statistiques"):
+            st.write(f"Conversations: {conv_count}")
+            st.write(f"Messages (conversation actuelle): {msg_count}")
+            
+            # Stats éditions dans conversation actuelle
+            edit_count = sum(1 for msg in st.session_state.messages_memory 
+                           if msg.get("edit_context"))
+            st.write(f"Éditions d'images: {edit_count}")
+            
+    except Exception as e:
+        pass  # Ignorer les erreurs de stats
