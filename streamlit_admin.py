@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
 import io
-import db
+from supabase import create_client
 
 st.set_page_config(page_title="Vision AI Admin", layout="wide")
-ADMIN_EMAIL = "admin@45.com"
-ADMIN_PASSWORD = "Admin1236!"
+ADMIN_EMAIL = "essice34@gmail,com"
+ADMIN_PASSWORD = "4Us,T}17!"
 
 if "admin_logged" not in st.session_state:
     st.session_state.admin_logged = False
