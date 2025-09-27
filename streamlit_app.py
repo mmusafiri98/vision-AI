@@ -79,63 +79,31 @@ def init_supabase():
 supabase = init_supabase()
 
 # -------------------------
-# Fonction de redirection vers page admin
+# Fonction pour afficher les instructions d'accès externe (optionnel)
 # -------------------------
-def redirect_to_admin():
-    """Redirige vers la page d'administration"""
-    st.success("🚀 Redirection vers l'interface administrateur...")
-    
-    # Méthode 1: Utiliser st.switch_page si disponible (Streamlit >= 1.28)
-    try:
-        st.switch_page("streamlit_admin.py")
-        return
-    except AttributeError:
-        pass
-    
-    # Méthode 2: JavaScript redirect
-    st.markdown("""
-    <script type="text/javascript">
-        window.location.href = window.location.origin + "/?page=admin";
-    </script>
-    """, unsafe_allow_html=True)
-    
-    # Méthode 3: Lien direct avec instructions
-    admin_url = f"http://localhost:8501"  # URL par défaut de Streamlit
-    
-    st.markdown(f"""
-    ### 🔗 Accès Interface Administrateur
-    
-    **Option 1: Cliquez sur le lien ci-dessous**
-    """)
-    
-    # Bouton avec lien externe
-    st.link_button(
-        "🚀 Ouvrir Interface Admin",
-        "http://localhost:8501",  # Vous devrez adapter cette URL
-        help="Ouvre l'interface admin dans un nouvel onglet"
-    )
+def show_external_admin_instructions():
+    """Affiche les instructions pour accéder à streamlit_admin.py externe"""
+    st.info("🔗 **Accès Interface Admin Externe**")
     
     st.markdown("""
-    **Option 2: Ouvrez manuellement**
+    Si vous préférez utiliser un fichier `streamlit_admin.py` séparé :
+    
+    **Étapes à suivre :**
     1. Ouvrez un nouveau terminal
-    2. Lancez: `streamlit run streamlit_admin.py`
-    3. L'interface s'ouvrira sur un port différent (généralement 8502)
+    2. Lancez: `streamlit run streamlit_admin.py --server.port 8502`
+    3. Accédez à: http://localhost:8502
     
-    **Option 3: Même onglet (recommandé)**
-    Utilisez la navigation par pages Streamlit ci-dessous.
+    **Ou copiez cette commande :**
     """)
     
-    # Afficher les instructions d'accès
-    with st.expander("ℹ️ Instructions détaillées"):
-        st.code("""
-# Dans votre terminal, lancez:
-streamlit run streamlit_admin.py --server.port 8502
-
-# Puis accédez à: http://localhost:8502
-        """)
+    st.code("streamlit run streamlit_admin.py --server.port 8502")
     
-    # Option alternative: navigation interne
-    st.info("💡 **Recommandation**: Utilisez la navigation par pages intégrée ci-dessous")
+    st.warning("⚠️ Assurez-vous que le fichier `streamlit_admin.py` existe dans votre répertoire.")
+    
+    # Retourner à l'interface intégrée
+    if st.button("← Utiliser l'interface admin intégrée"):
+        st.session_state.page = "admin"
+        st.rerun()
 
 # -------------------------
 # Fonctions DB Corrigées avec gestion des rôles
@@ -666,31 +634,31 @@ if "qwen_client" not in st.session_state:
         st.session_state.qwen_client = None
 
 # -------------------------
-# Vérification admin et redirection - VERSION AMÉLIORÉE
+# Vérification admin et redirection - VERSION SIMPLIFIÉE
 # -------------------------
 def check_admin_redirect():
-    """Vérifie si l'utilisateur est admin et propose la redirection"""
+    """Vérifie si l'utilisateur est admin et propose l'interface admin"""
     if (st.session_state.user.get("role") == "admin" and 
         st.session_state.user.get("email") == ADMIN_CREDENTIALS["email"]):
         
         st.success(f"🔑 Bienvenue Administrateur: {st.session_state.user.get('name')}")
         
-        # Navigation par pages si disponible
+        # Navigation simplifiée
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("🚀 Interface Admin (Même onglet)", type="primary"):
-                # Méthode 1: Navigation interne
+            if st.button("🚀 Interface Admin Intégrée", type="primary"):
                 st.session_state.page = "admin"
                 st.rerun()
         
         with col2:
-            if st.button("🔗 Interface Admin (Nouveau port)"):
-                redirect_to_admin()
+            if st.button("🔗 Instructions Admin Externe"):
+                st.session_state.page = "external_admin"
+                st.rerun()
         
         with col3:
             if st.button("👤 Continuer ici"):
-                st.info("Vous pouvez utiliser l'interface utilisateur ci-dessous.")
+                st.info("Vous continuez avec l'interface utilisateur normale.")
 
 # -------------------------
 # Gestion de navigation par pages
@@ -903,7 +871,7 @@ def show_admin_page():
                 st.info("Fonctionnalité d'export à implémenter")
 
 # -------------------------
-# Gestion de la navigation
+# Gestion de la navigation - VERSION CORRIGÉE
 # -------------------------
 if "page" not in st.session_state:
     st.session_state.page = "main"
@@ -912,6 +880,9 @@ if "page" not in st.session_state:
 if st.session_state.page == "admin":
     show_admin_page()
     st.stop()  # Empêche l'affichage du reste
+elif st.session_state.page == "external_admin":
+    show_external_admin_instructions()
+    st.stop()
 
 # -------------------------
 # Sidebar Debug
