@@ -8,5 +8,6 @@ bcrypt>=4.1.2
 python-dotenv
 supabase
 gTTS
+beautifulsoup4
 
 
