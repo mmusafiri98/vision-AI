@@ -12,3 +12,24 @@ BEGIN
         );
     END IF;
 END $$;
+-- Créer la table password_resets
+CREATE TABLE public.password_resets (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL,
+    reset_token TEXT NOT NULL,
+    expires_at DOUBLE PRECISION NOT NULL,
+    created_at TEXT NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    used_at TEXT
+);
+
+-- Créer un index pour optimiser les recherches
+CREATE INDEX idx_password_resets_email_token ON public.password_resets(email, reset_token);
+CREATE INDEX idx_password_resets_expires ON public.password_resets(expires_at);
+
+-- Activer RLS (Row Level Security)
+ALTER TABLE public.password_resets ENABLE ROW LEVEL SECURITY;
+
+-- Politique pour permettre les opérations (ajustez selon vos besoins)
+CREATE POLICY "Allow all operations on password_resets" ON public.password_resets
+FOR ALL USING (true);
