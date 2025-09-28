@@ -2048,3 +2048,38 @@ if st.sidebar.button("🧹 Nettoyer fichiers temp"):
             
 except Exception as e:
     pass  # Ignorer les erreurs de stats
+ -------------------------
+# Note de bas de page pour admin
+# -------------------------
+if st.session_state.user.get("role") == "admin":
+    st.markdown("---")
+    st.info("""
+    🔑 **Mode Administrateur Actif**
+    
+    Vous êtes connecté avec des privilèges administrateur. Vous pouvez :
+    - Accéder à l'interface d'administration complète
+    - Gérer les utilisateurs et leurs rôles
+    - Voir les statistiques globales de l'application
+    - Modérer les conversations et contenus
+    
+    Cliquez sur "Accéder à l'interface Administrateur" pour ouvrir streamlit_admin.py
+    """)
+
+# -------------------------
+# Gestion des erreurs critiques
+# -------------------------
+try:
+    # Vérification de l'intégrité des données de session
+    if st.session_state.user and not isinstance(st.session_state.user, dict):
+        st.error("Erreur de session utilisateur - Reconnexion requise")
+        st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
+        st.rerun()
+    
+    # Vérification de la conversation active
+    if (st.session_state.conversation and 
+        not st.session_state.conversation.get("conversation_id")):
+        st.warning("Conversation corrompue - Création d'une nouvelle conversation recommandée")
+        
+except Exception as e:
+    st.error(f"Erreur système critique: {e}")
+    st.info("Veuillez recharger la page ou contacter l'administrateur.")
