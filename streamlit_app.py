@@ -2029,7 +2029,7 @@ if st.sidebar.button("🧹 Nettoyer fichiers temp"):
 if st.session_state.user["id"] != "guest" and supabase:
     try:
         # Compter conversations
-        conv_count = len(get_conversations(st.session_state.user["id"]))
+        conv_count = len(get_conversations(st.session_state.user["conversation_id"]))
         
         # Compter messages total
         if st.session_state.conversation:
