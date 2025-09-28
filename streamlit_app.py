@@ -2024,25 +2024,27 @@ if st.sidebar.button("🧹 Nettoyer fichiers temp"):
     st.sidebar.success("Nettoyage effectué!")
 
 # -------------------------
-# Statistiques utilisateur (optionnel)
-# ...existing code...
-
-if st.session_state.user["id"] != "guest" and supabase:
-    try:
-        # Compter conversations
-        conv_count = len(get_conversations(st.session_state.user["id"]))
+    # Compter messages total
+    if st.session_state.conversation:
+        msg_count = len(get_messages(st.session_state.conversation.get("conversation_id")))
+    else:
+        msg_count = 0
+    
+    # Affichage stats dans sidebar
+    with st.sidebar.expander("📊 Vos statistiques"):
+        st.write(f"Conversations: {conv_count}")
+        st.write(f"Messages (conversation actuelle): {msg_count}")
         
-        # Compter messages total
-        if st.session_state.conversation:
-            msg_count = len(get_messages(st.session_state.conversation.get("conversation_id")))
-        else:
-            msg_count = 0
+        # Stats éditions dans conversation actuelle
+        edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
+        st.write(f"Éditions d'images: {edit_count}")
         
-        # Affichage stats dans sidebar
-        with st.sidebar.expander("📊 Vos statistiques"):
-            st.write(f"Conversations: {conv_count}")
-            st.write(f"Messages (conversation actuelle): {msg_count}")
+        # Affichage spécial pour admin
+        if st.session_state.user.get("role") == "admin":
+            st.write("**🔑 Privilèges Admin:**")
+            st.write("- Accès interface admin")
+            st.write("- Gestion utilisateurs")
+            st.write("- Statistiques globales")
             
-            # Stats éditions dans conversation actuelle
-            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
-            st.write(f"
+except Exception as e:
+    pass  # Ignorer les erreurs de stats
