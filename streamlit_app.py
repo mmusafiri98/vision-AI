@@ -2217,7 +2217,7 @@ if "reset_token" not in st.session_state:
 def check_admin_redirect():
     """Vérifie si l'utilisateur est admin et propose l'interface admin"""
     if (st.session_state.user.get("role") == "admin" and 
-        st.session_state.user.get("email") == ADMIN_CREDENTIALS["email"]):
+        st.session_state.user.get("email")) == ADMIN_CREDENTIALS["email"]):
         
         st.success(f"🔑 Bienvenue Administrateur: {st.session_state.user.get('name')}")
         
