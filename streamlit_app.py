@@ -86,7 +86,7 @@ def generate_reset_token():
     return ''.join(random.choices(string.ascii_letters + string.digits, k=32))
 
 def store_reset_token(email, token):
-    """Stocke le token de récupération avec expiration"""
+    """Stocke le token de récupération avec expiration - VERSION ALTERNATIVE dans users"""
     if not supabase:
         return False
     
@@ -100,61 +100,90 @@ def store_reset_token(email, token):
         if not user_check.data or len(user_check.data) == 0:
             return False
         
-        # Données du token
-        token_data = {
-            "email": email,
-            "reset_token": token,
-            "expires_at": expiration,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "used": False
-        }
-        
-        # Créer la table password_resets si elle n'existe pas (silencieusement)
+        # Mise à jour directe dans la table users avec le token de récupération
         try:
-            # Supprimer les anciens tokens de cet email
-            supabase.table("password_resets").delete().eq("email", email).execute()
+            response = supabase.table("users").update({
+                "reset_token": token,
+                "reset_token_expires": expiration,
+                "reset_token_created": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            }).eq("email", email).execute()
             
-            # Insérer le nouveau token
-            response = supabase.table("password_resets").insert(token_data).execute()
             return bool(response.data and len(response.data) > 0)
             
         except Exception as e:
-            # Si la table n'existe pas, on pourrait la créer ici ou utiliser une méthode alternative
-            st.error(f"Erreur lors de la création du token: {e}")
-            return False
+            st.error(f"Erreur lors de la mise à jour du token: {e}")
+            # Fallback: utiliser la méthode avec table séparée si elle existe
+            try:
+                # Données du token pour table séparée
+                token_data = {
+                    "email": email,
+                    "reset_token": token,
+                    "expires_at": expiration,
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "used": False
+                }
+                
+                # Supprimer les anciens tokens
+                supabase.table("password_resets").delete().eq("email", email).execute()
+                
+                # Insérer le nouveau token
+                response = supabase.table("password_resets").insert(token_data).execute()
+                return bool(response.data and len(response.data) > 0)
+                
+            except Exception as e2:
+                st.error(f"Table password_resets non disponible. Vous devez soit créer cette table, soit ajouter les colonnes reset_token, reset_token_expires, reset_token_created à la table users.")
+                return False
             
     except Exception as e:
         st.error(f"Erreur store_reset_token: {e}")
         return False
 
 def verify_reset_token(email, token):
-    """Vérifie si le token de récupération est valide"""
+    """Vérifie si le token de récupération est valide - VERSION ALTERNATIVE"""
     if not supabase:
         return False
     
     try:
         current_time = time.time()
         
-        # Récupérer le token
-        response = supabase.table("password_resets").select("*").eq("email", email).eq("reset_token", token).eq("used", False).execute()
+        # Essayer d'abord avec la table users (méthode alternative)
+        try:
+            response = supabase.table("users").select("reset_token, reset_token_expires").eq("email", email).execute()
+            
+            if response.data and len(response.data) > 0:
+                user_data = response.data[0]
+                stored_token = user_data.get("reset_token")
+                expires_at = user_data.get("reset_token_expires")
+                
+                if stored_token == token and expires_at and expires_at > current_time:
+                    return True
+                    
+        except Exception:
+            pass
         
-        if not response.data or len(response.data) == 0:
-            return False
+        # Fallback: essayer avec la table password_resets
+        try:
+            response = supabase.table("password_resets").select("*").eq("email", email).eq("reset_token", token).eq("used", False).execute()
+            
+            if response.data and len(response.data) > 0:
+                token_data = response.data[0]
+                
+                # Vérifier l'expiration
+                if token_data.get("expires_at", 0) > current_time:
+                    return True
+                    
+        except Exception:
+            pass
         
-        token_data = response.data[0]
-        
-        # Vérifier l'expiration
-        if token_data.get("expires_at", 0) < current_time:
-            return False
-        
-        return True
+        return False
         
     except Exception as e:
         st.error(f"Erreur verify_reset_token: {e}")
         return False
 
 def reset_password(email, token, new_password):
-    """Réinitialise le mot de passe avec un token valide"""
+    """Réinitialise le mot de passe avec un token valide - VERSION ALTERNATIVE"""
     if not supabase:
         return False
     
@@ -163,18 +192,27 @@ def reset_password(email, token, new_password):
         if not verify_reset_token(email, token):
             return False
         
-        # Mettre à jour le mot de passe
-        update_response = supabase.table("users").update({
+        # Mettre à jour le mot de passe et nettoyer les tokens
+        update_data = {
             "password": new_password,
-            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        }).eq("email", email).execute()
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            # Nettoyer les tokens de récupération
+            "reset_token": None,
+            "reset_token_expires": None,
+            "reset_token_created": None
+        }
+        
+        update_response = supabase.table("users").update(update_data).eq("email", email).execute()
         
         if update_response.data and len(update_response.data) > 0:
-            # Marquer le token comme utilisé
-            supabase.table("password_resets").update({
-                "used": True,
-                "used_at": time.strftime("%Y-%m-%d %H:%M:%S")
-            }).eq("email", email).eq("reset_token", token).execute()
+            # Nettoyer aussi dans la table password_resets si elle existe
+            try:
+                supabase.table("password_resets").update({
+                    "used": True,
+                    "used_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                }).eq("email", email).eq("reset_token", token).execute()
+            except:
+                pass  # Table password_resets peut ne pas exister
             
             return True
         
@@ -1294,6 +1332,101 @@ with tab2:
                 
                 if success:
                     st.rerun()
+
+# -------------------------
+# Traitement des soumissions de chat normal avec mémoire éditions
+# -------------------------
+if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded_file):
+    # Vérifier conversation active
+    if not st.session_state.conversation:
+        conv = create_conversation(st.session_state.user["id"], "Discussion automatique")
+        if conv:
+            st.session_state.conversation = conv
+        else:
+            st.error("Impossible de créer une conversation")
+            st.stop()
+    
+    conv_id = st.session_state.conversation.get("conversation_id")
+    
+    # Préparer message
+    message_content = user_input.strip()
+    image_data = None
+    msg_type = "text"
+    
+    # Traitement image
+    if uploaded_file:
+        image = Image.open(uploaded_file)
+        image_data = image_to_base64(image)
+        caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+        message_content = f"[IMAGE] {caption}"
+        
+        if user_input.strip():
+            message_content += f"\n\nQuestion: {user_input.strip()}"
+        msg_type = "image"
+    
+    if message_content:
+        # Sauvegarder message utilisateur
+        save_success = add_message(conv_id, "user", message_content, msg_type, image_data)
+        
+        # Ajouter à la session
+        user_msg = {
+            "sender": "user",
+            "content": message_content,
+            "type": msg_type,
+            "image_data": image_data,
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        st.session_state.messages_memory.append(user_msg)
+        
+        # Détection automatique des demandes d'édition d'image uploadée
+        if uploaded_file and user_input.strip():
+            lower = user_input.lower()
+            if any(k in lower for k in ["edit", "édite", "modifie", "transformer", "améliorer"]):
+                # Extraire l'instruction d'édition du message utilisateur
+                edit_instruction = user_input.strip()
+                success = process_image_edit_request(
+                    Image.open(uploaded_file).convert("RGBA"),
+                    edit_instruction,
+                    conv_id
+                )
+                if success:
+                    st.rerun()
+        
+        # Récupérer le contexte d'édition pour l'AI
+        edit_context = get_editing_context_from_conversation()
+        
+        # Construire le prompt avec le contexte d'édition si disponible
+        prompt = f"{SYSTEM_PROMPT}\n\n"
+        if edit_context:
+            prompt += f"[EDIT_CONTEXT] Informations sur les éditions précédentes dans cette conversation:\n{edit_context}\n\n"
+        prompt += f"Utilisateur: {message_content}"
+        
+        # Générer réponse IA avec contexte
+        with st.chat_message("assistant"):
+            placeholder = st.empty()
+            
+            # Ajouter un indicateur si l'AI utilise le contexte d'édition
+            if edit_context and user_input.strip() and any(word in user_input.lower() for word in ["edit", "édition", "modif", "image", "avant", "après", "changement", "précédent", "transformation", "amélioration"]):
+                with st.spinner("Consultation de la mémoire des éditions..."):
+                    time.sleep(1)
+            
+            response = get_ai_response(prompt)
+            stream_response(response, placeholder)
+            
+            # Sauvegarder réponse IA
+            ai_save_success = add_message(conv_id, "assistant", response, "text")
+            
+            # Ajouter réponse à la session
+            ai_msg = {
+                "sender": "assistant",
+                "content": response,
+                "type": "text",
+                "image_data": None,
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            st.session_state.messages_memory.append(ai_msg)
+            
+            st.rerun()
 
 # -------------------------
 # Footer avec informations
