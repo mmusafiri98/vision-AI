@@ -1464,17 +1464,38 @@ if st.session_state.user["id"] == "guest":
                 else:
                     st.error("Identifiants invalides")
     
-    with tab2:
+    # Lien vers récupération de mot de passe
+        st.markdown("---")
+        if st.button("🔐 J'ai oublié mon mot de passe", key="forgot_password_link"):
+            # Basculer vers l'onglet récupération automatiquement
+            pass
+        
+         with tab2:
+        st.write("**Créer un compte**")
         email_reg = st.text_input("Email", key="reg_email")
         name_reg = st.text_input("Nom", key="reg_name")
         pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
+        pass_confirm = st.text_input("Confirmer mot de passe", type="password", key="reg_pass_confirm")
         
         if st.button("Créer compte"):
-            if email_reg and name_reg and pass_reg:
-                if create_user(email_reg, pass_reg, name_reg):
-                    st.success("Compte créé!")
+            if email_reg and name_reg and pass_reg and pass_confirm:
+                if pass_reg != pass_confirm:
+                    st.error("Les mots de passe ne correspondent pas")
+                elif len(pass_reg) < 6:
+                    st.error("Le mot de passe doit contenir au moins 6 caractères")
                 else:
-                    st.error("Erreur création")
+                    if create_user(email_reg, pass_reg, name_reg):
+                        st.success("Compte créé avec succès!")
+                        st.info("Vous pouvez maintenant vous connecter.")
+                    else:
+                        st.error("Erreur lors de la création du compte")
+            else:
+                st.error("Veuillez remplir tous les champs")
+    
+    with tab3:
+        st.write("**Récupération de mot de passe**")
+        show_password_reset()
+    
     st.stop()
 else:
     st.sidebar.success(f"Connecté: {st.session_state.user.get('email')}")
@@ -1490,6 +1511,10 @@ else:
         st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
         st.session_state.conversation = None
         st.session_state.messages_memory = []
+        # Reset des variables de récupération de mot de passe
+        st.session_state.reset_step = "request"
+        st.session_state.reset_email = ""
+        st.session_state.reset_token = ""
         st.rerun()
 
 # -------------------------
