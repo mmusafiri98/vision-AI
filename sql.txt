@@ -1,0 +1,14 @@
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM users WHERE email = 'tygamusafiri36@gmail.com'
+    ) THEN
+        INSERT INTO users (id, email, password, created_at)
+        VALUES (
+            '6d953149-9060-417d-b2f8-1fb4fac1b714',
+            'tygamusafiri36@gmail.com',
+            NULL,
+            '2025-09-15 16:14:37.595928+00'
+        );
+    END IF;
+END $$;
