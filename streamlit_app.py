@@ -1443,34 +1443,38 @@ if edit_context:
         st.text(edit_context[:300] + "..." if len(edit_context) > 300 else edit_context)
 
 # -------------------------
-# Authentification
-# -------------------------
+# ...existing code...
+
 st.sidebar.title("Authentification")
 
 if st.session_state.user["id"] == "guest":
-    tab1, tab2 = st.sidebar.tabs(["Connexion", "Inscription"])
+    tab1, tab2, tab3 = st.sidebar.tabs(["Connexion", "Inscription", "Mot de passe"])
     
     with tab1:
-        email = st.text_input("Email")
-        password = st.text_input("Mot de passe", type="password")
+        st.write("**Se connecter**")
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Mot de passe", type="password", key="login_password")
         
-        if st.button("Se connecter"):
-            if email and password:
-                user = verify_user(email, password)
-                if user:
-                    st.session_state.user = user
-                    st.success("Connexion réussie!")
-                    st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Se connecter", type="primary"):
+                if email and password:
+                    user = verify_user(email, password)
+                    if user:
+                        st.session_state.user = user
+                        st.success("Connexion réussie!")
+                        st.rerun()
+                    else:
+                        st.error("Identifiants invalides")
                 else:
-                    st.error("Identifiants invalides")
-    
-    # Lien vers récupération de mot de passe
+                    st.error("Veuillez remplir tous les champs")
+        
         st.markdown("---")
         if st.button("🔐 J'ai oublié mon mot de passe", key="forgot_password_link"):
-            # Basculer vers l'onglet récupération automatiquement
+            # Optionnel: tu peux ajouter ici la logique pour basculer vers tab3
             pass
-        
-         with tab2:
+
+    with tab2:
         st.write("**Créer un compte**")
         email_reg = st.text_input("Email", key="reg_email")
         name_reg = st.text_input("Nom", key="reg_name")
@@ -1491,7 +1495,7 @@ if st.session_state.user["id"] == "guest":
                         st.error("Erreur lors de la création du compte")
             else:
                 st.error("Veuillez remplir tous les champs")
-    
+
     with tab3:
         st.write("**Récupération de mot de passe**")
         show_password_reset()
@@ -1511,11 +1515,12 @@ else:
         st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
         st.session_state.conversation = None
         st.session_state.messages_memory = []
-        # Reset des variables de récupération de mot de passe
         st.session_state.reset_step = "request"
         st.session_state.reset_email = ""
         st.session_state.reset_token = ""
         st.rerun()
+
+# ...existing code...
 
 # -------------------------
 # Vérification admin après connexion
