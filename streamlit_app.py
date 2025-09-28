@@ -2029,26 +2029,41 @@ if st.sidebar.button("🧹 Nettoyer fichiers temp"):
         msg_count = len(get_messages(st.session_state.conversation.get("conversation_id")))
     else:
         msg_count = 0
-    
-    # Affichage stats dans sidebar
-    with st.sidebar.expander("📊 Vos statistiques"):
-        st.write(f"Conversations: {conv_count}")
-        st.write(f"Messages (conversation actuelle): {msg_count}")
+# ...existing code...
+
+# -------------------------
+# Statistiques utilisateur (optionnel)
+# -------------------------
+if st.session_state.user["id"] != "guest" and supabase:
+    try:
+        # Compter conversations
+        conv_count = len(get_conversations(st.session_state.user["id"]))
         
-        # Stats éditions dans conversation actuelle
-        edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
-        st.write(f"Éditions d'images: {edit_count}")
+        # Compter messages total
+        if st.session_state.conversation:
+            msg_count = len(get_messages(st.session_state.conversation.get("conversation_id")))
+        else:
+            msg_count = 0
         
-        # Affichage spécial pour admin
-        if st.session_state.user.get("role") == "admin":
-            st.write("**🔑 Privilèges Admin:**")
-            st.write("- Accès interface admin")
-            st.write("- Gestion utilisateurs")
-            st.write("- Statistiques globales")
+        # Affichage stats dans sidebar
+        with st.sidebar.expander("📊 Vos statistiques"):
+            st.write(f"Conversations: {conv_count}")
+            st.write(f"Messages (conversation actuelle): {msg_count}")
             
-except Exception as e:
-    pass  # Ignorer les erreurs de stats
- -------------------------
+            # Stats éditions dans conversation actuelle
+            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
+            st.write(f"Éditions d'images: {edit_count}")
+            
+            # Affichage spécial pour admin
+            if st.session_state.user.get("role") == "admin":
+                st.write("**🔑 Privilèges Admin:**")
+                st.write("- Accès interface admin")
+                st.write("- Gestion utilisateurs")
+                st.write("- Statistiques globales")
+    except Exception as e:
+        pass  # Ignorer les erreurs de stats
+
+# -------------------------
 # Note de bas de page pour admin
 # -------------------------
 if st.session_state.user.get("role") == "admin":
@@ -2079,7 +2094,8 @@ try:
     if (st.session_state.conversation and 
         not st.session_state.conversation.get("conversation_id")):
         st.warning("Conversation corrompue - Création d'une nouvelle conversation recommandée")
-        
 except Exception as e:
     st.error(f"Erreur système critique: {e}")
     st.info("Veuillez recharger la page ou contacter l'administrateur.")
+
+# ...existing code...
