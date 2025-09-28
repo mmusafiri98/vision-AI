@@ -764,16 +764,16 @@ def check_admin_redirect():
         st.session_state.user.get("email")# -------------------------
 # Gestion de la navigation - VERSION CORRIGÉE
 # -------------------------
-if "page" not in st.session_state:
-    st.session_state.page = "main"
+    if "page" not in st.session_state:
+        st.session_state.page = "main"
 
-# Affichage selon la page
-if st.session_state.page == "admin":
-    show_admin_page()
-    st.stop()  # Empêche l'affichage du reste
-elif st.session_state.page == "external_admin":
-    show_external_admin_instructions()
-    st.stop()
+    # Affichage selon la page
+    if st.session_state.page == "admin":
+        show_admin_page()
+        st.stop()  # Empêche l'affichage du reste
+    elif st.session_state.page == "external_admin":
+        show_external_admin_instructions()
+        st.stop()
 
 # -------------------------
 # Sidebar Debug
