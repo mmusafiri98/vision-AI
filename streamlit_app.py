@@ -13,6 +13,10 @@ import traceback
 from supabase import create_client
 import random
 import string
+from datetime import datetime
+import pytz
+import requests
+from bs4 import BeautifulSoup
 
 # ------------------------- 
 # Config
@@ -20,6 +24,11 @@ import string
 st.set_page_config(page_title="Vision AI Chat - Complete", layout="wide")
 
 SYSTEM_PROMPT = """You are Vision AI. You were created by Pepe Musafiri, an Artificial Intelligence Engineer, with contributions from Meta AI. Your role is to help users with any task they need, from image analysis and editing to answering questions clearly and helpfully. Always answer naturally as Vision AI. 
+
+You have access to:
+- Current date and time information
+- Real-time web search capabilities
+- Image analysis and editing tools
 
 When you receive an image description starting with [IMAGE], you should:
 1. Acknowledge that you can see and analyze the image
@@ -31,7 +40,18 @@ When you receive information about image editing starting with [EDIT_CONTEXT], y
 1. Remember the editing history and context provided
 2. Use this information to discuss the edits made
 3. Answer questions about the editing process and results
-4. Provide suggestions for further improvements if asked"""
+4. Provide suggestions for further improvements if asked
+
+When you receive current time/date information starting with [DATETIME], use this information to:
+1. Answer questions about the current date, time, day of week, etc.
+2. Calculate time differences or future/past dates
+3. Provide time-sensitive information accurately
+
+When you receive web search results starting with [WEB_SEARCH], you should:
+1. Analyze and synthesize the information from search results
+2. Provide accurate and up-to-date information from the web
+3. Cite sources when providing factual information
+4. Distinguish between general knowledge and current events"""
 
 # Informations admin
 ADMIN_CREDENTIALS = {
@@ -374,6 +394,238 @@ def generate_caption(image, processor, model):
     with torch.no_grad():
         out = model.generate(**inputs, max_new_tokens=50, num_beams=5)
     return processor.decode(out[0], skip_special_tokens=True)
+
+# -------------------------
+# Fonctions Date/Heure et Web Search
+# -------------------------
+def get_current_datetime_info():
+    """Récupère les informations de date et heure actuelles"""
+    try:
+        # Timezone par défaut (peut être configuré)
+        tz = pytz.timezone('Europe/Brussels')  # Changez selon votre timezone
+        now = datetime.now(tz)
+        
+        datetime_info = {
+            "date": now.strftime("%Y-%m-%d"),
+            "time": now.strftime("%H:%M:%S"),
+            "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "day_of_week": now.strftime("%A"),
+            "month": now.strftime("%B"),
+            "year": now.year,
+            "day": now.day,
+            "hour": now.hour,
+            "minute": now.minute,
+            "timezone": str(tz),
+            "timestamp": int(now.timestamp())
+        }
+        
+        return datetime_info
+    except Exception as e:
+        return {"error": str(e)}
+
+def format_datetime_for_prompt():
+    """Formate les informations de date/heure pour le prompt"""
+    dt_info = get_current_datetime_info()
+    
+    if "error" in dt_info:
+        return f"[DATETIME] Erreur: {dt_info['error']}"
+    
+    return f"""[DATETIME] Informations actuelles:
+- Date complète: {dt_info['datetime']}
+- Date: {dt_info['date']}
+- Heure: {dt_info['time']}
+- Jour de la semaine: {dt_info['day_of_week']}
+- Mois: {dt_info['month']}
+- Année: {dt_info['year']}
+- Timezone: {dt_info['timezone']}"""
+
+def search_web(query, max_results=5):
+    """Recherche sur le web avec DuckDuckGo (sans API key)"""
+    try:
+        # Utilisation de DuckDuckGo HTML (pas besoin d'API)
+        search_url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(search_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            results = []
+            
+            # Extraire les résultats de recherche
+            for result in soup.find_all('div', class_='result')[:max_results]:
+                try:
+                    title_elem = result.find('a', class_='result__a')
+                    snippet_elem = result.find('a', class_='result__snippet')
+                    
+                    if title_elem and snippet_elem:
+                        title = title_elem.get_text(strip=True)
+                        url = title_elem.get('href', '')
+                        snippet = snippet_elem.get_text(strip=True)
+                        
+                        results.append({
+                            'title': title,
+                            'url': url,
+                            'snippet': snippet
+                        })
+                except:
+                    continue
+            
+            return results
+        else:
+            return []
+    except Exception as e:
+        st.error(f"Erreur recherche web: {e}")
+        return []
+
+def search_wikipedia(query):
+    """Recherche rapide sur Wikipedia"""
+    try:
+        wiki_url = f"https://fr.wikipedia.org/w/api.php"
+        params = {
+            'action': 'query',
+            'format': 'json',
+            'list': 'search',
+            'srsearch': query,
+            'utf8': 1,
+            'srlimit': 3
+        }
+        
+        response = requests.get(wiki_url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = []
+            
+            for item in data.get('query', {}).get('search', []):
+                results.append({
+                    'title': item.get('title', ''),
+                    'snippet': item.get('snippet', '').replace('<span class="searchmatch">', '').replace('</span>', ''),
+                    'url': f"https://fr.wikipedia.org/wiki/{item.get('title', '').replace(' ', '_')}"
+                })
+            
+            return results
+        return []
+    except Exception as e:
+        return []
+
+def search_news(query):
+    """Recherche d'actualités récentes"""
+    try:
+        # Utilisation de Google News RSS (gratuit)
+        news_url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=fr&gl=FR&ceid=FR:fr"
+        
+        response = requests.get(news_url, timeout=10)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'xml')
+            items = soup.find_all('item')[:5]
+            
+            results = []
+            for item in items:
+                title = item.find('title')
+                link = item.find('link')
+                pub_date = item.find('pubDate')
+                description = item.find('description')
+                
+                if title and link:
+                    results.append({
+                        'title': title.text,
+                        'url': link.text,
+                        'date': pub_date.text if pub_date else 'N/A',
+                        'snippet': description.text if description else ''
+                    })
+            
+            return results
+        return []
+    except Exception as e:
+        return []
+
+def format_web_search_for_prompt(query, search_type="web"):
+    """Formate les résultats de recherche pour le prompt"""
+    results_text = f"[WEB_SEARCH] Résultats de recherche pour: '{query}'\n\n"
+    
+    if search_type == "web":
+        results = search_web(query)
+        if results:
+            for i, result in enumerate(results, 1):
+                results_text += f"{i}. {result['title']}\n"
+                results_text += f"   Source: {result['url']}\n"
+                results_text += f"   Résumé: {result['snippet']}\n\n"
+        else:
+            results_text += "Aucun résultat trouvé.\n"
+    
+    elif search_type == "wikipedia":
+        results = search_wikipedia(query)
+        if results:
+            for i, result in enumerate(results, 1):
+                results_text += f"{i}. {result['title']}\n"
+                results_text += f"   URL: {result['url']}\n"
+                results_text += f"   Extrait: {result['snippet']}\n\n"
+        else:
+            results_text += "Aucun résultat Wikipedia trouvé.\n"
+    
+    elif search_type == "news":
+        results = search_news(query)
+        if results:
+            for i, result in enumerate(results, 1):
+                results_text += f"{i}. {result['title']}\n"
+                results_text += f"   Date: {result['date']}\n"
+                results_text += f"   Source: {result['url']}\n\n"
+        else:
+            results_text += "Aucune actualité trouvée.\n"
+    
+    return results_text
+
+def detect_search_intent(user_message):
+    """Détecte si l'utilisateur demande une recherche web"""
+    search_keywords = [
+        'recherche', 'cherche', 'trouve', 'informations sur', 'actualité', 
+        'news', 'dernières nouvelles', 'quoi de neuf', 'what is', 'who is',
+        'définition', 'expliquer', 'c\'est quoi', 'météo', 'weather',
+        'actualités sur', 'information récente', 'dernières infos'
+    ]
+    
+    news_keywords = [
+        'actualité', 'news', 'nouvelles', 'dernières nouvelles',
+        'quoi de neuf', 'info du jour'
+    ]
+    
+    wiki_keywords = [
+        'définition', 'c\'est quoi', 'qui est', 'what is', 'who is',
+        'expliquer', 'wikipedia'
+    ]
+    
+    message_lower = user_message.lower()
+    
+    # Vérifier si c'est une demande de recherche
+    needs_search = any(keyword in message_lower for keyword in search_keywords)
+    
+    if not needs_search:
+        return None, None
+    
+    # Déterminer le type de recherche
+    if any(keyword in message_lower for keyword in news_keywords):
+        return "news", user_message
+    elif any(keyword in message_lower for keyword in wiki_keywords):
+        return "wikipedia", user_message
+    else:
+        return "web", user_message
+
+def detect_datetime_intent(user_message):
+    """Détecte si l'utilisateur demande la date/heure"""
+    datetime_keywords = [
+        'quelle heure', 'quel jour', 'quelle date', 'aujourd\'hui',
+        'maintenant', 'heure actuelle', 'date actuelle', 'quel mois',
+        'quelle année', 'what time', 'what date', 'current time',
+        'current date', 'today', 'now'
+    ]
+    
+    message_lower = user_message.lower()
+    return any(keyword in message_lower for keyword in datetime_keywords)
 
 # -------------------------
 # AI functions avec Vision AI thinking
@@ -1072,9 +1324,27 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         else:
             edit_context = get_editing_context_from_conversation()
             
+            # Construction du prompt enrichi avec date/heure et recherche web si nécessaire
             prompt = f"{SYSTEM_PROMPT}\n\n"
+            
+            # Ajouter les informations de date/heure si pertinent
+            if detect_datetime_intent(user_input):
+                datetime_info = format_datetime_for_prompt()
+                prompt += f"{datetime_info}\n\n"
+            
+            # Détecter et effectuer une recherche web si nécessaire
+            search_type, search_query = detect_search_intent(user_input)
+            if search_type and search_query:
+                with st.spinner(f"🔍 Recherche en cours sur {search_type}..."):
+                    web_results = format_web_search_for_prompt(search_query, search_type)
+                    prompt += f"{web_results}\n\n"
+                    time.sleep(0.5)
+            
+            # Ajouter le contexte d'édition si disponible
             if edit_context:
                 prompt += f"[EDIT_CONTEXT] {edit_context}\n\n"
+            
+            # Ajouter le message utilisateur
             prompt += f"Utilisateur: {message_content}"
             
             with st.chat_message("assistant"):
@@ -1127,6 +1397,21 @@ with col3:
     st.write("- API /global_edit")
     st.write("- Analyse avant/après")
 
+st.markdown("---")
+col1, col2 = st.columns(2)
+
+with col1:
+    st.write("**Nouvelles fonctionnalités:**")
+    st.write("- Date et heure en temps réel")
+    st.write("- Recherche web intégrée")
+    st.write("- Actualités récentes")
+
+with col2:
+    st.write("**Sources disponibles:**")
+    st.write("- DuckDuckGo")
+    st.write("- Wikipedia")
+    st.write("- Google News")
+
 # -------------------------
 # Guide d'utilisation
 # -------------------------
@@ -1138,6 +1423,8 @@ with st.expander("Guide d'utilisation"):
     1. Uploadez une image pour l'analyser
     2. Posez des questions sur l'image
     3. Discutez des éditions précédentes
+    4. **Nouveau:** Demandez la date/heure actuelle
+    5. **Nouveau:** Recherchez des informations sur le web
     
     **Mode Éditeur:**
     1. Uploadez une image à éditer
@@ -1145,13 +1432,49 @@ with st.expander("Guide d'utilisation"):
     3. Cliquez sur "Éditer l'image"
     4. Téléchargez le résultat
     
+    **Exemples de questions avec recherche web:**
+    - "Cherche des informations sur Paris"
+    - "Quelle heure est-il ?"
+    - "Actualités du jour"
+    - "Définition de intelligence artificielle"
+    - "Météo aujourd'hui"
+    
     **Modèles utilisés:**
     - **BLIP**: Description d'images
     - **LLaMA 3.1 70B**: Conversations
     - **Qwen ImageEditPro**: Édition d'images
+    - **DuckDuckGo/Wikipedia/Google News**: Recherche web
     
     **Note:** Vision AI affiche "Vision AI thinking..." pendant qu'il traite votre demande.
     """)
+
+# -------------------------
+# Test des nouvelles fonctionnalités
+# -------------------------
+if st.sidebar.button("🧪 Test Date/Heure & Web"):
+    st.sidebar.subheader("Tests")
+    
+    # Test date/heure
+    dt_info = get_current_datetime_info()
+    if "error" not in dt_info:
+        st.sidebar.success("Date/Heure OK")
+        st.sidebar.write(f"📅 {dt_info['date']}")
+        st.sidebar.write(f"🕐 {dt_info['time']}")
+    else:
+        st.sidebar.error("Erreur Date/Heure")
+    
+    # Test recherche web
+    with st.sidebar.expander("Test Web Search"):
+        test_query = st.text_input("Query de test:", "Python programming")
+        if st.button("Tester"):
+            with st.spinner("Recherche..."):
+                results = search_web(test_query, max_results=3)
+                if results:
+                    st.success(f"{len(results)} résultats trouvés")
+                    for r in results:
+                        st.write(f"- {r['title']}")
+                else:
+                    st.warning("Aucun résultat")
 
 # -------------------------
 # Admin sidebar
