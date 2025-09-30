@@ -23,11 +23,17 @@ from bs4 import BeautifulSoup
 # -------------------------
 st.set_page_config(page_title="Vision AI Chat - Complete", layout="wide")
 
-SYSTEM_PROMPT = """You are Vision AI. You were created by Pepe Musafiri, an Artificial Intelligence Engineer, with contributions from Meta AI. Your role is to help users with any task they need, from image analysis and editing to answering questions clearly and helpfully. Always answer naturally as Vision AI. 
+SYSTEM_PROMPT = """You are Vision AI. You were created by Pepe Musafiri, an Artificial Intelligence Engineer, with contributions from Meta AI. 
+
+CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE:
+1. When you receive [DATETIME] information, YOU MUST USE IT to answer any time/date questions. This is the REAL current date and time.
+2. When you receive [WEB_SEARCH] results, YOU MUST USE THEM to provide accurate, up-to-date information. These are REAL search results from the internet.
+3. NEVER say you don't know the current date/time when [DATETIME] information is provided.
+4. ALWAYS cite and use the web search results when they are provided in [WEB_SEARCH].
 
 You have access to:
-- Current date and time information
-- Real-time web search capabilities
+- Current date and time information (provided in [DATETIME])
+- Real-time web search capabilities (results in [WEB_SEARCH])
 - Image analysis and editing tools
 
 When you receive an image description starting with [IMAGE], you should:
@@ -42,16 +48,18 @@ When you receive information about image editing starting with [EDIT_CONTEXT], y
 3. Answer questions about the editing process and results
 4. Provide suggestions for further improvements if asked
 
-When you receive current time/date information starting with [DATETIME], use this information to:
-1. Answer questions about the current date, time, day of week, etc.
-2. Calculate time differences or future/past dates
-3. Provide time-sensitive information accurately
+When you receive current time/date information starting with [DATETIME]:
+- This is the ACTUAL, REAL current date and time
+- YOU MUST USE this information to answer questions about the current date, time, day of week
+- DO NOT say you don't have access to current time - you DO have it in [DATETIME]
+- Calculate time differences or future/past dates based on this information
 
-When you receive web search results starting with [WEB_SEARCH], you should:
-1. Analyze and synthesize the information from search results
-2. Provide accurate and up-to-date information from the web
-3. Cite sources when providing factual information
-4. Distinguish between general knowledge and current events"""
+When you receive web search results starting with [WEB_SEARCH]:
+- These are REAL search results from the internet RIGHT NOW
+- YOU MUST analyze and use this information in your response
+- Cite the sources provided in the search results
+- Provide accurate and up-to-date information based on these results
+- DO NOT rely only on your training data - USE THE SEARCH RESULTS PROVIDED"""
 
 # Informations admin
 ADMIN_CREDENTIALS = {
@@ -424,20 +432,29 @@ def get_current_datetime_info():
         return {"error": str(e)}
 
 def format_datetime_for_prompt():
-    """Formate les informations de date/heure pour le prompt"""
+    """Formate les informations de date/heure pour le prompt de manière TRÈS explicite"""
     dt_info = get_current_datetime_info()
     
     if "error" in dt_info:
         return f"[DATETIME] Erreur: {dt_info['error']}"
     
-    return f"""[DATETIME] Informations actuelles:
-- Date complète: {dt_info['datetime']}
-- Date: {dt_info['date']}
-- Heure: {dt_info['time']}
-- Jour de la semaine: {dt_info['day_of_week']}
-- Mois: {dt_info['month']}
-- Année: {dt_info['year']}
-- Timezone: {dt_info['timezone']}"""
+    # Version TRÈS explicite et détaillée
+    return f"""[DATETIME] ⚠️ IMPORTANT - INFORMATIONS TEMPORELLES ACTUELLES (RÉELLES):
+==========================================
+VOUS DEVEZ UTILISER CES INFORMATIONS POUR RÉPONDRE AUX QUESTIONS SUR LA DATE/HEURE !
+
+Date et heure ACTUELLES (EN CE MOMENT MÊME):
+- Date complète MAINTENANT: {dt_info['datetime']}
+- Date AUJOURD'HUI: {dt_info['date']}
+- Heure ACTUELLE: {dt_info['time']}
+- Jour de la semaine AUJOURD'HUI: {dt_info['day_of_week']}
+- Mois ACTUEL: {dt_info['month']}
+- Année ACTUELLE: {dt_info['year']}
+- Timezone: {dt_info['timezone']}
+
+RAPPEL: Si l'utilisateur demande "quelle heure est-il?" ou "quel jour sommes-nous?", 
+VOUS DEVEZ répondre avec ces informations ci-dessus. Ne dites PAS que vous ne savez pas!
+=========================================="""
 
 def search_web(query, max_results=5):
     """Recherche sur le web avec DuckDuckGo (sans API key)"""
@@ -545,38 +562,61 @@ def search_news(query):
         return []
 
 def format_web_search_for_prompt(query, search_type="web"):
-    """Formate les résultats de recherche pour le prompt"""
-    results_text = f"[WEB_SEARCH] Résultats de recherche pour: '{query}'\n\n"
+    """Formate les résultats de recherche pour le prompt de manière TRÈS explicite"""
+    results_text = f"""[WEB_SEARCH] ⚠️ RÉSULTATS DE RECHERCHE EN TEMPS RÉEL - VOUS DEVEZ LES UTILISER !
+==========================================
+Question de recherche: "{query}"
+Type de recherche: {search_type}
+
+⚠️ IMPORTANT: Ces résultats proviennent d'Internet MAINTENANT (en temps réel).
+VOUS DEVEZ utiliser ces informations pour répondre à la question de l'utilisateur.
+NE dites PAS que vous n'avez pas accès à Internet - ces résultats SONT d'Internet!
+
+RÉSULTATS TROUVÉS:
+"""
     
     if search_type == "web":
         results = search_web(query)
         if results:
             for i, result in enumerate(results, 1):
-                results_text += f"{i}. {result['title']}\n"
-                results_text += f"   Source: {result['url']}\n"
-                results_text += f"   Résumé: {result['snippet']}\n\n"
+                results_text += f"\n📌 RÉSULTAT #{i}:\n"
+                results_text += f"   Titre: {result['title']}\n"
+                results_text += f"   Source URL: {result['url']}\n"
+                results_text += f"   Contenu: {result['snippet']}\n"
+                results_text += f"   ---\n"
         else:
-            results_text += "Aucun résultat trouvé.\n"
+            results_text += "\n❌ Aucun résultat trouvé pour cette recherche.\n"
     
     elif search_type == "wikipedia":
         results = search_wikipedia(query)
         if results:
             for i, result in enumerate(results, 1):
-                results_text += f"{i}. {result['title']}\n"
+                results_text += f"\n📚 ARTICLE WIKIPEDIA #{i}:\n"
+                results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
-                results_text += f"   Extrait: {result['snippet']}\n\n"
+                results_text += f"   Extrait: {result['snippet']}\n"
+                results_text += f"   ---\n"
         else:
-            results_text += "Aucun résultat Wikipedia trouvé.\n"
+            results_text += "\n❌ Aucun article Wikipedia trouvé.\n"
     
     elif search_type == "news":
         results = search_news(query)
         if results:
             for i, result in enumerate(results, 1):
-                results_text += f"{i}. {result['title']}\n"
-                results_text += f"   Date: {result['date']}\n"
-                results_text += f"   Source: {result['url']}\n\n"
+                results_text += f"\n📰 ACTUALITÉ #{i}:\n"
+                results_text += f"   Titre: {result['title']}\n"
+                results_text += f"   Date de publication: {result['date']}\n"
+                results_text += f"   Source: {result['url']}\n"
+                results_text += f"   Résumé: {result.get('snippet', 'N/A')}\n"
+                results_text += f"   ---\n"
         else:
-            results_text += "Aucune actualité trouvée.\n"
+            results_text += "\n❌ Aucune actualité trouvée.\n"
+    
+    results_text += """
+==========================================
+⚠️ RAPPEL: Vous DEVEZ utiliser ces résultats de recherche dans votre réponse.
+Citez les sources et fournissez des informations basées sur ces résultats réels.
+=========================================="""
     
     return results_text
 
@@ -616,16 +656,23 @@ def detect_search_intent(user_message):
         return "web", user_message
 
 def detect_datetime_intent(user_message):
-    """Détecte si l'utilisateur demande la date/heure"""
+    """Détecte si l'utilisateur demande la date/heure - VERSION ÉTENDUE"""
     datetime_keywords = [
         'quelle heure', 'quel jour', 'quelle date', 'aujourd\'hui',
         'maintenant', 'heure actuelle', 'date actuelle', 'quel mois',
         'quelle année', 'what time', 'what date', 'current time',
-        'current date', 'today', 'now'
+        'current date', 'today', 'now', 'heure', 'date', 'jour',
+        'sommes-nous', 'est-il', 'c\'est quel jour', 'on est quel jour',
+        'quelle est la date', 'quelle est l\'heure', 'il est quelle heure',
+        'nous sommes le', 'quel est le jour'
     ]
     
     message_lower = user_message.lower()
     return any(keyword in message_lower for keyword in datetime_keywords)
+
+def should_always_add_datetime():
+    """Toujours ajouter la date/heure pour que le modèle ait toujours le contexte temporel"""
+    return True  # On ajoute TOUJOURS la date/heure maintenant
 
 # -------------------------
 # AI functions avec Vision AI thinking
@@ -1324,13 +1371,12 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         else:
             edit_context = get_editing_context_from_conversation()
             
-            # Construction du prompt enrichi avec date/heure et recherche web si nécessaire
+            # Construction du prompt enrichi - TOUJOURS avec date/heure
             prompt = f"{SYSTEM_PROMPT}\n\n"
             
-            # Ajouter les informations de date/heure si pertinent
-            if detect_datetime_intent(user_input):
-                datetime_info = format_datetime_for_prompt()
-                prompt += f"{datetime_info}\n\n"
+            # TOUJOURS ajouter les informations de date/heure en premier
+            datetime_info = format_datetime_for_prompt()
+            prompt += f"{datetime_info}\n\n"
             
             # Détecter et effectuer une recherche web si nécessaire
             search_type, search_query = detect_search_intent(user_input)
@@ -1344,8 +1390,16 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
             if edit_context:
                 prompt += f"[EDIT_CONTEXT] {edit_context}\n\n"
             
-            # Ajouter le message utilisateur
-            prompt += f"Utilisateur: {message_content}"
+            # Message final très explicite
+            prompt += f"""
+==========================================
+INSTRUCTIONS FINALES AVANT DE RÉPONDRE:
+1. Si l'utilisateur demande la date/heure, utilisez les informations [DATETIME] ci-dessus
+2. Si des résultats [WEB_SEARCH] sont fournis, utilisez-les dans votre réponse
+3. Soyez précis et citez vos sources
+==========================================
+
+Utilisateur: {message_content}"""
             
             with st.chat_message("assistant"):
                 placeholder = st.empty()
@@ -1529,3 +1583,4 @@ if st.session_state.user["id"] != "guest" and supabase:
             st.write(f"Éditions: {edit_count}")
     except:
         pass
+    
