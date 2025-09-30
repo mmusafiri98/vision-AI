@@ -1730,14 +1730,26 @@ if st.sidebar.button("Nettoyer fichiers temp"):
 # -------------------------
 if st.session_state.user["id"] != "guest" and supabase:
     try:
+        # Compter le nombre de conversations
         conv_count = len(get_conversations(st.session_state.user["id"]))
-        msg_count = len(st.session_state.messages_memory) if st.session_state.conversation else 0
         
+        # Compter le nombre de messages dans la conversation active
+        msg_count = (
+            len(st.session_state.messages_memory) 
+            if st.session_state.conversation else 0
+        )
+
         with st.sidebar.expander("Vos statistiques"):
             st.write(f"Conversations: {conv_count}")
             st.write(f"Messages: {msg_count}")
-            
-            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
+
+            # Compter le nombre d'éditions
+            edit_count = sum(
+                1 for msg in st.session_state.messages_memory 
+                if msg.get("edit_context")
+            )
             st.write(f"Éditions: {edit_count}")
-    except:
-        pass
+
+    except Exception as e:
+        # Afficher une alerte au lieu de passer silencieusement
+        st.warning(f"Erreur lors du calcul des statistiques : {e}")
