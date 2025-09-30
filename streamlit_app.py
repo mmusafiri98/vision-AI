@@ -17,6 +17,7 @@ from datetime import datetime
 import pytz
 import requests
 from bs4 import BeautifulSoup
+import json
 
 # ------------------------- 
 # Config
@@ -66,6 +67,14 @@ ADMIN_CREDENTIALS = {
     "email": "jessice34@gmail.com",
     "password": "4Us,T}17"
 }
+
+# -------------------------
+# Configuration des API Keys
+# -------------------------
+# IMPORTANT: Configurez ces clés dans les secrets Streamlit (Settings → Secrets)
+# NE PAS mettre les clés directement dans le code !
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+GOOGLE_SEARCH_ENGINE_ID = os.environ.get("GOOGLE_SEARCH_ENGINE_ID", "")
 
 # -------------------------
 # Dossiers locaux
@@ -456,47 +465,96 @@ RAPPEL: Si l'utilisateur demande "quelle heure est-il?" ou "quel jour sommes-nou
 VOUS DEVEZ répondre avec ces informations ci-dessus. Ne dites PAS que vous ne savez pas!
 =========================================="""
 
-def search_web(query, max_results=5):
-    """Recherche sur le web avec DuckDuckGo (sans API key)"""
+def search_google(query, max_results=10):
+    """Recherche avec Google Custom Search API"""
+    if not GOOGLE_API_KEY or not GOOGLE_SEARCH_ENGINE_ID:
+        st.warning("Google API credentials manquantes")
+        return []
+    
     try:
-        # Utilisation de DuckDuckGo HTML (pas besoin d'API)
-        search_url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            "key": GOOGLE_API_KEY,
+            "cx": GOOGLE_SEARCH_ENGINE_ID,
+            "q": query,
+            "num": max_results
+        }
         
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = []
+            
+            for item in data.get('items', []):
+                results.append({
+                    'title': item.get('title', ''),
+                    'url': item.get('link', ''),
+                    'snippet': item.get('snippet', ''),
+                    'display_url': item.get('displayLink', '')
+                })
+            
+            return results
+        elif response.status_code == 429:
+            st.error("⚠️ Quota Google API dépassé pour aujourd'hui")
+            return []
+        else:
+            st.error(f"Google API erreur: {response.status_code}")
+            return []
+    except Exception as e:
+        st.error(f"Erreur Google Search: {e}")
+        return []
+
+def scrape_page_content(url, max_chars=2000):
+    """Scrape le contenu complet d'une page web"""
+    try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
-        response = requests.get(search_url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
-            results = []
             
-            # Extraire les résultats de recherche
-            for result in soup.find_all('div', class_='result')[:max_results]:
-                try:
-                    title_elem = result.find('a', class_='result__a')
-                    snippet_elem = result.find('a', class_='result__snippet')
-                    
-                    if title_elem and snippet_elem:
-                        title = title_elem.get_text(strip=True)
-                        url = title_elem.get('href', '')
-                        snippet = snippet_elem.get_text(strip=True)
-                        
-                        results.append({
-                            'title': title,
-                            'url': url,
-                            'snippet': snippet
-                        })
-                except:
-                    continue
+            # Supprimer scripts et styles
+            for script in soup(["script", "style"]):
+                script.decompose()
             
-            return results
-        else:
-            return []
-    except Exception as e:
-        st.error(f"Erreur recherche web: {e}")
-        return []
+            # Extraire le texte
+            text = soup.get_text()
+            
+            # Nettoyer
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = ' '.join(chunk for chunk in chunks if chunk)
+            
+            return text[:max_chars]
+        return None
+    except:
+        return None
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Supprimer scripts et styles
+            for script in soup(["script", "style"]):
+                script.decompose()
+            
+            # Extraire le texte
+            text = soup.get_text()
+            
+            # Nettoyer
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = ' '.join(chunk for chunk in chunks if chunk)
+            
+            return text[:max_chars]
+        return None
+    except:
+        return None
 
 def search_wikipedia(query):
     """Recherche rapide sur Wikipedia"""
@@ -562,7 +620,7 @@ def search_news(query):
         return []
 
 def format_web_search_for_prompt(query, search_type="web"):
-    """Formate les résultats de recherche pour le prompt de manière TRÈS explicite"""
+    """Formate les résultats de recherche pour le prompt - VERSION GOOGLE"""
     results_text = f"""[WEB_SEARCH] ⚠️ RÉSULTATS DE RECHERCHE EN TEMPS RÉEL - VOUS DEVEZ LES UTILISER !
 ==========================================
 Question de recherche: "{query}"
@@ -575,17 +633,44 @@ NE dites PAS que vous n'avez pas accès à Internet - ces résultats SONT d'Inte
 RÉSULTATS TROUVÉS:
 """
     
-    if search_type == "web":
-        results = search_web(query)
+    if search_type == "google":
+        results = search_google(query)
         if results:
             for i, result in enumerate(results, 1):
-                results_text += f"\n📌 RÉSULTAT #{i}:\n"
+                results_text += f"\n🔍 RÉSULTAT GOOGLE #{i}:\n"
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   Source URL: {result['url']}\n"
+                results_text += f"   Domaine: {result.get('display_url', 'N/A')}\n"
                 results_text += f"   Contenu: {result['snippet']}\n"
+                
+                # Tenter de scraper le contenu complet
+                page_content = scrape_page_content(result['url'])
+                if page_content:
+                    results_text += f"   📄 Extrait de la page: {page_content[:800]}...\n"
+                
                 results_text += f"   ---\n"
         else:
-            results_text += "\n❌ Aucun résultat trouvé pour cette recherche.\n"
+            results_text += "\n❌ Aucun résultat Google trouvé.\n"
+    
+    elif search_type == "youtube":
+        results = search_youtube(query)
+        if results:
+            for i, result in enumerate(results, 1):
+                results_text += f"\n🎥 VIDÉO YOUTUBE #{i}:\n"
+                results_text += f"   Titre: {result['title']}\n"
+                results_text += f"   URL: {result['url']}\n"
+                results_text += f"   Chaîne: {result['channel']}\n"
+                results_text += f"   Publié: {result['published']}\n"
+                results_text += f"   Description: {result['description'][:300]}...\n"
+                
+                # Tenter de récupérer la transcription
+                transcript = get_youtube_transcript(result['video_id'])
+                if transcript:
+                    results_text += f"   📝 Transcription: {transcript[:500]}...\n"
+                
+                results_text += f"   ---\n"
+        else:
+            results_text += "\n❌ Aucune vidéo YouTube trouvée.\n"
     
     elif search_type == "wikipedia":
         results = search_wikipedia(query)
@@ -607,7 +692,6 @@ RÉSULTATS TROUVÉS:
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   Date de publication: {result['date']}\n"
                 results_text += f"   Source: {result['url']}\n"
-                results_text += f"   Résumé: {result.get('snippet', 'N/A')}\n"
                 results_text += f"   ---\n"
         else:
             results_text += "\n❌ Aucune actualité trouvée.\n"
@@ -621,39 +705,47 @@ Citez les sources et fournissez des informations basées sur ces résultats rée
     return results_text
 
 def detect_search_intent(user_message):
-    """Détecte si l'utilisateur demande une recherche web"""
+    """Détecte le type de recherche - Google par défaut"""
     search_keywords = [
         'recherche', 'cherche', 'trouve', 'informations sur', 'actualité', 
         'news', 'dernières nouvelles', 'quoi de neuf', 'what is', 'who is',
         'définition', 'expliquer', 'c\'est quoi', 'météo', 'weather',
-        'actualités sur', 'information récente', 'dernières infos'
+        'actualités sur', 'information récente', 'dernières infos',
+        'video', 'vidéo', 'youtube', 'regarde', 'montre', 'voir'
     ]
     
     news_keywords = [
         'actualité', 'news', 'nouvelles', 'dernières nouvelles',
-        'quoi de neuf', 'info du jour'
+        'quoi de neuf', 'info du jour', 'breaking', 'flash'
     ]
     
     wiki_keywords = [
         'définition', 'c\'est quoi', 'qui est', 'what is', 'who is',
-        'expliquer', 'wikipedia'
+        'expliquer', 'wikipedia', 'définir'
+    ]
+    
+    youtube_keywords = [
+        'video', 'vidéo', 'youtube', 'regarde', 'montre moi', 
+        'voir video', 'regarder', 'visionner'
     ]
     
     message_lower = user_message.lower()
     
-    # Vérifier si c'est une demande de recherche
     needs_search = any(keyword in message_lower for keyword in search_keywords)
     
     if not needs_search:
         return None, None
     
-    # Déterminer le type de recherche
-    if any(keyword in message_lower for keyword in news_keywords):
+    # Ordre de priorité: YouTube → News → Wiki → Google (défaut)
+    if any(keyword in message_lower for keyword in youtube_keywords):
+        return "youtube", user_message
+    elif any(keyword in message_lower for keyword in news_keywords):
         return "news", user_message
     elif any(keyword in message_lower for keyword in wiki_keywords):
         return "wikipedia", user_message
     else:
-        return "web", user_message
+        # Google par défaut (le plus puissant)
+        return "google", user_message
 
 def detect_datetime_intent(user_message):
     """Détecte si l'utilisateur demande la date/heure - VERSION ÉTENDUE"""
@@ -1220,7 +1312,7 @@ with tab1:
         with col2:
             uploaded_file = st.file_uploader(
                 "Image",
-                type=["png","jpg","jpeg","webp"],
+                type=["png","jpg","jpeg"],
                 key="chat_upload"
             )
         
@@ -1235,7 +1327,7 @@ with tab2:
         st.subheader("Image à éditer")
         editor_file = st.file_uploader(
             "Image",
-            type=["png", "jpg", "jpeg","webp"],
+            type=["png", "jpg", "jpeg"],
             key="editor_upload"
         )
         
@@ -1457,14 +1549,61 @@ col1, col2 = st.columns(2)
 with col1:
     st.write("**Nouvelles fonctionnalités:**")
     st.write("- Date et heure en temps réel")
-    st.write("- Recherche web intégrée")
-    st.write("- Actualités récentes")
+    st.write("- Recherche Brave (puissante)")
+    st.write("- Recherche YouTube + transcriptions")
+    st.write("- Scraping de pages web")
 
 with col2:
     st.write("**Sources disponibles:**")
-    st.write("- DuckDuckGo")
+    st.write("- Brave Search API")
+    st.write("- YouTube Data API v3")
     st.write("- Wikipedia")
-    st.write("- Google News")
+    st.write("- Google News RSS")
+
+# -------------------------
+# Configuration API Keys
+# -------------------------
+with st.expander("⚙️ Configuration des API Keys (IMPORTANT)"):
+    st.markdown("""
+    ### 🔑 Configuration Google Custom Search API
+    
+    **⚠️ IMPORTANT - Sécurité:**
+    Vos clés API sont actuellement **EXPOSÉES PUBLIQUEMENT** ! 
+    Vous devez IMMÉDIATEMENT :
+    1. Aller sur https://console.cloud.google.com/apis/credentials
+    2. SUPPRIMER la clé : AIzaSyAjglTZsz2VP972q6i8MgH5_euEQyZ6X3c
+    3. Créer une NOUVELLE clé avec restrictions
+    
+    **Configuration sécurisée dans Streamlit Cloud:**
+    1. Allez dans Settings → Secrets de votre app
+    2. Ajoutez:
+    ```toml
+    GOOGLE_API_KEY = "votre_nouvelle_clé"
+    GOOGLE_SEARCH_ENGINE_ID = "511c9c9b776d246e4"
+    YOUTUBE_API_KEY = "votre_clé_youtube"
+    ```
+    
+    **Quotas Google:**
+    - Custom Search: 100 requêtes/jour (gratuit)
+    - YouTube: 10,000 unités/jour (gratuit)
+    
+    **Statut actuel:**
+    """)
+    
+    if GOOGLE_API_KEY:
+        st.success("✅ Google API configurée")
+    else:
+        st.error("❌ Google API manquante")
+    
+    if GOOGLE_SEARCH_ENGINE_ID:
+        st.success("✅ Search Engine ID configuré")
+    else:
+        st.error("❌ Search Engine ID manquant")
+    
+    if YOUTUBE_API_KEY:
+        st.success("✅ YouTube API configurée")
+    else:
+        st.warning("⚠️ YouTube API manquante (optionnel)")
 
 # -------------------------
 # Guide d'utilisation
@@ -1477,8 +1616,9 @@ with st.expander("Guide d'utilisation"):
     1. Uploadez une image pour l'analyser
     2. Posez des questions sur l'image
     3. Discutez des éditions précédentes
-    4. **Nouveau:** Demandez la date/heure actuelle
-    5. **Nouveau:** Recherchez des informations sur le web
+    4. Demandez la date/heure actuelle
+    5. Recherchez sur le web avec Brave
+    6. Recherchez des vidéos YouTube
     
     **Mode Éditeur:**
     1. Uploadez une image à éditer
@@ -1486,49 +1626,67 @@ with st.expander("Guide d'utilisation"):
     3. Cliquez sur "Éditer l'image"
     4. Téléchargez le résultat
     
-    **Exemples de questions avec recherche web:**
-    - "Cherche des informations sur Paris"
-    - "Quelle heure est-il ?"
-    - "Actualités du jour"
-    - "Définition de intelligence artificielle"
-    - "Météo aujourd'hui"
+    **Exemples de questions avec recherche:**
+    - "Recherche des informations sur Paris" → Brave
+    - "Actualités du jour" → News
+    - "Vidéos sur Python" → YouTube
+    - "Quelle heure est-il ?" → Date/heure
+    - "Définition de IA" → Wikipedia
     
     **Modèles utilisés:**
     - **BLIP**: Description d'images
-    - **LLaMA 3.1 70B**: Conversations
+    - **LLaMA 3.1 70B**: Conversations (connaissances jusqu'à janvier 2025)
     - **Qwen ImageEditPro**: Édition d'images
-    - **DuckDuckGo/Wikipedia/Google News**: Recherche web
+    - **Brave Search**: Recherche web temps réel
+    - **YouTube API**: Vidéos et transcriptions
     
-    **Note:** Vision AI affiche "Vision AI thinking..." pendant qu'il traite votre demande.
+    **Note:** Vision AI affiche "Vision AI thinking..." pendant le traitement.
     """)
 
 # -------------------------
-# Test des nouvelles fonctionnalités
+# Test des API Google
 # -------------------------
-if st.sidebar.button("🧪 Test Date/Heure & Web"):
-    st.sidebar.subheader("Tests")
+if st.sidebar.button("🧪 Test Google Search"):
+    st.sidebar.subheader("Tests Recherche")
     
     # Test date/heure
     dt_info = get_current_datetime_info()
     if "error" not in dt_info:
-        st.sidebar.success("Date/Heure OK")
-        st.sidebar.write(f"📅 {dt_info['date']}")
-        st.sidebar.write(f"🕐 {dt_info['time']}")
-    else:
-        st.sidebar.error("Erreur Date/Heure")
+        st.sidebar.success("✅ Date/Heure OK")
+        st.sidebar.write(f"📅 {dt_info['date']} {dt_info['time']}")
     
-    # Test recherche web
-    with st.sidebar.expander("Test Web Search"):
-        test_query = st.text_input("Query de test:", "Python programming")
-        if st.button("Tester"):
-            with st.spinner("Recherche..."):
-                results = search_web(test_query, max_results=3)
-                if results:
-                    st.success(f"{len(results)} résultats trouvés")
-                    for r in results:
-                        st.write(f"- {r['title']}")
-                else:
-                    st.warning("Aucun résultat")
+    # Test Google Search
+    if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
+        with st.sidebar.expander("Test Google"):
+            google_query = st.text_input("Query:", "Fantastic Four 2025 film")
+            if st.button("Rechercher"):
+                with st.spinner("Recherche Google..."):
+                    results = search_google(google_query, max_results=5)
+                    if results:
+                        st.success(f"✅ {len(results)} résultats")
+                        for r in results:
+                            st.write(f"**{r['title']}**")
+                            st.caption(r['snippet'][:100])
+                    else:
+                        st.warning("Aucun résultat")
+    else:
+        st.sidebar.error("⚠️ Configurez Google API !")
+    
+    # Test YouTube
+    if YOUTUBE_API_KEY:
+        with st.sidebar.expander("Test YouTube"):
+            yt_query = st.text_input("YouTube Query:", "AI news 2025")
+            if st.button("Chercher vidéos"):
+                with st.spinner("Recherche YouTube..."):
+                    results = search_youtube(yt_query, max_results=3)
+                    if results:
+                        st.success(f"✅ {len(results)} vidéos")
+                        for r in results:
+                            st.write(f"[{r['title']}]({r['url']})")
+                    else:
+                        st.warning("Aucune vidéo")
+    else:
+        st.sidebar.warning("⚠️ YouTube API non configurée")
 
 # -------------------------
 # Admin sidebar
@@ -1583,4 +1741,3 @@ if st.session_state.user["id"] != "guest" and supabase:
             st.write(f"Éditions: {edit_count}")
     except:
         pass
-    
