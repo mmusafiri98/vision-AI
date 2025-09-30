@@ -1235,7 +1235,7 @@ with tab2:
         st.subheader("Image à éditer")
         editor_file = st.file_uploader(
             "Image",
-            type=["png", "jpg", "jpeg"],
+            type=["png", "jpg", "jpeg","webp"],
             key="editor_upload"
         )
         
