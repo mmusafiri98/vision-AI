@@ -1220,7 +1220,7 @@ with tab1:
         with col2:
             uploaded_file = st.file_uploader(
                 "Image",
-                type=["png","jpg","jpeg"],
+                type=["png","jpg","jpeg","webp"],
                 key="chat_upload"
             )
         
