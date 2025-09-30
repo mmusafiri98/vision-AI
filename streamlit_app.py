@@ -511,49 +511,21 @@ def scrape_page_content(url, max_chars=2000):
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
-        
         response = requests.get(url, headers=headers, timeout=10)
-        
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
-            
             # Supprimer scripts et styles
             for script in soup(["script", "style"]):
                 script.decompose()
-            
             # Extraire le texte
             text = soup.get_text()
-            
             # Nettoyer
             lines = (line.strip() for line in text.splitlines())
             chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
             text = ' '.join(chunk for chunk in chunks if chunk)
-            
             return text[:max_chars]
         return None
-    except:
-        return None
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Supprimer scripts et styles
-            for script in soup(["script", "style"]):
-                script.decompose()
-            
-            # Extraire le texte
-            text = soup.get_text()
-            
-            # Nettoyer
-            lines = (line.strip() for line in text.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-            text = ' '.join(chunk for chunk in chunks if chunk)
-            
-            return text[:max_chars]
-        return None
-    except:
+    except Exception as e:
         return None
 
 def search_wikipedia(query):
@@ -1728,26 +1700,16 @@ if st.sidebar.button("Nettoyer fichiers temp"):
 # -------------------------
 # Statistiques utilisateur
 # -------------------------
-# Statistiques utilisateur
-# -------------------------
 if st.session_state.user["id"] != "guest" and supabase:
     try:
         conv_count = len(get_conversations(st.session_state.user["id"]))
-        msg_count = (
-            len(st.session_state.messages_memory)
-            if st.session_state.conversation else 0
-        )
-
+        msg_count = len(st.session_state.messages_memory) if st.session_state.conversation else 0
+        
         with st.sidebar.expander("Vos statistiques"):
             st.write(f"Conversations: {conv_count}")
             st.write(f"Messages: {msg_count}")
-
-            edit_count = sum(
-                1 for msg in st.session_state.messages_memory
-                if msg.get("edit_context")
-            )
+            
+            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
             st.write(f"Éditions: {edit_count}")
-
-    except Exception as e:  # ✅ plus de 'except:' vide
-        st.warning(f"Erreur lors du calcul des statistiques : {e}")
-
+    except:
+        pass
