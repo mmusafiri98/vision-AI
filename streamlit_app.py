@@ -571,51 +571,23 @@ def scrape_page_content(url, max_chars=2000):
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
-        
         response = requests.get(url, headers=headers, timeout=10)
-        
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
-            
             # Supprimer scripts et styles
             for script in soup(["script", "style"]):
                 script.decompose()
-            
             # Extraire le texte
             text = soup.get_text()
-            
             # Nettoyer
             lines = (line.strip() for line in text.splitlines())
             chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
             text = ' '.join(chunk for chunk in chunks if chunk)
-            
             return text[:max_chars]
         return None
-    except:
+    except Exception as e:
         return None
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Supprimer scripts et styles
-            for script in soup(["script", "style"]):
-                script.decompose()
-            
-            # Extraire le texte
-            text = soup.get_text()
-            
-            # Nettoyer
-            lines = (line.strip() for line in text.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-            text = ' '.join(chunk for chunk in chunks if chunk)
-            
-            return text[:max_chars]
-        return None
-    except:
-        return None
-
+    
 def search_wikipedia(query):
     """Recherche rapide sur Wikipedia"""
     try:
