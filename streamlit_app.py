@@ -1,3 +1,5 @@
+                
+
 import streamlit as st
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
@@ -136,7 +138,8 @@ def store_reset_token(email, token):
             }).eq("email", email).execute()
             
             return bool(response.data)
-        except:
+        except Exception as e:
+            st.error(f"Erreur update user: {e}")
             try:
                 token_data = {
                     "email": email,
@@ -148,9 +151,11 @@ def store_reset_token(email, token):
                 supabase.table("password_resets").delete().eq("email", email).execute()
                 response = supabase.table("password_resets").insert(token_data).execute()
                 return bool(response.data)
-            except:
+            except Exception as e:
+                st.error(f"Erreur insert token: {e}")
                 return False
-    except:
+    except Exception as e:
+        st.error(f"Erreur générale: {e}")
         return False
 
 def verify_reset_token(email, token):
@@ -166,18 +171,21 @@ def verify_reset_token(email, token):
                 user_data = response.data[0]
                 if user_data.get("reset_token") == token and user_data.get("reset_token_expires", 0) > current_time:
                     return True
-        except:
+        except Exception as e:
+            st.error(f"Erreur vérification user token: {e}")
             pass
         
         try:
             response = supabase.table("password_resets").select("*").eq("email", email).eq("reset_token", token).eq("used", False).execute()
             if response.data and response.data[0].get("expires_at", 0) > current_time:
                 return True
-        except:
+        except Exception as e:
+            st.error(f"Erreur vérification password_resets: {e}")
             pass
         
         return False
-    except:
+    except Exception as e:
+        st.error(f"Erreur générale vérification: {e}")
         return False
 
 def reset_password(email, token, new_password):
@@ -201,11 +209,13 @@ def reset_password(email, token, new_password):
                     "used": True,
                     "used_at": time.strftime("%Y-%m-%d %H:%M:%S")
                 }).eq("email", email).eq("reset_token", token).execute()
-            except:
+            except Exception as e:
+                st.error(f"Erreur marquage token utilisé: {e}")
                 pass
             return True
         return False
-    except:
+    except Exception as e:
+        st.error(f"Erreur réinitialisation mot de passe: {e}")
         return False
 
 # -------------------------
@@ -235,7 +245,8 @@ def verify_user(email, password):
                     "name": response.user.user_metadata.get("name", email.split("@")[0]),
                     "role": role
                 }
-        except:
+        except Exception as e:
+            st.error(f"Erreur auth sign_in: {e}")
             pass
             
         response = supabase.table("users").select("*").eq("email", email).execute()
@@ -249,7 +260,8 @@ def verify_user(email, password):
                     "role": user.get("role", "user")
                 }
         return None
-    except:
+    except Exception as e:
+        st.error(f"Erreur vérification utilisateur: {e}")
         return None
 
 def create_user(email, password, name, role="user"):
@@ -265,7 +277,8 @@ def create_user(email, password, name, role="user"):
                 "user_metadata": {"name": name, "role": role}
             })
             return response.user is not None
-        except:
+        except Exception as e:
+            st.error(f"Erreur création user auth: {e}")
             pass
             
         user_data = {
@@ -279,7 +292,8 @@ def create_user(email, password, name, role="user"):
         
         response = supabase.table("users").insert(user_data).execute()
         return bool(response.data)
-    except:
+    except Exception as e:
+        st.error(f"Erreur création utilisateur: {e}")
         return False
 
 def get_conversations(user_id):
@@ -303,7 +317,8 @@ def get_conversations(user_id):
                     "user_id": conv["user_id"]
                 })
         return conversations
-    except:
+    except Exception as e:
+        st.error(f"Erreur récupération conversations: {e}")
         return []
 
 def create_conversation(user_id, description):
@@ -328,7 +343,8 @@ def create_conversation(user_id, description):
                 "user_id": conv["user_id"]
             }
         return None
-    except:
+    except Exception as e:
+        st.error(f"Erreur création conversation: {e}")
         return None
 
 def get_messages(conversation_id):
@@ -353,7 +369,8 @@ def get_messages(conversation_id):
                 "edit_context": msg.get("edit_context")
             })
         return messages
-    except:
+    except Exception as e:
+        st.error(f"Erreur récupération messages: {e}")
         return []
 
 def add_message(conversation_id, sender, content, msg_type="text", image_data=None, edit_context=None):
@@ -380,7 +397,8 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
             
         response = supabase.table("messages").insert(message_data).execute()
         return bool(response.data)
-    except:
+    except Exception as e:
+        st.error(f"Erreur ajout message: {e}")
         return False
 
 # -------------------------
@@ -878,901 +896,133 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
                     
                 edit_msg = f"Image éditée avec succès - {status_message}"
                 if edit_instruction:
+                    edit_msg += f" (instruction:          edit_msg = f"Image éditée avec succès - {status_message}"
+                if edit_instruction:
                     edit_msg += f" (instruction: {edit_instruction})"
-                    
                 return edited_img, edit_msg
-        
-        return None, "Erreur traitement image"
-    except Exception as e:
-        return None, str(e)
-
-def create_edit_context(original_caption, edit_instruction, edited_caption, success_info):
-    return {
-        "original_description": original_caption,
-        "edit_instruction": edit_instruction,
-        "edited_description": edited_caption,
-        "edit_info": success_info,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-    }
-
-def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_id: str):
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    try:
-        status_text.info("Analyse de l'image originale...")
-        progress_bar.progress(20)
-        time.sleep(0.5)
-        
-        original_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-        
-        status_text.info(f"Édition en cours: '{edit_instruction}'...")
-        progress_bar.progress(40)
-        
-        edited_img, result_info = edit_image_with_qwen(image, edit_instruction)
-        
-        if edited_img:
-            status_text.info("Analyse de l'image éditée...")
-            progress_bar.progress(70)
-            time.sleep(0.5)
-            
-            edited_caption = generate_caption(edited_img, st.session_state.processor, st.session_state.model)
-            
-            status_text.info("Sauvegarde et finalisation...")
-            progress_bar.progress(90)
-            
-            edit_context = create_edit_context(original_caption, edit_instruction, edited_caption, result_info)
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Image originale")
-                st.image(image, caption="Avant", use_column_width=True)
-                st.write(f"**Description:** {original_caption}")
-                
-            with col2:
-                st.subheader("Image éditée")
-                st.image(edited_img, caption=f"Après: {edit_instruction}", use_column_width=True)
-                st.write(f"**Description:** {edited_caption}")
-                st.write(f"**Info technique:** {result_info}")
-            
-            st.success("Édition terminée avec succès !")
-            
-            response_content = f"""**Édition d'image terminée !**
-
-**Instruction:** {edit_instruction}
-
-**Analyse comparative:**
-- **Image originale:** {original_caption}
-- **Image éditée:** {edited_caption}
-
-**Modifications:** J'ai appliqué "{edit_instruction}". L'image montre maintenant: {edited_caption}
-
-**Info technique:** {result_info}"""
-            
-            edited_b64 = image_to_base64(edited_img.convert("RGB"))
-            success = add_message(conv_id, "assistant", response_content, "image", edited_b64, None)
-            
-            if success:
-                progress_bar.progress(100)
-                status_text.success("Traitement terminé!")
-                time.sleep(1)
-                status_text.empty()
-                progress_bar.empty()
-                
-                st.session_state.messages_memory.append({
-                    "message_id": str(uuid.uuid4()),
-                    "sender": "assistant",
-                    "content": response_content,
-                    "type": "image",
-                    "image_data": edited_b64,
-                    "edit_context": str(edit_context),
-                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                })
-                
-                img_buffer = io.BytesIO()
-                edited_img.convert("RGB").save(img_buffer, format="PNG")
-                
-                st.download_button(
-                    label="Télécharger PNG",
-                    data=img_buffer.getvalue(),
-                    file_name=f"edited_image_{int(time.time())}.png",
-                    mime="image/png"
-                )
-                
-                return True
             else:
-                status_text.error("Erreur sauvegarde")
-                progress_bar.empty()
-                return False
+                return None, "Erreur lors de l'édition de l'image."
         else:
-            status_text.error(f"Échec édition: {result_info}")
-            progress_bar.empty()
-            return False
+            return None, "Résultat invalide du modèle Qwen."
     except Exception as e:
-        status_text.error(f"Erreur: {e}")
-        progress_bar.empty()
-        return False
+        traceback.print_exc()
+        return None, f"Erreur lors de l'édition de l'image: {str(e)}"
 
-def get_editing_context_from_conversation():
-    context_info = []
-    for msg in st.session_state.messages_memory:
-        if msg.get("edit_context"):
-            try:
-                if isinstance(msg["edit_context"], str):
-                    import ast
-                    edit_ctx = ast.literal_eval(msg["edit_context"])
+# -------------------------
+# Interface Streamlit
+# -------------------------
+def main():
+    st.title("Vision AI Chat - Complet")
+
+    # Initialisation des clients
+    if 'llama_client' not in st.session_state:
+        st.session_state.llama_client = Client("https://your-llama-api-endpoint.com")
+    if 'qwen_client' not in st.session_state:
+        st.session_state.qwen_client = Client("https://your-qwen-api-endpoint.com")
+
+    # Chargement du modèle BLIP
+    processor, model = load_blip()
+
+    # Gestion de l'authentification
+    if 'user' not in st.session_state:
+        st.session_state.user = None
+
+    def login():
+        with st.form("login_form"):
+            email = st.text_input("Email")
+            password = st.text_input("Mot de passe", type="password")
+            submitted = st.form_submit_button("Connexion")
+            if submitted:
+                user = verify_user(email, password)
+                if user:
+                    st.session_state.user = user
+                    st.experimental_rerun()
                 else:
-                    edit_ctx = msg["edit_context"]
-                
-                context_info.append(f"""
-Édition précédente:
-- Image originale: {edit_ctx.get('original_description', 'N/A')}
-- Résultat: {edit_ctx.get('edited_description', 'N/A')}
-- Date: {edit_ctx.get('timestamp', 'N/A')}
-""")
-            except:
-                continue
-    
-    return "\n".join(context_info) if context_info else ""
+                    st.error("Identifiants invalides")
 
-# -------------------------
-# Interface de récupération de mot de passe
-# -------------------------
-def show_password_reset():
-    st.subheader("Récupération de mot de passe")
-    
-    if st.session_state.reset_step == "request":
-        with st.form("password_reset_request"):
-            reset_email = st.text_input("Adresse email")
-            submit_reset = st.form_submit_button("Envoyer le code")
-            
-            if submit_reset and reset_email.strip() and supabase:
-                try:
-                    user_check = supabase.table("users").select("*").eq("email", reset_email.strip()).execute()
-                    
-                    if user_check.data:
-                        reset_token = generate_reset_token()
-                        
-                        if store_reset_token(reset_email.strip(), reset_token):
-                            st.session_state.reset_email = reset_email.strip()
-                            st.session_state.reset_token = reset_token
-                            st.session_state.reset_step = "verify"
-                            
-                            st.success("Code généré!")
-                            st.warning(f"**Code:** {reset_token}")
-                            time.sleep(2)
-                            st.rerun()
-                    else:
-                        st.error("Email introuvable")
-                except Exception as e:
-                    st.error(f"Erreur: {e}")
-        
-        if st.button("← Retour connexion"):
-            st.session_state.reset_step = "request"
-            st.rerun()
-    
-    elif st.session_state.reset_step == "verify":
-        with st.form("password_reset_verify"):
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                token_input = st.text_input("Code de récupération")
-                new_password = st.text_input("Nouveau mot de passe", type="password")
-                confirm_password = st.text_input("Confirmer", type="password")
-            
-            with col2:
-                st.write("**Code généré:**")
-                st.code(st.session_state.reset_token)
-            
-            submit = st.form_submit_button("Réinitialiser")
-            
-            if submit:
-                if not token_input.strip():
-                    st.error("Entrez le code")
-                elif not new_password:
-                    st.error("Entrez un mot de passe")
-                elif len(new_password) < 6:
-                    st.error("Minimum 6 caractères")
-                elif new_password != confirm_password:
-                    st.error("Mots de passe différents")
-                elif token_input.strip() != st.session_state.reset_token:
-                    st.error("Code incorrect")
-                else:
-                    if reset_password(st.session_state.reset_email, token_input.strip(), new_password):
-                        st.success("Mot de passe réinitialisé!")
-                        st.session_state.reset_step = "request"
-                        st.session_state.reset_email = ""
-                        st.session_state.reset_token = ""
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.error("Erreur réinitialisation")
+    def logout():
+        st.session_state.user = None
+        st.experimental_rerun()
 
-# -------------------------
-# Interface Admin
-# -------------------------
-def show_admin_page():
-    st.title("Interface Administrateur")
-    
-    if st.button("← Retour"):
-        st.session_state.page = "main"
-        st.rerun()
-    
-    tab1, tab2, tab3 = st.tabs(["Utilisateurs", "Conversations", "Statistiques"])
-    
-    with tab1:
-        if supabase:
-            try:
-                users = supabase.table("users").select("*").order("created_at", desc=True).execute()
-                if users.data:
-                    for user in users.data:
-                        with st.expander(f"{user.get('name')} ({user.get('email')})"):
-                            st.write(f"**ID:** {user.get('id')[:8]}...")
-                            st.write(f"**Rôle:** {user.get('role', 'user')}")
-            except Exception as e:
-                st.error(f"Erreur: {e}")
-    
-    with tab2:
-        if supabase:
-            try:
-                convs = supabase.table("conversations").select("*").limit(20).execute()
-                if convs.data:
-                    for conv in convs.data:
-                        st.write(f"- {conv.get('description')} ({conv.get('created_at')[:10]})")
-            except Exception as e:
-                st.error(f"Erreur: {e}")
-    
-    with tab3:
-        if supabase:
-            try:
-                users_count = supabase.table("users").select("id", count="exact").execute()
-                convs_count = supabase.table("conversations").select("id", count="exact").execute()
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Utilisateurs", users_count.count or 0)
-                with col2:
-                    st.metric("Conversations", convs_count.count or 0)
-            except Exception as e:
-                st.error(f"Erreur: {e}")
+    if not st.session_state.user:
+        login()
+        return
 
-def cleanup_temp_files():
-    try:
-        current_time = time.time()
-        for filename in os.listdir(TMP_DIR):
-            filepath = os.path.join(TMP_DIR, filename)
-            if os.path.isfile(filepath) and current_time - os.path.getctime(filepath) > 3600:
-                os.remove(filepath)
-    except:
-        pass
+    # Affichage des conversations
+    conversations = get_conversations(st.session_state.user['id'])
+    selected_conv = st.selectbox("Conversations", [f"{conv['description']} ({conv['created_at']})" for conv in conversations], format_func=lambda x: x.split(' (')[0])
+    selected_conv_id = conversations[st.session_state.selectbox_indices[0]]['conversation_id'] if conversations else None
 
-# -------------------------
-# Session State
-# -------------------------
-if "user" not in st.session_state:
-    st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
+    # Création de conversation
+    new_conv_desc = st.text_input("Nouvelle conversation", key="new_conv")
+    if st.button("Créer"):
+        new_conv = create_conversation(st.session_state.user['id'], new_conv_desc)
+        if new_conv:
+            st.experimental_rerun()
 
-if "conversation" not in st.session_state:
-    st.session_state.conversation = None
-
-if "messages_memory" not in st.session_state:
-    st.session_state.messages_memory = []
-
-if "processor" not in st.session_state:
-    st.session_state.processor, st.session_state.model = load_blip()
-
-if "llama_client" not in st.session_state:
-    try:
-        st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
-    except:
-        st.session_state.llama_client = None
-
-if "qwen_client" not in st.session_state:
-    try:
-        st.session_state.qwen_client = Client("Selfit/ImageEditPro")
-    except:
-        st.session_state.qwen_client = None
-
-if "reset_step" not in st.session_state:
-    st.session_state.reset_step = "request"
-
-if "reset_email" not in st.session_state:
-    st.session_state.reset_email = ""
-
-if "reset_token" not in st.session_state:
-    st.session_state.reset_token = ""
-
-if "page" not in st.session_state:
-    st.session_state.page = "main"
-
-# -------------------------
-# Navigation
-# -------------------------
-if st.session_state.page == "admin":
-    show_admin_page()
-    st.stop()
-
-# -------------------------
-# Sidebar
-# -------------------------
-st.sidebar.title("Authentification")
-
-if st.session_state.user["id"] == "guest":
-    tab1, tab2, tab3 = st.sidebar.tabs(["Connexion", "Inscription", "Reset"])
-    
-    with tab1:
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Mot de passe", type="password", key="login_password")
-        
-        if st.button("Se connecter", type="primary"):
-            if email and password:
-                with st.spinner("Connexion..."):
-                    user = verify_user(email, password)
-                    if user:
-                        st.session_state.user = user
-                        st.success("Connecté!")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error("Identifiants invalides")
-
-    with tab2:
-        email_reg = st.text_input("Email", key="reg_email")
-        name_reg = st.text_input("Nom", key="reg_name")
-        pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
-        pass_confirm = st.text_input("Confirmer", type="password", key="reg_confirm")
-        
-        if st.button("Créer compte"):
-            if email_reg and name_reg and pass_reg and pass_confirm:
-                if pass_reg != pass_confirm:
-                    st.error("Mots de passe différents")
-                elif len(pass_reg) < 6:
-                    st.error("Minimum 6 caractères")
-                else:
-                    with st.spinner("Création..."):
-                        if create_user(email_reg, pass_reg, name_reg):
-                            st.success("Compte créé!")
-                            time.sleep(1)
-
-    with tab3:
-        show_password_reset()
-    
-    st.stop()
-else:
-    st.sidebar.success(f"Connecté: {st.session_state.user.get('email')}")
-    
-    if st.session_state.user.get('role') == 'admin':
-        st.sidebar.markdown("**Admin**")
-        if st.sidebar.button("Interface Admin"):
-            st.session_state.page = "admin"
-            st.rerun()
-    
-    if st.sidebar.button("Déconnexion"):
-        st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
-        st.session_state.conversation = None
-        st.session_state.messages_memory = []
-        st.rerun()
-
-# -------------------------
-# Gestion Conversations
-# -------------------------
-if st.session_state.user["id"] != "guest":
-    st.sidebar.title("Conversations")
-    
-    if st.sidebar.button("Nouvelle conversation"):
-        with st.spinner("Création..."):
-            conv = create_conversation(st.session_state.user["id"], "Nouvelle discussion")
-            if conv:
-                st.session_state.conversation = conv
-                st.session_state.messages_memory = []
-                st.success("Créée!")
-                time.sleep(1)
-                st.rerun()
-    
-    convs = get_conversations(st.session_state.user["id"])
-    if convs:
-        options = [f"{c['description']} ({c['created_at'][:16]})" for c in convs]
-        
-        current_idx = 0
-        if st.session_state.conversation:
-            current_id = st.session_state.conversation.get("conversation_id")
-            for i, c in enumerate(convs):
-                if c.get("conversation_id") == current_id:
-                    current_idx = i
-                    break
-        
-        selected_idx = st.sidebar.selectbox(
-            "Vos conversations:",
-            range(len(options)),
-            format_func=lambda i: options[i],
-            index=current_idx
-        )
-        
-        selected_conv = convs[selected_idx]
-        
-        if (not st.session_state.conversation or 
-            st.session_state.conversation.get("conversation_id") != selected_conv.get("conversation_id")):
-            
-            with st.spinner("Chargement..."):
-                st.session_state.conversation = selected_conv
-                messages = get_messages(selected_conv.get("conversation_id"))
-                st.session_state.messages_memory = messages
-                time.sleep(0.5)
-                st.rerun()
-
-# -------------------------
-# Interface principale
-# -------------------------
-st.title("Vision AI Chat - Analyse & Édition d'Images")
-
-if st.session_state.conversation:
-    st.subheader(f"Conversation: {st.session_state.conversation.get('description')}")
-
-tab1, tab2 = st.tabs(["Chat Normal", "Mode Éditeur"])
-
-with tab1:
-    st.write("Mode chat avec analyse d'images")
-    
-    if st.session_state.messages_memory:
-        for msg in st.session_state.messages_memory:
-            role = "user" if msg.get("sender") == "user" else "assistant"
-            
-            with st.chat_message(role):
-                if msg.get("type") == "image" and msg.get("image_data"):
-                    try:
-                        st.image(base64_to_image(msg["image_data"]), width=300)
-                    except:
-                        pass
-                
-                st.markdown(msg.get("content", ""))
-    
-    with st.form("chat_form", clear_on_submit=True):
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            user_input = st.text_area(
-                "Votre message:",
-                height=100,
-                placeholder="Posez vos questions..."
-            )
-        
-        with col2:
-            uploaded_file = st.file_uploader(
-                "Image",
-                type=["png","jpg","jpeg"],
-                key="chat_upload"
-            )
-        
-        submit_chat = st.form_submit_button("Envoyer")
-
-with tab2:
-    st.write("Mode éditeur avec Qwen-Image-Edit")
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("Image à éditer")
-        editor_file = st.file_uploader(
-            "Image",
-            type=["png", "jpg", "jpeg"],
-            key="editor_upload"
-        )
-        
-        if editor_file:
-            editor_image = Image.open(editor_file).convert("RGBA")
-            st.image(editor_image, caption="Original", use_column_width=True)
-            
-            with st.spinner("Analyse..."):
-                original_desc = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
-                st.write(f"**Description:** {original_desc}")
-    
-    with col2:
-        st.subheader("Instructions d'édition")
-        
-        example_prompts = [
-            "Add a beautiful sunset background",
-            "Change to black and white", 
-            "Add flowers",
-            "Make it look like a painting",
-            "Add snow falling",
-            "Cyberpunk style",
-            "Remove background",
-            "Add a person",
-            "More colorful",
-            "Add magic effects"
-        ]
-        
-        selected_example = st.selectbox("Exemples", ["Custom..."] + example_prompts)
-        
-        if selected_example == "Custom...":
-            edit_instruction = st.text_area(
-                "Instruction (en anglais):",
-                height=120,
-                placeholder="ex: Add a man, change sky..."
-            )
-        else:
-            edit_instruction = st.text_area(
-                "Instruction:",
-                value=selected_example,
-                height=120
-            )
-        
-        if st.button("Éditer", type="primary", disabled=not (editor_file and edit_instruction.strip())):
-            if not st.session_state.conversation:
-                conv = create_conversation(st.session_state.user["id"], "Édition d'images")
-                if conv:
-                    st.session_state.conversation = conv
-            
-            if st.session_state.conversation:
-                original_caption = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
-                user_msg = f"**Édition demandée**\n\n**Image:** {original_caption}\n\n**Instruction:** {edit_instruction}"
-                original_b64 = image_to_base64(editor_image.convert("RGB"))
-                
-                add_message(
-                    st.session_state.conversation.get("conversation_id"),
-                    "user",
-                    user_msg,
-                    "image",
-                    original_b64
-                )
-                
-                st.session_state.messages_memory.append({
-                    "message_id": str(uuid.uuid4()),
-                    "sender": "user",
-                    "content": user_msg,
-                    "type": "image",
-                    "image_data": original_b64,
-                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                })
-                
-                success = process_image_edit_request(
-                    editor_image,
-                    edit_instruction,
-                    st.session_state.conversation.get("conversation_id")
-                )
-                
-                if success:
-                    st.rerun()
-
-# -------------------------
-# Traitement chat
-# -------------------------
-if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded_file):
-    if not st.session_state.conversation:
-        with st.spinner("Création conversation..."):
-            conv = create_conversation(st.session_state.user["id"], "Discussion")
-            if conv:
-                st.session_state.conversation = conv
+    # Affichage des messages
+    if selected_conv_id:
+        messages = get_messages(selected_conv_id)
+        for msg in messages:
+            if msg['sender'] == 'user':
+                st.write(f"**Vous ({msg['created_at']})**: {msg['content']}")
             else:
-                st.error("Impossible de créer conversation")
-                st.stop()
-    
-    conv_id = st.session_state.conversation.get("conversation_id")
-    
-    message_content = user_input.strip()
-    image_data = None
-    msg_type = "text"
-    
+                st.write(f"**Vision AI ({msg['created_at']})**: {msg['content']}")
+
+    # Upload d'image
+    uploaded_file = st.file_uploader("Téléverser une image", type=["jpg", "png", "jpeg"])
     if uploaded_file:
-        with st.spinner("Analyse de l'image..."):
-            image = Image.open(uploaded_file)
-            image_data = image_to_base64(image)
-            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            message_content = f"[IMAGE] {caption}"
-            
-            if user_input.strip():
-                message_content += f"\n\nQuestion: {user_input.strip()}"
-            msg_type = "image"
-            time.sleep(0.5)
-    
-    if message_content:
-        add_message(conv_id, "user", message_content, msg_type, image_data)
-        
-        user_msg = {
-            "sender": "user",
-            "content": message_content,
-            "type": msg_type,
-            "image_data": image_data,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        st.session_state.messages_memory.append(user_msg)
-        
-        lower = user_input.lower()
-        if (any(k in lower for k in ["edit", "édite", "modifie"]) and uploaded_file):
-            edit_instruction = user_input.strip()
-            success = process_image_edit_request(
-                Image.open(uploaded_file).convert("RGBA"),
-                edit_instruction,
-                conv_id
-            )
-            if success:
-                st.rerun()
+        image = Image.open(uploaded_file).convert("RGB")
+        st.image(image, caption="Image téléchargée", use_column_width=True)
+
+        # Analyse d'image
+        if st.button("Analyser l'image"):
+            caption = generate_caption(image, processor, model)
+            add_message(selected_conv_id, "user", "[IMAGE] " + caption)
+            st.success("Image analysée avec succès")
+
+    # Edition d'image
+    edit_instruction = st.text_input("Instruction d'édition", key="edit_instruction")
+    if st.button("Éditer l'image"):
+        if uploaded_file:
+            edited_img, status = edit_image_with_qwen(image, edit_instruction)
+            if edited_img:
+                st.image(edited_img, caption="Image éditée", use_column_width=True)
+                add_message(selected_conv_id, "user", "[EDIT_CONTEXT] " + status)
+            else:
+                st.error(status)
         else:
-            edit_context = get_editing_context_from_conversation()
-            
-            # Construction du prompt enrichi - TOUJOURS avec date/heure
-            prompt = f"{SYSTEM_PROMPT}\n\n"
-            
-            # TOUJOURS ajouter les informations de date/heure en premier
-            datetime_info = format_datetime_for_prompt()
-            prompt += f"{datetime_info}\n\n"
-            
-            # Détecter et effectuer une recherche web si nécessaire
+            st.warning("Aucune image à éditer")
+
+    # Chat avec Vision AI
+    user_input = st.text_area("Votre message", key="user_input")
+    if st.button("Envoyer"):
+        if user_input:
+            # Détection des intentions
             search_type, search_query = detect_search_intent(user_input)
-            if search_type and search_query:
-                with st.spinner(f"🔍 Recherche en cours sur {search_type}..."):
-                    web_results = format_web_search_for_prompt(search_query, search_type)
-                    prompt += f"{web_results}\n\n"
-                    time.sleep(0.5)
-            
-            # Ajouter le contexte d'édition si disponible
-            if edit_context:
-                prompt += f"[EDIT_CONTEXT] {edit_context}\n\n"
-            
-            # Message final très explicite
-            prompt += f"""
-==========================================
-INSTRUCTIONS FINALES AVANT DE RÉPONDRE:
-1. Si l'utilisateur demande la date/heure, utilisez les informations [DATETIME] ci-dessus
-2. Si des résultats [WEB_SEARCH] sont fournis, utilisez-les dans votre réponse
-3. Soyez précis et citez vos sources
-==========================================
+            datetime_intent = detect_datetime_intent(user_input)
 
-Utilisateur: {message_content}"""
-            
-            with st.chat_message("assistant"):
-                placeholder = st.empty()
-                
-                if edit_context and any(w in user_input.lower() for w in ["edit", "image", "avant", "après"]):
-                    with st.spinner("Consultation mémoire..."):
-                        time.sleep(1)
-                
-                # Appel API avec Vision AI thinking
+            # Construction du prompt
+            prompt = user_input
+            if datetime_intent or should_always_add_datetime():
+                prompt += "\n\n" + format_datetime_for_prompt()
+            if search_type:
+                prompt += "\n\n" + format_web_search_for_prompt(search_query, search_type)
+
+            # Ajout du message utilisateur
+            add_message(selected_conv_id, "user", user_input)
+
+            # Réponse de Vision AI
+            with st.spinner("Vision AI thinking..."):
                 response = get_ai_response(prompt)
-                
-                # Afficher Vision AI thinking puis la réponse
-                stream_response_with_thinking(response, placeholder)
-                
-                add_message(conv_id, "assistant", response, "text")
-                
-                ai_msg = {
-                    "sender": "assistant",
-                    "content": response,
-                    "type": "text",
-                    "image_data": None,
-                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                }
-                st.session_state.messages_memory.append(ai_msg)
-                
-                st.rerun()
+                add_message(selected_conv_id, "ai", response)
+                st.write(f"**Vision AI**: {response}")
+        else:
+            st.warning("Veuillez entrer un message")
 
-# -------------------------
-# Footer
-# -------------------------
-st.markdown("---")
-col1, col2, col3 = st.columns(3)
+    # Bouton de déconnexion
+    if st.button("Déconnexion"):
+        logout()
 
-with col1:
-    st.write("**Vision AI:**")
-    st.write("- Analyse intelligente")
-    st.write("- Édition avec Qwen")
-    st.write("- Mémoire des éditions")
-
-with col2:
-    st.write("**Chat:**")
-    st.write("- Conversations sauvegardées")
-    st.write("- Contexte des éditions")
-    st.write("- Discussion modifications")
-
-with col3:
-    st.write("**Éditeur:**")
-    st.write("- Prompts personnalisés")
-    st.write("- API /global_edit")
-    st.write("- Analyse avant/après")
-
-st.markdown("---")
-col1, col2 = st.columns(2)
-
-with col1:
-    st.write("**Nouvelles fonctionnalités:**")
-    st.write("- Date et heure en temps réel")
-    st.write("- Google Search (puissant)")
-    st.write("- YouTube + transcriptions")
-    st.write("- Scraping de pages web")
-
-with col2:
-    st.write("**Sources disponibles:**")
-    st.write("- Google Custom Search")
-    st.write("- YouTube Data API v3")
-    st.write("- Wikipedia")
-    st.write("- Google News RSS")
-
-# -------------------------
-# Configuration API Keys
-# -------------------------
-with st.expander("⚙️ Configuration Google & YouTube APIs"):
-    st.markdown("""
-    ### 🔑 Configuration des API Keys
-    
-    **Configuration sécurisée dans Streamlit Cloud:**
-    Settings → Secrets → Ajoutez:
-    ```toml
-    GOOGLE_API_KEY = "votre_clé_google"
-    GOOGLE_SEARCH_ENGINE_ID = "511c9c9b776d246e4"
-    YOUTUBE_API_KEY = "votre_clé_youtube"
-    ```
-    
-    **Comment obtenir les clés:**
-    
-    **1. Google Custom Search:**
-    - https://console.cloud.google.com/
-    - Créez un projet → Activez "Custom Search API"
-    - Créez une clé API
-    - Créez un Search Engine: https://programmablesearchengine.google.com/
-    
-    **2. YouTube Data API v3:**
-    - Même console Google Cloud
-    - Activez "YouTube Data API v3"
-    - Utilisez la même clé API ou créez-en une nouvelle
-    
-    **Quotas:**
-    - Google Search: 100 requêtes/jour gratuit
-    - YouTube: 10,000 unités/jour gratuit
-    
-    **Installation supplémentaire:**
-    ```bash
-    pip install youtube-transcript-api
-    ```
-    
-    **Statut actuel:**
-    """)
-    
-    if GOOGLE_API_KEY:
-        st.success("✅ Google API configurée")
-    else:
-        st.error("❌ Google API manquante")
-    
-    if GOOGLE_SEARCH_ENGINE_ID:
-        st.success("✅ Search Engine ID configuré")
-    else:
-        st.error("❌ Search Engine ID manquant")
-    
-    if YOUTUBE_API_KEY:
-        st.success("✅ YouTube API configurée")
-    else:
-        st.warning("⚠️ YouTube API manquante (optionnel)")
-
-# -------------------------
-# Guide d'utilisation
-# -------------------------
-with st.expander("Guide d'utilisation"):
-    st.markdown("""
-    ### Comment utiliser Vision AI Chat
-    
-    **Mode Chat Normal:**
-    1. Uploadez une image pour l'analyser
-    2. Posez des questions sur l'image
-    3. Discutez des éditions précédentes
-    4. Demandez la date/heure actuelle
-    5. Recherchez sur le web avec Brave
-    6. Recherchez des vidéos YouTube
-    
-    **Mode Éditeur:**
-    1. Uploadez une image à éditer
-    2. Sélectionnez ou écrivez une instruction
-    3. Cliquez sur "Éditer l'image"
-    4. Téléchargez le résultat
-    
-    **Exemples de questions avec recherche:**
-    - "Recherche des informations sur Paris" → Google
-    - "Actualités du jour" → Google News
-    - "Quelle heure est-il ?" → Date/heure
-    - "Définition de IA" → Wikipedia
-    - "Fantastic Four 2025" → Google
-    
-    **Modèles utilisés:**
-    - **BLIP**: Description d'images
-    - **LLaMA 3.1 70B**: Conversations (connaissances jusqu'à janvier 2025)
-    - **Qwen ImageEditPro**: Édition d'images
-    - **Google Custom Search**: Recherche web temps réel
-    - **Wikipedia**: Encyclopédie
-    - **Google News**: Actualités
-    
-    **Note:** Vision AI affiche "Vision AI thinking..." pendant le traitement.
-    """)
-
-# -------------------------
-# Test Google & YouTube
-# -------------------------
-if st.sidebar.button("🧪 Test APIs"):
-    st.sidebar.subheader("Tests")
-    
-    dt_info = get_current_datetime_info()
-    if "error" not in dt_info:
-        st.sidebar.success("✅ Date/Heure OK")
-        st.sidebar.write(f"📅 {dt_info['date']} {dt_info['time']}")
-    
-    if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
-        with st.sidebar.expander("Test Google"):
-            google_query = st.text_input("Google Query:", "Fantastic Four 2025")
-            if st.button("Rechercher"):
-                with st.spinner("Recherche..."):
-                    results = search_google(google_query, max_results=5)
-                    if results:
-                        st.success(f"✅ {len(results)} résultats")
-                        for r in results:
-                            st.write(f"**{r['title']}**")
-                    else:
-                        st.warning("Aucun résultat")
-    else:
-        st.sidebar.error("⚠️ Google API non configurée")
-    
-    if YOUTUBE_API_KEY:
-        with st.sidebar.expander("Test YouTube"):
-            yt_query = st.text_input("YouTube Query:", "AI 2025")
-            if st.button("Chercher vidéos"):
-                with st.spinner("Recherche YouTube..."):
-                    results = search_youtube(yt_query, max_results=3)
-                    if results:
-                        st.success(f"✅ {len(results)} vidéos")
-                        for r in results:
-                            st.write(f"[{r['title']}]({r['url']})")
-                    else:
-                        st.warning("Aucune vidéo")
-    else:
-        st.sidebar.warning("⚠️ YouTube API non configurée")
-
-# -------------------------
-# Admin sidebar
-# -------------------------
-if st.session_state.user.get("role") == "admin":
-    with st.sidebar.expander("Fonctions Admin"):
-        st.write("Interface Administrateur disponible")
-        if st.button("Accéder Interface Admin", key="admin_launch"):
-            st.session_state.page = "admin"
-            st.rerun()
-
-# -------------------------
-# Diagnostics
-# -------------------------
-if st.sidebar.button("Diagnostics"):
-    st.sidebar.subheader("Tests")
-    
-    if supabase:
-        try:
-            supabase.table("users").select("*").limit(1).execute()
-            st.sidebar.success("Supabase OK")
-        except:
-            st.sidebar.error("Supabase KO")
-    
-    if st.session_state.llama_client:
-        st.sidebar.success("LLaMA OK")
-    else:
-        st.sidebar.error("LLaMA KO")
-    
-    if st.session_state.qwen_client:
-        st.sidebar.success("Qwen OK")
-    else:
-        st.sidebar.error("Qwen KO")
-
-if st.sidebar.button("Nettoyer fichiers temp"):
-    cleanup_temp_files()
-    st.sidebar.success("Nettoyage effectué!")
-
-# -------------------------
-# Statistiques utilisateur
-# -------------------------
-if st.session_state.user["id"] != "guest" and supabase:
-    try:
-        conv_count = len(get_conversations(st.session_state.user["id"]))
-        msg_count = len(st.session_state.messages_memory) if st.session_state.conversation else 0
-        
-        with st.sidebar.expander("Vos statistiques"):
-            st.write(f"Conversations: {conv_count}")
-            st.write(f"Messages: {msg_count}")
-            
-            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
-            st.write(f"Éditions: {edit_count}")
-    except:
-        pass
+if __name__ == "__main__":
+    main()
