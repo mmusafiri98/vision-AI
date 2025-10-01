@@ -75,6 +75,7 @@ ADMIN_CREDENTIALS = {
 # NE PAS mettre les clés directement dans le code !
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 GOOGLE_SEARCH_ENGINE_ID = os.environ.get("GOOGLE_SEARCH_ENGINE_ID", "")
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 
 # -------------------------
 # Dossiers locaux
@@ -505,27 +506,114 @@ def search_google(query, max_results=10):
         st.error(f"Erreur Google Search: {e}")
         return []
 
+def search_youtube(query, max_results=5):
+    """Recherche de vidéos YouTube avec API officielle"""
+    if not YOUTUBE_API_KEY:
+        st.warning("YouTube API key manquante")
+        return []
+    
+    try:
+        url = "https://www.googleapis.com/youtube/v3/search"
+        params = {
+            "part": "snippet",
+            "q": query,
+            "key": YOUTUBE_API_KEY,
+            "maxResults": max_results,
+            "type": "video",
+            "order": "date",
+            "relevanceLanguage": "fr"
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = []
+            
+            for item in data.get('items', []):
+                video_id = item['id']['videoId']
+                snippet = item['snippet']
+                
+                results.append({
+                    'title': snippet.get('title', ''),
+                    'video_id': video_id,
+                    'url': f"https://www.youtube.com/watch?v={video_id}",
+                    'description': snippet.get('description', ''),
+                    'channel': snippet.get('channelTitle', ''),
+                    'published': snippet.get('publishedAt', ''),
+                    'thumbnail': snippet.get('thumbnails', {}).get('high', {}).get('url', '')
+                })
+            
+            return results
+        elif response.status_code == 403:
+            st.error("⚠️ Quota YouTube API dépassé ou clé invalide")
+            return []
+        else:
+            st.error(f"YouTube API erreur: {response.status_code}")
+            return []
+    except Exception as e:
+        st.error(f"Erreur YouTube Search: {e}")
+        return []
+
+def get_youtube_transcript(video_id):
+    """Récupère la transcription d'une vidéo YouTube"""
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['fr', 'en'])
+        full_text = " ".join([item['text'] for item in transcript[:50]])
+        return full_text
+    except:
+        return None
+
 def scrape_page_content(url, max_chars=2000):
     """Scrape le contenu complet d'une page web"""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
+        
         response = requests.get(url, headers=headers, timeout=10)
+        
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
+            
             # Supprimer scripts et styles
             for script in soup(["script", "style"]):
                 script.decompose()
+            
             # Extraire le texte
             text = soup.get_text()
+            
             # Nettoyer
             lines = (line.strip() for line in text.splitlines())
             chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
             text = ' '.join(chunk for chunk in chunks if chunk)
+            
             return text[:max_chars]
         return None
-    except Exception as e:
+    except:
+        return None
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Supprimer scripts et styles
+            for script in soup(["script", "style"]):
+                script.decompose()
+            
+            # Extraire le texte
+            text = soup.get_text()
+            
+            # Nettoyer
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = ' '.join(chunk for chunk in chunks if chunk)
+            
+            return text[:max_chars]
+        return None
+    except:
         return None
 
 def search_wikipedia(query):
@@ -592,7 +680,7 @@ def search_news(query):
         return []
 
 def format_web_search_for_prompt(query, search_type="web"):
-    """Formate les résultats de recherche pour le prompt - VERSION GOOGLE"""
+    """Formate les résultats de recherche pour le prompt"""
     results_text = f"""[WEB_SEARCH] ⚠️ RÉSULTATS DE RECHERCHE EN TEMPS RÉEL - VOUS DEVEZ LES UTILISER !
 ==========================================
 Question de recherche: "{query}"
@@ -615,7 +703,6 @@ RÉSULTATS TROUVÉS:
                 results_text += f"   Domaine: {result.get('display_url', 'N/A')}\n"
                 results_text += f"   Contenu: {result['snippet']}\n"
                 
-                # Tenter de scraper le contenu complet
                 page_content = scrape_page_content(result['url'])
                 if page_content:
                     results_text += f"   📄 Extrait de la page: {page_content[:800]}...\n"
@@ -635,7 +722,6 @@ RÉSULTATS TROUVÉS:
                 results_text += f"   Publié: {result['published']}\n"
                 results_text += f"   Description: {result['description'][:300]}...\n"
                 
-                # Tenter de récupérer la transcription
                 transcript = get_youtube_transcript(result['video_id'])
                 if transcript:
                     results_text += f"   📝 Transcription: {transcript[:500]}...\n"
@@ -662,7 +748,7 @@ RÉSULTATS TROUVÉS:
             for i, result in enumerate(results, 1):
                 results_text += f"\n📰 ACTUALITÉ #{i}:\n"
                 results_text += f"   Titre: {result['title']}\n"
-                results_text += f"   Date de publication: {result['date']}\n"
+                results_text += f"   Date: {result['date']}\n"
                 results_text += f"   Source: {result['url']}\n"
                 results_text += f"   ---\n"
         else:
@@ -677,7 +763,7 @@ Citez les sources et fournissez des informations basées sur ces résultats rée
     return results_text
 
 def detect_search_intent(user_message):
-    """Détecte le type de recherche - Google par défaut"""
+    """Détecte le type de recherche"""
     search_keywords = [
         'recherche', 'cherche', 'trouve', 'informations sur', 'actualité', 
         'news', 'dernières nouvelles', 'quoi de neuf', 'what is', 'who is',
@@ -698,17 +784,16 @@ def detect_search_intent(user_message):
     
     youtube_keywords = [
         'video', 'vidéo', 'youtube', 'regarde', 'montre moi', 
-        'voir video', 'regarder', 'visionner'
+        'voir video', 'regarder', 'visionner', 'film'
     ]
     
     message_lower = user_message.lower()
-    
     needs_search = any(keyword in message_lower for keyword in search_keywords)
     
     if not needs_search:
         return None, None
     
-    # Ordre de priorité: YouTube → News → Wiki → Google (défaut)
+    # Priorité: YouTube → News → Wiki → Google
     if any(keyword in message_lower for keyword in youtube_keywords):
         return "youtube", user_message
     elif any(keyword in message_lower for keyword in news_keywords):
@@ -716,7 +801,6 @@ def detect_search_intent(user_message):
     elif any(keyword in message_lower for keyword in wiki_keywords):
         return "wikipedia", user_message
     else:
-        # Google par défaut (le plus puissant)
         return "google", user_message
 
 def detect_datetime_intent(user_message):
@@ -1521,13 +1605,13 @@ col1, col2 = st.columns(2)
 with col1:
     st.write("**Nouvelles fonctionnalités:**")
     st.write("- Date et heure en temps réel")
-    st.write("- Recherche Brave (puissante)")
-    st.write("- Recherche YouTube + transcriptions")
+    st.write("- Google Search (puissant)")
+    st.write("- YouTube + transcriptions")
     st.write("- Scraping de pages web")
 
 with col2:
     st.write("**Sources disponibles:**")
-    st.write("- Brave Search API")
+    st.write("- Google Custom Search")
     st.write("- YouTube Data API v3")
     st.write("- Wikipedia")
     st.write("- Google News RSS")
@@ -1535,29 +1619,39 @@ with col2:
 # -------------------------
 # Configuration API Keys
 # -------------------------
-with st.expander("⚙️ Configuration des API Keys (IMPORTANT)"):
+with st.expander("⚙️ Configuration Google & YouTube APIs"):
     st.markdown("""
-    ### 🔑 Configuration Google Custom Search API
-    
-    **⚠️ IMPORTANT - Sécurité:**
-    Vos clés API sont actuellement **EXPOSÉES PUBLIQUEMENT** ! 
-    Vous devez IMMÉDIATEMENT :
-    1. Aller sur https://console.cloud.google.com/apis/credentials
-    2. SUPPRIMER la clé : AIzaSyAjglTZsz2VP972q6i8MgH5_euEQyZ6X3c
-    3. Créer une NOUVELLE clé avec restrictions
+    ### 🔑 Configuration des API Keys
     
     **Configuration sécurisée dans Streamlit Cloud:**
-    1. Allez dans Settings → Secrets de votre app
-    2. Ajoutez:
+    Settings → Secrets → Ajoutez:
     ```toml
-    GOOGLE_API_KEY = "votre_nouvelle_clé"
+    GOOGLE_API_KEY = "votre_clé_google"
     GOOGLE_SEARCH_ENGINE_ID = "511c9c9b776d246e4"
     YOUTUBE_API_KEY = "votre_clé_youtube"
     ```
     
-    **Quotas Google:**
-    - Custom Search: 100 requêtes/jour (gratuit)
-    - YouTube: 10,000 unités/jour (gratuit)
+    **Comment obtenir les clés:**
+    
+    **1. Google Custom Search:**
+    - https://console.cloud.google.com/
+    - Créez un projet → Activez "Custom Search API"
+    - Créez une clé API
+    - Créez un Search Engine: https://programmablesearchengine.google.com/
+    
+    **2. YouTube Data API v3:**
+    - Même console Google Cloud
+    - Activez "YouTube Data API v3"
+    - Utilisez la même clé API ou créez-en une nouvelle
+    
+    **Quotas:**
+    - Google Search: 100 requêtes/jour gratuit
+    - YouTube: 10,000 unités/jour gratuit
+    
+    **Installation supplémentaire:**
+    ```bash
+    pip install youtube-transcript-api
+    ```
     
     **Statut actuel:**
     """)
@@ -1599,55 +1693,52 @@ with st.expander("Guide d'utilisation"):
     4. Téléchargez le résultat
     
     **Exemples de questions avec recherche:**
-    - "Recherche des informations sur Paris" → Brave
-    - "Actualités du jour" → News
-    - "Vidéos sur Python" → YouTube
+    - "Recherche des informations sur Paris" → Google
+    - "Actualités du jour" → Google News
     - "Quelle heure est-il ?" → Date/heure
     - "Définition de IA" → Wikipedia
+    - "Fantastic Four 2025" → Google
     
     **Modèles utilisés:**
     - **BLIP**: Description d'images
     - **LLaMA 3.1 70B**: Conversations (connaissances jusqu'à janvier 2025)
     - **Qwen ImageEditPro**: Édition d'images
-    - **Brave Search**: Recherche web temps réel
-    - **YouTube API**: Vidéos et transcriptions
+    - **Google Custom Search**: Recherche web temps réel
+    - **Wikipedia**: Encyclopédie
+    - **Google News**: Actualités
     
     **Note:** Vision AI affiche "Vision AI thinking..." pendant le traitement.
     """)
 
 # -------------------------
-# Test des API Google
+# Test Google & YouTube
 # -------------------------
-if st.sidebar.button("🧪 Test Google Search"):
-    st.sidebar.subheader("Tests Recherche")
+if st.sidebar.button("🧪 Test APIs"):
+    st.sidebar.subheader("Tests")
     
-    # Test date/heure
     dt_info = get_current_datetime_info()
     if "error" not in dt_info:
         st.sidebar.success("✅ Date/Heure OK")
         st.sidebar.write(f"📅 {dt_info['date']} {dt_info['time']}")
     
-    # Test Google Search
     if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
         with st.sidebar.expander("Test Google"):
-            google_query = st.text_input("Query:", "Fantastic Four 2025 film")
+            google_query = st.text_input("Google Query:", "Fantastic Four 2025")
             if st.button("Rechercher"):
-                with st.spinner("Recherche Google..."):
+                with st.spinner("Recherche..."):
                     results = search_google(google_query, max_results=5)
                     if results:
                         st.success(f"✅ {len(results)} résultats")
                         for r in results:
                             st.write(f"**{r['title']}**")
-                            st.caption(r['snippet'][:100])
                     else:
                         st.warning("Aucun résultat")
     else:
-        st.sidebar.error("⚠️ Configurez Google API !")
+        st.sidebar.error("⚠️ Google API non configurée")
     
-    # Test YouTube
     if YOUTUBE_API_KEY:
         with st.sidebar.expander("Test YouTube"):
-            yt_query = st.text_input("YouTube Query:", "AI news 2025")
+            yt_query = st.text_input("YouTube Query:", "AI 2025")
             if st.button("Chercher vidéos"):
                 with st.spinner("Recherche YouTube..."):
                     results = search_youtube(yt_query, max_results=3)
