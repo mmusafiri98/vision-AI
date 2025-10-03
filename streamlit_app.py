@@ -1407,41 +1407,75 @@ def show_admin_page():
                 
                 st.write(f"**Conversation ID:** `{conv_id}`")
                 
-                # Info sur la conversation
-                try:
-                    conv_info = supabase.table("conversations").select("*").eq("conversation_id", conv_id).execute()
-                    if conv_info.data:
-                        conv = conv_info.data[0]
-                        st.write(f"**Description:** {conv.get('description', 'N/A')}")
-                        st.write(f"**User ID:** `{conv.get('user_id', 'N/A')}`")
-                        st.write(f"**Créée le:** {conv.get('created_at', 'N/A')}")
-                except:
-                    pass
-                
-                st.markdown("---")
-                
                 try:
                     msgs = supabase.table("messages").select("*").eq("conversation_id", conv_id).order("created_at", desc=False).execute()
                     
                     if msgs.data:
                         st.write(f"**Total messages:** {len(msgs.data)}")
                         
-                        # Afficher les messages comme une conversation
-                        for i, msg in enumerate(msgs.data, 1):
-                            sender = msg.get('sender', 'unknown')
-                            is_user = sender == 'user'
+                        for msg in msgs.data:
+                            sender_icon = "👤" if msg.get('sender') == 'user' else "🤖"
                             
-                            # Style différent selon l'expéditeur
-                            if is_user:
-                                st.markdown(f"### 👤 Message    with tab2:
-        email_reg = st.text_input("Email", key="reg_email")
-        name_reg = st.text_input("Nom", key="reg_name")
-        pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
-        pass_confirm = st.text_input("Confirmer", type="password", key="reg_confirm")
-        
-        if st.button("Créer compte", key="create_account_btn"):
-            if not email_reg or not name_reg or not pass_reg or not pass_confirm:
-                st.error("import streamlit as st")
+                            with st.expander(f"{sender_icon} {msg.get('sender', 'unknown')} - {msg.get('created_at', 'N/A')[:16]}"):
+                                st.write(f"**Type:** {msg.get('type', 'text')}")
+                                st.write(f"**Date:** {msg.get('created_at', 'N/A')}")
+                                
+                                st.markdown("**Contenu:**")
+                                st.text_area("Message", msg.get('content', ''), height=100, key=f"msg_content_{msg.get('id')}", disabled=True)
+                                
+                                # Afficher image si présente
+                                if msg.get('image_data'):
+                                    try:
+                                        img = base64_to_image(msg.get('image_data'))
+                                        st.image(img, width=200, caption="Image jointe")
+                                    except:
+                                        st.warning("Image non chargeable")
+                                
+                                # Bouton suppression
+                                if st.button("🗑️ Supprimer message", key=f"del_msg_{msg.get('id')}"):
+                                    try:
+                                        supabase.table("messages").delete().eq("id", msg.get('id')).execute()
+                                        st.success("✅ Message supprimé")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"❌ Erreur: {e}")
+                    else:
+                        st.info("Aucun message dans cette conversation")
+                        
+                except Exception as e:
+                    st.error(f"❌ Erreur: {e}")
+                    st.code(traceback.format_exc())
+            
+            else:
+                # Afficher tous les messages récents
+                try:
+                    msgs = supabase.table("messages").select("*").order("created_at", desc=True).limit(100).execute()
+                    
+                    if msgs.data:
+                        st.write(f"**Messages récents (100 derniers):** {len(msgs.data)}")
+                        
+                        for msg in msgs.data:
+                            sender_icon = "👤" if msg.get('sender') == 'user' else "🤖"
+                            
+                            with st.expander(f"{sender_icon} {msg.get('sender', 'unknown')} - Conv: {msg.get('conversation_id', 'N/A')[:8]}... - {msg.get('created_at', 'N/A')[:16]}"):
+                                st.write(f"**Conversation ID:** `{msg.get('conversation_id', 'N/A')}`")
+                                st.write(f"**Type:** {msg.get('type', 'text')}")
+                                st.write(f"**Date:** {msg.get('created_at', 'N/A')}")
+                                
+                                content_preview = msg.get('content', '')[:200] + "..." if len(msg.get('content', '')) > 200 else msg.get('content', '')
+                                st.write(f"**Contenu:** {content_preview}")
+                                
+                                if msg.get('image_data'):
+                                    st.write("📷 *Contient une image*")
+                    else:
+                        st.info("Aucun message trouvé")
+                        
+                except Exception as e:
+                    st.error(f"❌ Erreur: {e}")
+                    st.code(traceback.format_exc())
+        else:
+            st.error("❌ Supabase non connecté")
 
 def cleanup_temp_files():
     try:
