@@ -18,51 +18,49 @@ import pytz
 import requests
 from bs4 import BeautifulSoup
 import json
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-import asyncio
 
-# -------------------------
+# ------------------------- 
 # Config
 # -------------------------
-st.set_page_config(page_title="Vision AI Chat + OperatorGPT", layout="wide")
+st.set_page_config(page_title="Vision AI Chat - Complete", layout="wide")
 
-SYSTEM_PROMPT = """You are Vision AI with OperatorGPT capabilities. You were created by Pepe Musafiri, an Artificial Intelligence Engineer, with contributions from Meta AI.
+SYSTEM_PROMPT = """You are Vision AI. You were created by Pepe Musafiri, an Artificial Intelligence Engineer, with contributions from Meta AI. 
 
 CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE:
 1. When you receive [DATETIME] information, YOU MUST USE IT to answer any time/date questions. This is the REAL current date and time.
 2. When you receive [WEB_SEARCH] results, YOU MUST USE THEM to provide accurate, up-to-date information. These are REAL search results from the internet.
-3. When you receive [BROWSER_ACTION] results, these are REAL actions performed by OperatorGPT in a browser.
-4. NEVER say you don't know the current date/time when [DATETIME] information is provided.
-5. ALWAYS cite and use the web search results when they are provided in [WEB_SEARCH].
+3. NEVER say you don't know the current date/time when [DATETIME] information is provided.
+4. ALWAYS cite and use the web search results when they are provided in [WEB_SEARCH].
 
 You have access to:
 - Current date and time information (provided in [DATETIME])
 - Real-time web search capabilities (results in [WEB_SEARCH])
 - Image analysis and editing tools
-- OperatorGPT browser automation (actions in [BROWSER_ACTION])
 
-OPERATORGPT CAPABILITIES:
-You can control a browser to perform complex tasks:
-- Navigate to websites
-- Click buttons and links
-- Fill forms and input fields
-- Extract and read page content
-- Take screenshots
-- Execute multi-step workflows
-- Make purchases, bookings, searches
-- Summarize web content
+When you receive an image description starting with [IMAGE], you should:
+1. Acknowledge that you can see and analyze the image
+2. Provide detailed analysis of what you observe
+3. Answer any specific questions about the image
+4. Be helpful and descriptive in your analysis
 
-When you receive browser automation requests:
-1. Break down the task into clear steps
-2. Execute actions sequentially
-3. Verify each step's success
-4. Report progress and results
-5. Handle errors gracefully"""
+When you receive information about image editing starting with [EDIT_CONTEXT], you should:
+1. Remember the editing history and context provided
+2. Use this information to discuss the edits made
+3. Answer questions about the editing process and results
+4. Provide suggestions for further improvements if asked
+
+When you receive current time/date information starting with [DATETIME]:
+- This is the ACTUAL, REAL current date and time
+- YOU MUST USE this information to answer questions about the current date, time, day of week
+- DO NOT say you don't have access to current time - you DO have it in [DATETIME]
+- Calculate time differences or future/past dates based on this information
+
+When you receive web search results starting with [WEB_SEARCH]:
+- These are REAL search results from the internet RIGHT NOW
+- YOU MUST analyze and use this information in your response
+- Cite the sources provided in the search results
+- Provide accurate and up-to-date information based on these results
+- DO NOT rely only on your training data - USE THE SEARCH RESULTS PROVIDED"""
 
 # Informations admin
 ADMIN_CREDENTIALS = {
@@ -73,6 +71,8 @@ ADMIN_CREDENTIALS = {
 # -------------------------
 # Configuration des API Keys
 # -------------------------
+# IMPORTANT: Configurez ces clés dans les secrets Streamlit (Settings → Secrets)
+# NE PAS mettre les clés directement dans le code !
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 GOOGLE_SEARCH_ENGINE_ID = os.environ.get("GOOGLE_SEARCH_ENGINE_ID", "")
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
@@ -82,224 +82,15 @@ YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 # -------------------------
 TMP_DIR = "tmp_files"
 EDITED_IMAGES_DIR = "edited_images"
-BROWSER_SCREENSHOTS_DIR = "browser_screenshots"
 os.makedirs(TMP_DIR, exist_ok=True)
 os.makedirs(EDITED_IMAGES_DIR, exist_ok=True)
-os.makedirs(BROWSER_SCREENSHOTS_DIR, exist_ok=True)
 
 # -------------------------
-# OperatorGPT - Browser Automation
-# -------------------------
-class OperatorGPT:
-    """Agent autonome pour le contrôle de navigateur"""
-    
-    def __init__(self):
-        self.driver = None
-        self.action_history = []
-        self.max_retries = 3
-    
-    def initialize_browser(self, headless=True):
-        """Initialise le navigateur Chrome/Chromium"""
-        try:
-            chrome_options = Options()
-            if headless:
-                chrome_options.add_argument("--headless")
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--window-size=1920,1080")
-            chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            
-            self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.implicitly_wait(10)
-            return True
-        except Exception as e:
-            st.error(f"Erreur initialisation navigateur: {e}")
-            return False
-    
-    def close_browser(self):
-        """Ferme le navigateur"""
-        if self.driver:
-            try:
-                self.driver.quit()
-                self.driver = None
-            except:
-                pass
-    
-    def navigate_to(self, url):
-        """Navigue vers une URL"""
-        try:
-            self.driver.get(url)
-            self.action_history.append(f"Navigation vers: {url}")
-            time.sleep(2)
-            return True, f"Navigation réussie vers {url}"
-        except Exception as e:
-            return False, f"Erreur navigation: {e}"
-    
-    def get_page_content(self):
-        """Récupère le contenu textuel de la page"""
-        try:
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-            for script in soup(["script", "style"]):
-                script.decompose()
-            text = soup.get_text()
-            lines = (line.strip() for line in text.splitlines())
-            text = ' '.join(chunk for line in lines for chunk in line.split("  ") if chunk)
-            return text[:5000]  # Limite à 5000 caractères
-        except Exception as e:
-            return f"Erreur lecture contenu: {e}"
-    
-    def click_element(self, selector, by=By.CSS_SELECTOR):
-        """Clique sur un élément"""
-        try:
-            element = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((by, selector))
-            )
-            element.click()
-            self.action_history.append(f"Clic sur: {selector}")
-            time.sleep(1)
-            return True, f"Clic réussi sur {selector}"
-        except Exception as e:
-            return False, f"Erreur clic: {e}"
-    
-    def fill_input(self, selector, text, by=By.CSS_SELECTOR):
-        """Remplit un champ de saisie"""
-        try:
-            element = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((by, selector))
-            )
-            element.clear()
-            element.send_keys(text)
-            self.action_history.append(f"Rempli champ {selector}: {text[:20]}...")
-            return True, f"Champ rempli: {selector}"
-        except Exception as e:
-            return False, f"Erreur saisie: {e}"
-    
-    def take_screenshot(self, filename=None):
-        """Prend une capture d'écran"""
-        try:
-            if not filename:
-                filename = f"screenshot_{int(time.time())}.png"
-            filepath = os.path.join(BROWSER_SCREENSHOTS_DIR, filename)
-            self.driver.save_screenshot(filepath)
-            self.action_history.append(f"Screenshot: {filename}")
-            return True, filepath
-        except Exception as e:
-            return False, f"Erreur screenshot: {e}"
-    
-    def execute_search(self, search_engine, query):
-        """Effectue une recherche sur un moteur de recherche"""
-        try:
-            if search_engine.lower() == "google":
-                self.navigate_to("https://www.google.com")
-                self.fill_input("textarea[name='q']", query)
-                self.click_element("textarea[name='q']")
-                time.sleep(0.5)
-                # Envoyer Enter
-                element = self.driver.find_element(By.CSS_SELECTOR, "textarea[name='q']")
-                element.send_keys(Keys.RETURN)
-                time.sleep(3)
-                
-                # Extraire les résultats
-                results = []
-                search_results = self.driver.find_elements(By.CSS_SELECTOR, "div.g")
-                for result in search_results[:5]:
-                    try:
-                        title = result.find_element(By.CSS_SELECTOR, "h3").text
-                        link = result.find_element(By.CSS_SELECTOR, "a").get_attribute("href")
-                        snippet = result.find_element(By.CSS_SELECTOR, "div.VwiC3b").text
-                        results.append({"title": title, "link": link, "snippet": snippet})
-                    except:
-                        continue
-                
-                return True, results
-            
-            elif search_engine.lower() == "youtube":
-                self.navigate_to(f"https://www.youtube.com/results?search_query={query}")
-                time.sleep(3)
-                
-                results = []
-                videos = self.driver.find_elements(By.CSS_SELECTOR, "ytd-video-renderer")
-                for video in videos[:5]:
-                    try:
-                        title = video.find_element(By.CSS_SELECTOR, "#video-title").text
-                        url = video.find_element(By.CSS_SELECTOR, "#video-title").get_attribute("href")
-                        results.append({"title": title, "url": url})
-                    except:
-                        continue
-                
-                return True, results
-            
-            return False, "Moteur de recherche non supporté"
-        except Exception as e:
-            return False, f"Erreur recherche: {e}"
-    
-    def extract_data(self, selectors):
-        """Extrait des données spécifiques de la page"""
-        try:
-            data = {}
-            for key, selector in selectors.items():
-                try:
-                    element = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    data[key] = element.text
-                except:
-                    data[key] = None
-            return True, data
-        except Exception as e:
-            return False, f"Erreur extraction: {e}"
-    
-    def execute_workflow(self, steps):
-        """Exécute un workflow multi-étapes"""
-        results = []
-        for i, step in enumerate(steps):
-            action = step.get("action")
-            params = step.get("params", {})
-            
-            result = {"step": i+1, "action": action, "success": False}
-            
-            try:
-                if action == "navigate":
-                    success, msg = self.navigate_to(params.get("url"))
-                elif action == "click":
-                    success, msg = self.click_element(params.get("selector"))
-                elif action == "fill":
-                    success, msg = self.fill_input(params.get("selector"), params.get("text"))
-                elif action == "screenshot":
-                    success, msg = self.take_screenshot(params.get("filename"))
-                elif action == "wait":
-                    time.sleep(params.get("seconds", 2))
-                    success, msg = True, f"Attendu {params.get('seconds')}s"
-                elif action == "extract":
-                    success, msg = self.extract_data(params.get("selectors"))
-                else:
-                    success, msg = False, f"Action inconnue: {action}"
-                
-                result["success"] = success
-                result["message"] = msg
-                results.append(result)
-                
-                if not success and step.get("critical", False):
-                    break
-                    
-            except Exception as e:
-                result["message"] = str(e)
-                results.append(result)
-                if step.get("critical", False):
-                    break
-        
-        return results
-
-# -------------------------
-# Instance globale OperatorGPT
-# -------------------------
-if "operator_gpt" not in st.session_state:
-    st.session_state.operator_gpt = OperatorGPT()
-
-# -------------------------
-# Supabase Connection (inchangé)
+# Supabase Connection
 # -------------------------
 @st.cache_resource
 def init_supabase():
+    """Initialise Supabase avec gestion d'erreur complète"""
     try:
         supabase_url = os.environ.get("SUPABASE_URL")
         supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
@@ -320,7 +111,7 @@ def init_supabase():
 supabase = init_supabase()
 
 # -------------------------
-# Fonctions DB (complètes)
+# Fonctions de récupération de mot de passe
 # -------------------------
 def generate_reset_token():
     return ''.join(random.choices(string.ascii_letters + string.digits, k=32))
@@ -328,11 +119,14 @@ def generate_reset_token():
 def store_reset_token(email, token):
     if not supabase:
         return False
+    
     try:
         expiration = time.time() + 3600
         user_check = supabase.table("users").select("*").eq("email", email).execute()
+        
         if not user_check.data:
             return False
+        
         try:
             response = supabase.table("users").update({
                 "reset_token": token,
@@ -340,6 +134,7 @@ def store_reset_token(email, token):
                 "reset_token_created": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
             }).eq("email", email).execute()
+            
             return bool(response.data)
         except:
             try:
@@ -361,8 +156,10 @@ def store_reset_token(email, token):
 def verify_reset_token(email, token):
     if not supabase:
         return False
+    
     try:
         current_time = time.time()
+        
         try:
             response = supabase.table("users").select("reset_token, reset_token_expires").eq("email", email).execute()
             if response.data:
@@ -371,12 +168,14 @@ def verify_reset_token(email, token):
                     return True
         except:
             pass
+        
         try:
             response = supabase.table("password_resets").select("*").eq("email", email).eq("reset_token", token).eq("used", False).execute()
             if response.data and response.data[0].get("expires_at", 0) > current_time:
                 return True
         except:
             pass
+        
         return False
     except:
         return False
@@ -384,6 +183,7 @@ def verify_reset_token(email, token):
 def reset_password(email, token, new_password):
     if not supabase or not verify_reset_token(email, token):
         return False
+    
     try:
         update_data = {
             "password": new_password,
@@ -392,7 +192,9 @@ def reset_password(email, token, new_password):
             "reset_token_expires": None,
             "reset_token_created": None
         }
+        
         update_response = supabase.table("users").update(update_data).eq("email", email).execute()
+        
         if update_response.data:
             try:
                 supabase.table("password_resets").update({
@@ -406,6 +208,9 @@ def reset_password(email, token, new_password):
     except:
         return False
 
+# -------------------------
+# Fonctions DB
+# -------------------------
 def verify_user(email, password):
     if email == ADMIN_CREDENTIALS["email"] and password == ADMIN_CREDENTIALS["password"]:
         return {
@@ -450,6 +255,7 @@ def verify_user(email, password):
 def create_user(email, password, name, role="user"):
     if not supabase:
         return False
+        
     try:
         try:
             response = supabase.auth.admin.create_user({
@@ -461,6 +267,7 @@ def create_user(email, password, name, role="user"):
             return response.user is not None
         except:
             pass
+            
         user_data = {
             "id": str(uuid.uuid4()),
             "email": email,
@@ -469,6 +276,7 @@ def create_user(email, password, name, role="user"):
             "role": role,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
+        
         response = supabase.table("users").insert(user_data).execute()
         return bool(response.data)
     except:
@@ -477,10 +285,13 @@ def create_user(email, password, name, role="user"):
 def get_conversations(user_id):
     if not supabase or not user_id:
         return []
+        
     try:
         response = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+        
         if not response.data:
             return []
+            
         conversations = []
         for conv in response.data:
             conv_id = conv.get("conversation_id") or conv.get("id")
@@ -498,13 +309,16 @@ def get_conversations(user_id):
 def create_conversation(user_id, description):
     if not supabase or not user_id:
         return None
+        
     try:
         data = {
             "user_id": user_id,
             "description": description,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
+        
         response = supabase.table("conversations").insert(data).execute()
+        
         if response.data:
             conv = response.data[0]
             return {
@@ -520,10 +334,13 @@ def create_conversation(user_id, description):
 def get_messages(conversation_id):
     if not supabase or not conversation_id:
         return []
+        
     try:
         response = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
+        
         if not response.data:
             return []
+            
         messages = []
         for msg in response.data:
             messages.append({
@@ -542,10 +359,12 @@ def get_messages(conversation_id):
 def add_message(conversation_id, sender, content, msg_type="text", image_data=None, edit_context=None):
     if not supabase or not conversation_id or not content:
         return False
+        
     try:
         conv_check = supabase.table("conversations").select("*").eq("conversation_id", conversation_id).execute()
         if not conv_check.data:
             return False
+            
         message_data = {
             "conversation_id": conversation_id,
             "sender": str(sender).strip(),
@@ -553,17 +372,31 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
             "type": msg_type or "text",
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
+        
         if image_data:
             message_data["image_data"] = image_data
         if edit_context:
             message_data["edit_context"] = edit_context
+            
         response = supabase.table("messages").insert(message_data).execute()
         return bool(response.data)
     except:
         return False
 
 # -------------------------
-# BLIP loader (inchangé)
+# Utility functions
+# -------------------------
+def image_to_base64(image):
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
+
+def base64_to_image(img_str):
+    img_bytes = base64.b64decode(img_str)
+    return Image.open(io.BytesIO(img_bytes))
+
+# -------------------------
+# BLIP loader
 # -------------------------
 @st.cache_resource
 def load_blip():
@@ -581,11 +414,13 @@ def generate_caption(image, processor, model):
     return processor.decode(out[0], skip_special_tokens=True)
 
 # -------------------------
-# Fonctions Date/Heure et Web Search (inchangées)
+# Fonctions Date/Heure et Web Search
 # -------------------------
 def get_current_datetime_info():
+    """Récupère les informations de date et heure actuelles"""
     try:
-        tz = pytz.timezone('Europe/Brussels')
+        # Timezone par défaut (peut être configuré)
+        tz = pytz.timezone('Europe/Brussels')  # Changez selon votre timezone
         now = datetime.now(tz)
         
         datetime_info = {
@@ -607,134 +442,360 @@ def get_current_datetime_info():
         return {"error": str(e)}
 
 def format_datetime_for_prompt():
+    """Formate les informations de date/heure pour le prompt de manière TRÈS explicite"""
     dt_info = get_current_datetime_info()
     
     if "error" in dt_info:
         return f"[DATETIME] Erreur: {dt_info['error']}"
     
-    return f"""[DATETIME] ⚠️ INFORMATIONS TEMPORELLES ACTUELLES:
-Date ACTUELLE: {dt_info['datetime']}
-Jour: {dt_info['day_of_week']}
-Mois: {dt_info['month']}
-Année: {dt_info['year']}"""
+    # Version TRÈS explicite et détaillée
+    return f"""[DATETIME] ⚠️ IMPORTANT - INFORMATIONS TEMPORELLES ACTUELLES (RÉELLES):
+==========================================
+VOUS DEVEZ UTILISER CES INFORMATIONS POUR RÉPONDRE AUX QUESTIONS SUR LA DATE/HEURE !
 
-# [Garder toutes les fonctions de recherche: search_google, search_youtube, etc.]
+Date et heure ACTUELLES (EN CE MOMENT MÊME):
+- Date complète MAINTENANT: {dt_info['datetime']}
+- Date AUJOURD'HUI: {dt_info['date']}
+- Heure ACTUELLE: {dt_info['time']}
+- Jour de la semaine AUJOURD'HUI: {dt_info['day_of_week']}
+- Mois ACTUEL: {dt_info['month']}
+- Année ACTUELLE: {dt_info['year']}
+- Timezone: {dt_info['timezone']}
 
-# -------------------------
-# Détection des intentions OperatorGPT
-# -------------------------
-def detect_operator_intent(user_message):
-    """Détecte si l'utilisateur demande une action OperatorGPT"""
-    operator_keywords = [
-        'navigate', 'navigue', 'va sur', 'ouvre',
-        'click', 'clique', 'appuie',
-        'search for', 'cherche', 'recherche',
-        'fill', 'rempli', 'écris',
-        'book', 'réserve', 'achète', 'commande',
-        'extract', 'récupère', 'lis',
-        'screenshot', 'capture', 'prends une photo',
-        'automatise', 'automate', 'fais', 'exécute'
+RAPPEL: Si l'utilisateur demande "quelle heure est-il?" ou "quel jour sommes-nous?", 
+VOUS DEVEZ répondre avec ces informations ci-dessus. Ne dites PAS que vous ne savez pas!
+=========================================="""
+
+def search_google(query, max_results=10):
+    """Recherche avec Google Custom Search API"""
+    if not GOOGLE_API_KEY or not GOOGLE_SEARCH_ENGINE_ID:
+        st.warning("Google API credentials manquantes")
+        return []
+    
+    try:
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            "key": GOOGLE_API_KEY,
+            "cx": GOOGLE_SEARCH_ENGINE_ID,
+            "q": query,
+            "num": max_results
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = []
+            
+            for item in data.get('items', []):
+                results.append({
+                    'title': item.get('title', ''),
+                    'url': item.get('link', ''),
+                    'snippet': item.get('snippet', ''),
+                    'display_url': item.get('displayLink', '')
+                })
+            
+            return results
+        elif response.status_code == 429:
+            st.error("⚠️ Quota Google API dépassé pour aujourd'hui")
+            return []
+        else:
+            st.error(f"Google API erreur: {response.status_code}")
+            return []
+    except Exception as e:
+        st.error(f"Erreur Google Search: {e}")
+        return []
+
+def search_youtube(query, max_results=5):
+    """Recherche de vidéos YouTube avec API officielle"""
+    if not YOUTUBE_API_KEY:
+        st.warning("YouTube API key manquante")
+        return []
+    
+    try:
+        url = "https://www.googleapis.com/youtube/v3/search"
+        params = {
+            "part": "snippet",
+            "q": query,
+            "key": YOUTUBE_API_KEY,
+            "maxResults": max_results,
+            "type": "video",
+            "order": "date",
+            "relevanceLanguage": "fr"
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = []
+            
+            for item in data.get('items', []):
+                video_id = item['id']['videoId']
+                snippet = item['snippet']
+                
+                results.append({
+                    'title': snippet.get('title', ''),
+                    'video_id': video_id,
+                    'url': f"https://www.youtube.com/watch?v={video_id}",
+                    'description': snippet.get('description', ''),
+                    'channel': snippet.get('channelTitle', ''),
+                    'published': snippet.get('publishedAt', ''),
+                    'thumbnail': snippet.get('thumbnails', {}).get('high', {}).get('url', '')
+                })
+            
+            return results
+        elif response.status_code == 403:
+            st.error("⚠️ Quota YouTube API dépassé ou clé invalide")
+            return []
+        else:
+            st.error(f"YouTube API erreur: {response.status_code}")
+            return []
+    except Exception as e:
+        st.error(f"Erreur YouTube Search: {e}")
+        return []
+
+def get_youtube_transcript(video_id):
+    """Récupère la transcription d'une vidéo YouTube"""
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['fr', 'en'])
+        full_text = " ".join([item['text'] for item in transcript[:50]])
+        return full_text
+    except:
+        return None
+
+def scrape_page_content(url, max_chars=2000):
+    """Scrape le contenu complet d'une page web"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            # Supprimer scripts et styles
+            for script in soup(["script", "style"]):
+                script.decompose()
+            # Extraire le texte
+            text = soup.get_text()
+            # Nettoyer
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = ' '.join(chunk for chunk in chunks if chunk)
+            return text[:max_chars]
+        return None
+    except Exception as e:
+        return None
+    
+def search_wikipedia(query):
+    """Recherche rapide sur Wikipedia"""
+    try:
+        wiki_url = f"https://fr.wikipedia.org/w/api.php"
+        params = {
+            'action': 'query',
+            'format': 'json',
+            'list': 'search',
+            'srsearch': query,
+            'utf8': 1,
+            'srlimit': 3
+        }
+        
+        response = requests.get(wiki_url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = []
+            
+            for item in data.get('query', {}).get('search', []):
+                results.append({
+                    'title': item.get('title', ''),
+                    'snippet': item.get('snippet', '').replace('<span class="searchmatch">', '').replace('</span>', ''),
+                    'url': f"https://fr.wikipedia.org/wiki/{item.get('title', '').replace(' ', '_')}"
+                })
+            
+            return results
+        return []
+    except Exception as e:
+        return []
+
+def search_news(query):
+    """Recherche d'actualités récentes"""
+    try:
+        # Utilisation de Google News RSS (gratuit)
+        news_url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=fr&gl=FR&ceid=FR:fr"
+        
+        response = requests.get(news_url, timeout=10)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'xml')
+            items = soup.find_all('item')[:5]
+            
+            results = []
+            for item in items:
+                title = item.find('title')
+                link = item.find('link')
+                pub_date = item.find('pubDate')
+                description = item.find('description')
+                
+                if title and link:
+                    results.append({
+                        'title': title.text,
+                        'url': link.text,
+                        'date': pub_date.text if pub_date else 'N/A',
+                        'snippet': description.text if description else ''
+                    })
+            
+            return results
+        return []
+    except Exception as e:
+        return []
+
+def format_web_search_for_prompt(query, search_type="web"):
+    """Formate les résultats de recherche pour le prompt"""
+    results_text = f"""[WEB_SEARCH] ⚠️ RÉSULTATS DE RECHERCHE EN TEMPS RÉEL - VOUS DEVEZ LES UTILISER !
+==========================================
+Question de recherche: "{query}"
+Type de recherche: {search_type}
+
+⚠️ IMPORTANT: Ces résultats proviennent d'Internet MAINTENANT (en temps réel).
+VOUS DEVEZ utiliser ces informations pour répondre à la question de l'utilisateur.
+NE dites PAS que vous n'avez pas accès à Internet - ces résultats SONT d'Internet!
+
+RÉSULTATS TROUVÉS:
+"""
+    
+    if search_type == "google":
+        results = search_google(query)
+        if results:
+            for i, result in enumerate(results, 1):
+                results_text += f"\n🔍 RÉSULTAT GOOGLE #{i}:\n"
+                results_text += f"   Titre: {result['title']}\n"
+                results_text += f"   Source URL: {result['url']}\n"
+                results_text += f"   Domaine: {result.get('display_url', 'N/A')}\n"
+                results_text += f"   Contenu: {result['snippet']}\n"
+                
+                page_content = scrape_page_content(result['url'])
+                if page_content:
+                    results_text += f"   📄 Extrait de la page: {page_content[:800]}...\n"
+                
+                results_text += f"   ---\n"
+        else:
+            results_text += "\n❌ Aucun résultat Google trouvé.\n"
+    
+    elif search_type == "youtube":
+        results = search_youtube(query)
+        if results:
+            for i, result in enumerate(results, 1):
+                results_text += f"\n🎥 VIDÉO YOUTUBE #{i}:\n"
+                results_text += f"   Titre: {result['title']}\n"
+                results_text += f"   URL: {result['url']}\n"
+                results_text += f"   Chaîne: {result['channel']}\n"
+                results_text += f"   Publié: {result['published']}\n"
+                results_text += f"   Description: {result['description'][:300]}...\n"
+                
+                transcript = get_youtube_transcript(result['video_id'])
+                if transcript:
+                    results_text += f"   📝 Transcription: {transcript[:500]}...\n"
+                
+                results_text += f"   ---\n"
+        else:
+            results_text += "\n❌ Aucune vidéo YouTube trouvée.\n"
+    
+    elif search_type == "wikipedia":
+        results = search_wikipedia(query)
+        if results:
+            for i, result in enumerate(results, 1):
+                results_text += f"\n📚 ARTICLE WIKIPEDIA #{i}:\n"
+                results_text += f"   Titre: {result['title']}\n"
+                results_text += f"   URL: {result['url']}\n"
+                results_text += f"   Extrait: {result['snippet']}\n"
+                results_text += f"   ---\n"
+        else:
+            results_text += "\n❌ Aucun article Wikipedia trouvé.\n"
+    
+    elif search_type == "news":
+        results = search_news(query)
+        if results:
+            for i, result in enumerate(results, 1):
+                results_text += f"\n📰 ACTUALITÉ #{i}:\n"
+                results_text += f"   Titre: {result['title']}\n"
+                results_text += f"   Date: {result['date']}\n"
+                results_text += f"   Source: {result['url']}\n"
+                results_text += f"   ---\n"
+        else:
+            results_text += "\n❌ Aucune actualité trouvée.\n"
+    
+    results_text += """
+==========================================
+⚠️ RAPPEL: Vous DEVEZ utiliser ces résultats de recherche dans votre réponse.
+Citez les sources et fournissez des informations basées sur ces résultats réels.
+=========================================="""
+    
+    return results_text
+
+def detect_search_intent(user_message):
+    """Détecte le type de recherche"""
+    search_keywords = [
+        'recherche', 'cherche', 'trouve', 'informations sur', 'actualité', 
+        'news', 'dernières nouvelles', 'quoi de neuf', 'what is', 'who is',
+        'définition', 'expliquer', 'c\'est quoi', 'météo', 'weather',
+        'actualités sur', 'information récente', 'dernières infos',
+        'video', 'vidéo', 'youtube', 'regarde', 'montre', 'voir'
+    ]
+    
+    news_keywords = [
+        'actualité', 'news', 'nouvelles', 'dernières nouvelles',
+        'quoi de neuf', 'info du jour', 'breaking', 'flash'
+    ]
+    
+    wiki_keywords = [
+        'définition', 'c\'est quoi', 'qui est', 'what is', 'who is',
+        'expliquer', 'wikipedia', 'définir'
+    ]
+    
+    youtube_keywords = [
+        'video', 'vidéo', 'youtube', 'regarde', 'montre moi', 
+        'voir video', 'regarder', 'visionner', 'film'
     ]
     
     message_lower = user_message.lower()
-    return any(keyword in message_lower for keyword in operator_keywords)
+    needs_search = any(keyword in message_lower for keyword in search_keywords)
+    
+    if not needs_search:
+        return None, None
+    
+    # Priorité: YouTube → News → Wiki → Google
+    if any(keyword in message_lower for keyword in youtube_keywords):
+        return "youtube", user_message
+    elif any(keyword in message_lower for keyword in news_keywords):
+        return "news", user_message
+    elif any(keyword in message_lower for keyword in wiki_keywords):
+        return "wikipedia", user_message
+    else:
+        return "google", user_message
 
-def parse_operator_command(user_message):
-    """Parse la commande utilisateur en workflow OperatorGPT"""
+def detect_datetime_intent(user_message):
+    """Détecte si l'utilisateur demande la date/heure - VERSION ÉTENDUE"""
+    datetime_keywords = [
+        'quelle heure', 'quel jour', 'quelle date', 'aujourd\'hui',
+        'maintenant', 'heure actuelle', 'date actuelle', 'quel mois',
+        'quelle année', 'what time', 'what date', 'current time',
+        'current date', 'today', 'now', 'heure', 'date', 'jour',
+        'sommes-nous', 'est-il', 'c\'est quel jour', 'on est quel jour',
+        'quelle est la date', 'quelle est l\'heure', 'il est quelle heure',
+        'nous sommes le', 'quel est le jour'
+    ]
+    
     message_lower = user_message.lower()
-    
-    # Exemple simple de parsing - peut être amélioré avec du NLP
-    if "google" in message_lower and ("cherche" in message_lower or "recherche" in message_lower):
-        query = user_message.split("cherche")[-1].split("recherche")[-1].strip()
-        return {
-            "type": "search",
-            "engine": "google",
-            "query": query
-        }
-    
-    elif "youtube" in message_lower:
-        query = user_message.split("youtube")[-1].strip()
-        return {
-            "type": "search",
-            "engine": "youtube",
-            "query": query
-        }
-    
-    elif "va sur" in message_lower or "ouvre" in message_lower or "navigue" in message_lower:
-        # Extraire l'URL
-        words = user_message.split()
-        url = next((word for word in words if "http" in word or "www" in word or ".com" in word), None)
-        return {
-            "type": "navigate",
-            "url": url
-        }
-    
-    elif "screenshot" in message_lower or "capture" in message_lower:
-        return {
-            "type": "screenshot"
-        }
-    
-    return {"type": "unknown"}
+    return any(keyword in message_lower for keyword in datetime_keywords)
 
-def execute_operator_action(command):
-    """Exécute une action OperatorGPT"""
-    operator = st.session_state.operator_gpt
-    
-    # Initialiser le navigateur si nécessaire
-    if not operator.driver:
-        if not operator.initialize_browser(headless=True):
-            return False, "Impossible d'initialiser le navigateur"
-    
-    cmd_type = command.get("type")
-    
-    try:
-        if cmd_type == "search":
-            success, results = operator.execute_search(command["engine"], command["query"])
-            if success:
-                return True, {"action": "search", "results": results}
-        
-        elif cmd_type == "navigate":
-            success, msg = operator.navigate_to(command["url"])
-            if success:
-                content = operator.get_page_content()
-                screenshot_success, screenshot_path = operator.take_screenshot()
-                return True, {"action": "navigate", "content": content[:1000], "screenshot": screenshot_path if screenshot_success else None}
-        
-        elif cmd_type == "screenshot":
-            success, screenshot_path = operator.take_screenshot()
-            if success:
-                return True, {"action": "screenshot", "path": screenshot_path}
-        
-        return False, "Action non reconnue"
-    
-    except Exception as e:
-        return False, f"Erreur exécution: {e}"
-
-def format_operator_results(results):
-    """Formate les résultats OperatorGPT pour le prompt"""
-    if not results:
-        return ""
-    
-    action = results.get("action")
-    formatted = f"\n[BROWSER_ACTION] Action OperatorGPT exécutée: {action}\n"
-    
-    if action == "search":
-        formatted += "Résultats de recherche:\n"
-        for i, result in enumerate(results.get("results", []), 1):
-            formatted += f"{i}. {result.get('title')}\n   {result.get('snippet', '')}\n   {result.get('link', result.get('url', ''))}\n\n"
-    
-    elif action == "navigate":
-        formatted += f"Contenu de la page:\n{results.get('content', 'N/A')}\n"
-        if results.get("screenshot"):
-            formatted += f"Screenshot disponible: {results['screenshot']}\n"
-    
-    elif action == "screenshot":
-        formatted += f"Screenshot sauvegardé: {results.get('path')}\n"
-    
-    return formatted
+def should_always_add_datetime():
+    """Toujours ajouter la date/heure pour que le modèle ait toujours le contexte temporel"""
+    return True  # On ajoute TOUJOURS la date/heure maintenant
 
 # -------------------------
-# AI functions avec OperatorGPT
+# AI functions avec Vision AI thinking
 # -------------------------
 def get_ai_response(query):
     if not st.session_state.get('llama_client'):
@@ -753,6 +814,7 @@ def get_ai_response(query):
         return f"Erreur modèle: {e}"
 
 def show_vision_ai_thinking(placeholder):
+    """Affiche l'animation Vision AI thinking..."""
     thinking_frames = [
         "Vision AI thinking",
         "Vision AI thinking.",
@@ -760,21 +822,330 @@ def show_vision_ai_thinking(placeholder):
         "Vision AI thinking..."
     ]
     
-    for _ in range(2):
+    for _ in range(2):  # 2 cycles d'animation
         for frame in thinking_frames:
             placeholder.markdown(f"**{frame}**")
             time.sleep(0.3)
 
 def stream_response_with_thinking(text, placeholder):
+    """Affiche Vision AI thinking puis stream la réponse"""
+    # Phase thinking
     show_vision_ai_thinking(placeholder)
+    
+    # Petite pause avant la réponse
     time.sleep(0.5)
     
+    # Stream de la réponse
     full_text = ""
     for char in str(text):
         full_text += char
         placeholder.markdown(full_text + "▋")
         time.sleep(0.02)
     placeholder.markdown(full_text)
+
+# -------------------------
+# Edition d'image avec Qwen
+# -------------------------
+def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
+    client = st.session_state.get("qwen_client")
+    if not client:
+        return None, "Client Qwen non disponible."
+    
+    try:
+        temp_path = os.path.join(TMP_DIR, f"input_{uuid.uuid4().hex}.png")
+        image.save(temp_path)
+        
+        prompt_message = edit_instruction if edit_instruction.strip() else "enhance and improve the image"
+        
+        result = client.predict(
+            input_image=handle_file(temp_path),
+            prompt=prompt_message,
+            api_name="/global_edit"
+        )
+        
+        if result and isinstance(result, (list, tuple)) and len(result) >= 2:
+            result_path = result[0]
+            status_message = result[1]
+            
+            if isinstance(result_path, str) and os.path.exists(result_path):
+                edited_img = Image.open(result_path).convert("RGBA")
+                
+                final_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
+                edited_img.save(final_path)
+                
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    
+                edit_msg = f"Image éditée avec succès - {status_message}"
+                if edit_instruction:
+                    edit_msg += f" (instruction: {edit_instruction})"
+                    
+                return edited_img, edit_msg
+        
+        return None, "Erreur traitement image"
+    except Exception as e:
+        return None, str(e)
+
+def create_edit_context(original_caption, edit_instruction, edited_caption, success_info):
+    return {
+        "original_description": original_caption,
+        "edit_instruction": edit_instruction,
+        "edited_description": edited_caption,
+        "edit_info": success_info,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_id: str):
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    try:
+        status_text.info("Analyse de l'image originale...")
+        progress_bar.progress(20)
+        time.sleep(0.5)
+        
+        original_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+        
+        status_text.info(f"Édition en cours: '{edit_instruction}'...")
+        progress_bar.progress(40)
+        
+        edited_img, result_info = edit_image_with_qwen(image, edit_instruction)
+        
+        if edited_img:
+            status_text.info("Analyse de l'image éditée...")
+            progress_bar.progress(70)
+            time.sleep(0.5)
+            
+            edited_caption = generate_caption(edited_img, st.session_state.processor, st.session_state.model)
+            
+            status_text.info("Sauvegarde et finalisation...")
+            progress_bar.progress(90)
+            
+            edit_context = create_edit_context(original_caption, edit_instruction, edited_caption, result_info)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Image originale")
+                st.image(image, caption="Avant", use_column_width=True)
+                st.write(f"**Description:** {original_caption}")
+                
+            with col2:
+                st.subheader("Image éditée")
+                st.image(edited_img, caption=f"Après: {edit_instruction}", use_column_width=True)
+                st.write(f"**Description:** {edited_caption}")
+                st.write(f"**Info technique:** {result_info}")
+            
+            st.success("Édition terminée avec succès !")
+            
+            response_content = f"""**Édition d'image terminée !**
+
+**Instruction:** {edit_instruction}
+
+**Analyse comparative:**
+- **Image originale:** {original_caption}
+- **Image éditée:** {edited_caption}
+
+**Modifications:** J'ai appliqué "{edit_instruction}". L'image montre maintenant: {edited_caption}
+
+**Info technique:** {result_info}"""
+            
+            edited_b64 = image_to_base64(edited_img.convert("RGB"))
+            success = add_message(conv_id, "assistant", response_content, "image", edited_b64, None)
+            
+            if success:
+                progress_bar.progress(100)
+                status_text.success("Traitement terminé!")
+                time.sleep(1)
+                status_text.empty()
+                progress_bar.empty()
+                
+                st.session_state.messages_memory.append({
+                    "message_id": str(uuid.uuid4()),
+                    "sender": "assistant",
+                    "content": response_content,
+                    "type": "image",
+                    "image_data": edited_b64,
+                    "edit_context": str(edit_context),
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+                
+                img_buffer = io.BytesIO()
+                edited_img.convert("RGB").save(img_buffer, format="PNG")
+                
+                st.download_button(
+                    label="Télécharger PNG",
+                    data=img_buffer.getvalue(),
+                    file_name=f"edited_image_{int(time.time())}.png",
+                    mime="image/png"
+                )
+                
+                return True
+            else:
+                status_text.error("Erreur sauvegarde")
+                progress_bar.empty()
+                return False
+        else:
+            status_text.error(f"Échec édition: {result_info}")
+            progress_bar.empty()
+            return False
+    except Exception as e:
+        status_text.error(f"Erreur: {e}")
+        progress_bar.empty()
+        return False
+
+def get_editing_context_from_conversation():
+    context_info = []
+    for msg in st.session_state.messages_memory:
+        if msg.get("edit_context"):
+            try:
+                if isinstance(msg["edit_context"], str):
+                    import ast
+                    edit_ctx = ast.literal_eval(msg["edit_context"])
+                else:
+                    edit_ctx = msg["edit_context"]
+                
+                context_info.append(f"""
+Édition précédente:
+- Image originale: {edit_ctx.get('original_description', 'N/A')}
+- Résultat: {edit_ctx.get('edited_description', 'N/A')}
+- Date: {edit_ctx.get('timestamp', 'N/A')}
+""")
+            except:
+                continue
+    
+    return "\n".join(context_info) if context_info else ""
+
+# -------------------------
+# Interface de récupération de mot de passe
+# -------------------------
+def show_password_reset():
+    st.subheader("Récupération de mot de passe")
+    
+    if st.session_state.reset_step == "request":
+        with st.form("password_reset_request"):
+            reset_email = st.text_input("Adresse email")
+            submit_reset = st.form_submit_button("Envoyer le code")
+            
+            if submit_reset and reset_email.strip() and supabase:
+                try:
+                    user_check = supabase.table("users").select("*").eq("email", reset_email.strip()).execute()
+                    
+                    if user_check.data:
+                        reset_token = generate_reset_token()
+                        
+                        if store_reset_token(reset_email.strip(), reset_token):
+                            st.session_state.reset_email = reset_email.strip()
+                            st.session_state.reset_token = reset_token
+                            st.session_state.reset_step = "verify"
+                            
+                            st.success("Code généré!")
+                            st.warning(f"**Code:** {reset_token}")
+                            time.sleep(2)
+                            st.rerun()
+                    else:
+                        st.error("Email introuvable")
+                except Exception as e:
+                    st.error(f"Erreur: {e}")
+        
+        if st.button("← Retour connexion"):
+            st.session_state.reset_step = "request"
+            st.rerun()
+    
+    elif st.session_state.reset_step == "verify":
+        with st.form("password_reset_verify"):
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                token_input = st.text_input("Code de récupération")
+                new_password = st.text_input("Nouveau mot de passe", type="password")
+                confirm_password = st.text_input("Confirmer", type="password")
+            
+            with col2:
+                st.write("**Code généré:**")
+                st.code(st.session_state.reset_token)
+            
+            submit = st.form_submit_button("Réinitialiser")
+            
+            if submit:
+                if not token_input.strip():
+                    st.error("Entrez le code")
+                elif not new_password:
+                    st.error("Entrez un mot de passe")
+                elif len(new_password) < 6:
+                    st.error("Minimum 6 caractères")
+                elif new_password != confirm_password:
+                    st.error("Mots de passe différents")
+                elif token_input.strip() != st.session_state.reset_token:
+                    st.error("Code incorrect")
+                else:
+                    if reset_password(st.session_state.reset_email, token_input.strip(), new_password):
+                        st.success("Mot de passe réinitialisé!")
+                        st.session_state.reset_step = "request"
+                        st.session_state.reset_email = ""
+                        st.session_state.reset_token = ""
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("Erreur réinitialisation")
+
+# -------------------------
+# Interface Admin
+# -------------------------
+def show_admin_page():
+    st.title("Interface Administrateur")
+    
+    if st.button("← Retour"):
+        st.session_state.page = "main"
+        st.rerun()
+    
+    tab1, tab2, tab3 = st.tabs(["Utilisateurs", "Conversations", "Statistiques"])
+    
+    with tab1:
+        if supabase:
+            try:
+                users = supabase.table("users").select("*").order("created_at", desc=True).execute()
+                if users.data:
+                    for user in users.data:
+                        with st.expander(f"{user.get('name')} ({user.get('email')})"):
+                            st.write(f"**ID:** {user.get('id')[:8]}...")
+                            st.write(f"**Rôle:** {user.get('role', 'user')}")
+            except Exception as e:
+                st.error(f"Erreur: {e}")
+    
+    with tab2:
+        if supabase:
+            try:
+                convs = supabase.table("conversations").select("*").limit(20).execute()
+                if convs.data:
+                    for conv in convs.data:
+                        st.write(f"- {conv.get('description')} ({conv.get('created_at')[:10]})")
+            except Exception as e:
+                st.error(f"Erreur: {e}")
+    
+    with tab3:
+        if supabase:
+            try:
+                users_count = supabase.table("users").select("id", count="exact").execute()
+                convs_count = supabase.table("conversations").select("id", count="exact").execute()
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Utilisateurs", users_count.count or 0)
+                with col2:
+                    st.metric("Conversations", convs_count.count or 0)
+            except Exception as e:
+                st.error(f"Erreur: {e}")
+
+def cleanup_temp_files():
+    try:
+        current_time = time.time()
+        for filename in os.listdir(TMP_DIR):
+            filepath = os.path.join(TMP_DIR, filename)
+            if os.path.isfile(filepath) and current_time - os.path.getctime(filepath) > 3600:
+                os.remove(filepath)
+    except:
+        pass
 
 # -------------------------
 # Session State
@@ -803,400 +1174,270 @@ if "qwen_client" not in st.session_state:
     except:
         st.session_state.qwen_client = None
 
+if "reset_step" not in st.session_state:
+    st.session_state.reset_step = "request"
+
+if "reset_email" not in st.session_state:
+    st.session_state.reset_email = ""
+
+if "reset_token" not in st.session_state:
+    st.session_state.reset_token = ""
+
+if "page" not in st.session_state:
+    st.session_state.page = "main"
+
+# -------------------------
+# Navigation
+# -------------------------
+if st.session_state.page == "admin":
+    show_admin_page()
+    st.stop()
+
+# -------------------------
+# Sidebar
+# -------------------------
+st.sidebar.title("Authentification")
+
+if st.session_state.user["id"] == "guest":
+    tab1, tab2, tab3 = st.sidebar.tabs(["Connexion", "Inscription", "Reset"])
+    
+    with tab1:
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Mot de passe", type="password", key="login_password")
+        
+        if st.button("Se connecter", type="primary"):
+            if email and password:
+                with st.spinner("Connexion..."):
+                    user = verify_user(email, password)
+                    if user:
+                        st.session_state.user = user
+                        st.success("Connecté!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("Identifiants invalides")
+
+    with tab2:
+        email_reg = st.text_input("Email", key="reg_email")
+        name_reg = st.text_input("Nom", key="reg_name")
+        pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
+        pass_confirm = st.text_input("Confirmer", type="password", key="reg_confirm")
+        
+        if st.button("Créer compte"):
+            if email_reg and name_reg and pass_reg and pass_confirm:
+                if pass_reg != pass_confirm:
+                    st.error("Mots de passe différents")
+                elif len(pass_reg) < 6:
+                    st.error("Minimum 6 caractères")
+                else:
+                    with st.spinner("Création..."):
+                        if create_user(email_reg, pass_reg, name_reg):
+                            st.success("Compte créé!")
+                            time.sleep(1)
+
+    with tab3:
+        show_password_reset()
+    
+    st.stop()
+else:
+    st.sidebar.success(f"Connecté: {st.session_state.user.get('email')}")
+    
+    if st.session_state.user.get('role') == 'admin':
+        st.sidebar.markdown("**Admin**")
+        if st.sidebar.button("Interface Admin"):
+            st.session_state.page = "admin"
+            st.rerun()
+    
+    if st.sidebar.button("Déconnexion"):
+        st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
+        st.session_state.conversation = None
+        st.session_state.messages_memory = []
+        st.rerun()
+
+# -------------------------
+# Gestion Conversations
+# -------------------------
+if st.session_state.user["id"] != "guest":
+    st.sidebar.title("Conversations")
+    
+    if st.sidebar.button("Nouvelle conversation"):
+        with st.spinner("Création..."):
+            conv = create_conversation(st.session_state.user["id"], "Nouvelle discussion")
+            if conv:
+                st.session_state.conversation = conv
+                st.session_state.messages_memory = []
+                st.success("Créée!")
+                time.sleep(1)
+                st.rerun()
+    
+    convs = get_conversations(st.session_state.user["id"])
+    if convs:
+        options = [f"{c['description']} ({c['created_at'][:16]})" for c in convs]
+        
+        current_idx = 0
+        if st.session_state.conversation:
+            current_id = st.session_state.conversation.get("conversation_id")
+            for i, c in enumerate(convs):
+                if c.get("conversation_id") == current_id:
+                    current_idx = i
+                    break
+        
+        selected_idx = st.sidebar.selectbox(
+            "Vos conversations:",
+            range(len(options)),
+            format_func=lambda i: options[i],
+            index=current_idx
+        )
+        
+        selected_conv = convs[selected_idx]
+        
+        if (not st.session_state.conversation or 
+            st.session_state.conversation.get("conversation_id") != selected_conv.get("conversation_id")):
+            
+            with st.spinner("Chargement..."):
+                st.session_state.conversation = selected_conv
+                messages = get_messages(selected_conv.get("conversation_id"))
+                st.session_state.messages_memory = messages
+                time.sleep(0.5)
+                st.rerun()
+
 # -------------------------
 # Interface principale
 # -------------------------
-st.title("🤖 Vision AI Chat + OperatorGPT")
-st.caption("IA avec vision, édition d'images et contrôle de navigateur autonome")
+st.title("Vision AI Chat - Analyse & Édition d'Images")
 
-# [Garder toute la sidebar d'authentification existante]
+if st.session_state.conversation:
+    st.subheader(f"Conversation: {st.session_state.conversation.get('description')}")
 
-# -------------------------
-# Nouvelle interface avec tabs
-# -------------------------
-tab1, tab2, tab3 = st.tabs(["💬 Chat Normal", "🎨 Mode Éditeur", "🌐 OperatorGPT"])
+tab1, tab2 = st.tabs(["Chat Normal", "Mode Éditeur"])
 
 with tab1:
-    st.write("Mode chat avec analyse d'images et recherche web")
-    # [Garder le code existant du tab chat]
-
-with tab2:
-    st.write("Mode éditeur avec Qwen-Image-Edit")
-    # [Garder le code existant du tab éditeur]
-
-with tab3:
-    st.write("🤖 Agent autonome pour le contrôle de navigateur")
+    st.write("Mode chat avec analyse d'images")
     
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("Commandes OperatorGPT")
-        
-        operator_input = st.text_area(
-            "Donnez une instruction en langage naturel:",
-            placeholder="Ex: Cherche sur Google 'IA 2025'\nOuvre YouTube et cherche 'tutorial Python'\nVa sur example.com et prends un screenshot",
-            height=100
-        )
-        
-        col_btn1, col_btn2, col_btn3 = st.columns(3)
-        
-        with col_btn1:
-            if st.button("🚀 Exécuter", type="primary"):
-                if operator_input.strip():
-                    with st.spinner("OperatorGPT en action..."):
-                        # Parser la commande
-                        command = parse_operator_command(operator_input)
-                        
-                        if command["type"] != "unknown":
-                            # Exécuter
-                            success, results = execute_operator_action(command)
-                            
-                            if success:
-                                st.success("Action terminée!")
-                                
-                                # Afficher les résultats
-                                if results.get("action") == "search":
-                                    st.subheader("Résultats de recherche:")
-                                    for r in results.get("results", []):
-                                        with st.expander(r.get("title", "Résultat")):
-                                            st.write(r.get("snippet", r.get("url", "")))
-                                            if r.get("link"):
-                                                st.markdown(f"[Lien]({r['link']})")
-                                
-                                elif results.get("action") == "navigate":
-                                    st.subheader("Contenu de la page:")
-                                    st.text_area("Extrait:", results.get("content", ""), height=200)
-                                    if results.get("screenshot"):
-                                        st.image(results["screenshot"], caption="Screenshot")
-                                
-                                elif results.get("action") == "screenshot":
-                                    st.image(results.get("path"), caption="Screenshot")
-                                
-                                # Sauvegarder dans la conversation si connecté
-                                if st.session_state.conversation:
-                                    formatted_results = format_operator_results(results)
-                                    # [Ajouter à la DB et messages_memory]
-                            else:
-                                st.error(f"Erreur: {results}")
-                        else:
-                            st.warning("Commande non reconnue. Essayez d'être plus explicite.")
-        
-        with col_btn2:
-            if st.button("📸 Screenshot"):
-                operator = st.session_state.operator_gpt
-                if not operator.driver:
-                    operator.initialize_browser()
-                success, path = operator.take_screenshot()
-                if success:
-                    st.image(path)
-        
-        with col_btn3:
-            if st.button("🔴 Fermer navigateur"):
-                st.session_state.operator_gpt.close_browser()
-                st.info("Navigateur fermé")
-    
-    with col2:
-        st.subheader("Exemples de commandes")
-        
-        examples = [
-            "Cherche sur Google 'Fantastic Four 2025'",
-            "Ouvre YouTube et cherche 'AI tutorial'",
-            "Va sur www.example.com",
-            "Prends un screenshot de la page actuelle",
-            "Recherche sur Google 'météo Paris'",
-            "Navigue vers https://www.wikipedia.org"
-        ]
-        
-        for ex in examples:
-            if st.button(f"📝 {ex}", key=f"ex_{ex[:20]}"):
-                st.session_state.operator_example = ex
-        
-        st.markdown("---")
-        st.subheader("Historique des actions")
-        if st.session_state.operator_gpt.action_history:
-            for action in st.session_state.operator_gpt.action_history[-10:]:
-                st.text(f"• {action}")
-        else:
-            st.info("Aucune action encore")
-
-# -------------------------
-# Traitement chat avec intégration OperatorGPT
-# -------------------------
-# [Dans votre section de traitement du chat existant, ajouter:]
-
-# Après la détection de recherche web, ajouter:
-if detect_operator_intent(user_input):
-    with st.spinner("🤖 OperatorGPT analyse la demande..."):
-        command = parse_operator_command(user_input)
-        
-        if command["type"] != "unknown":
-            success, results = execute_operator_action(command)
+    if st.session_state.messages_memory:
+        for msg in st.session_state.messages_memory:
+            role = "user" if msg.get("sender") == "user" else "assistant"
             
-            if success:
-                operator_results_text = format_operator_results(results)
-                prompt += f"{operator_results_text}\n\n"
-
-# -------------------------
-# Footer mis à jour
-# -------------------------
-st.markdown("---")
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.write("**Vision AI:**")
-    st.write("- Analyse d'images")
-    st.write("- Édition Qwen")
-    st.write("- Mémoire éditions")
-
-with col2:
-    st.write("**Chat:**")
-    st.write("- Conversations")
-    st.write("- Contexte")
-    st.write("- Multi-modal")
-
-with col3:
-    st.write("**Web:**")
-    st.write("- Google Search")
-    st.write("- YouTube")
-    st.write("- Wikipedia")
-
-with col4:
-    st.write("**OperatorGPT:**")
-    st.write("- Navigation auto")
-    st.write("- Scraping")
-    st.write("- Workflows")
-
-# -------------------------
-# Guide OperatorGPT
-# -------------------------
-with st.expander("📚 Guide OperatorGPT"):
-    st.markdown("""
-    ### 🤖 OperatorGPT - Agent Autonome
+            with st.chat_message(role):
+                if msg.get("type") == "image" and msg.get("image_data"):
+                    try:
+                        st.image(base64_to_image(msg["image_data"]), width=300)
+                    except:
+                        pass
+                
+                st.markdown(msg.get("content", ""))
     
-    **Qu'est-ce que OperatorGPT ?**
-    OperatorGPT est un agent autonome qui contrôle un navigateur en temps réel pour exécuter des tâches complexes.
-    
-    **Capacités principales:**
-    - 🌐 Navigation automatique sur le web
-    - 🔍 Recherche et extraction de données
-    - 📝 Remplissage de formulaires
-    - 🖱️ Clics et interactions avec les pages
-    - 📸 Captures d'écran
-    - 🔄 Workflows multi-étapes
-    - 📊 Scraping de contenu
-    
-    **Exemples d'utilisation:**
-    
-    1. **Recherche intelligente:**
-       - "Cherche sur Google les dernières actualités IA"
-       - "Trouve des vidéos YouTube sur Python"
-    
-    2. **Navigation:**
-       - "Va sur example.com et lis le contenu"
-       - "Ouvre Wikipedia et cherche Einstein"
-    
-    3. **Automatisation:**
-       - "Cherche un vol Paris-New York"
-       - "Compare les prix sur Amazon"
-       - "Récupère les horaires de cinéma"
-    
-    4. **Capture:**
-       - "Prends un screenshot de la page actuelle"
-       - "Capture la page d'accueil de Google"
-    
-    **Comment ça marche ?**
-    1. Vous donnez une instruction en langage naturel
-    2. OperatorGPT analyse et décompose la tâche
-    3. Le navigateur exécute les actions séquentiellement
-    4. Les résultats sont présentés et sauvegardés
-    
-    **Workflows personnalisés:**
-    Vous pouvez créer des workflows complexes en JSON:
-    ```json
-    [
-        {"action": "navigate", "params": {"url": "https://example.com"}},
-        {"action": "fill", "params": {"selector": "#search", "text": "query"}},
-        {"action": "click", "params": {"selector": "#submit"}},
-        {"action": "wait", "params": {"seconds": 3}},
-        {"action": "screenshot", "params": {"filename": "result.png"}}
-    ]
-    ```
-    
-    **Sécurité:**
-    - Le navigateur fonctionne en mode headless (sans interface)
-    - Toutes les actions sont enregistrées dans l'historique
-    - Pas d'accès aux données sensibles sans autorisation
-    """)
-
-# -------------------------
-# Workflow Builder
-# -------------------------
-with st.expander("⚙️ Workflow Builder - Créer des automatisations"):
-    st.subheader("Créateur de workflow personnalisé")
-    
-    workflow_name = st.text_input("Nom du workflow:", "Mon workflow")
-    
-    num_steps = st.number_input("Nombre d'étapes:", min_value=1, max_value=10, value=3)
-    
-    workflow_steps = []
-    
-    for i in range(num_steps):
-        st.markdown(f"**Étape {i+1}**")
-        col1, col2 = st.columns([1, 2])
+    with st.form("chat_form", clear_on_submit=True):
+        col1, col2 = st.columns([3, 1])
         
         with col1:
-            action_type = st.selectbox(
-                "Action:",
-                ["navigate", "click", "fill", "wait", "screenshot", "extract"],
-                key=f"action_{i}"
+            user_input = st.text_area(
+                "Votre message:",
+                height=100,
+                placeholder="Posez vos questions..."
             )
         
         with col2:
-            if action_type == "navigate":
-                url = st.text_input("URL:", key=f"url_{i}")
-                workflow_steps.append({"action": "navigate", "params": {"url": url}})
-            
-            elif action_type == "click":
-                selector = st.text_input("Sélecteur CSS:", key=f"selector_{i}")
-                workflow_steps.append({"action": "click", "params": {"selector": selector}})
-            
-            elif action_type == "fill":
-                selector = st.text_input("Sélecteur:", key=f"fill_sel_{i}")
-                text = st.text_input("Texte:", key=f"fill_text_{i}")
-                workflow_steps.append({"action": "fill", "params": {"selector": selector, "text": text}})
-            
-            elif action_type == "wait":
-                seconds = st.number_input("Secondes:", min_value=1, max_value=30, value=2, key=f"wait_{i}")
-                workflow_steps.append({"action": "wait", "params": {"seconds": seconds}})
-            
-            elif action_type == "screenshot":
-                filename = st.text_input("Nom fichier:", key=f"screenshot_{i}")
-                workflow_steps.append({"action": "screenshot", "params": {"filename": filename}})
-            
-            elif action_type == "extract":
-                st.text("Configuration extraction (JSON):")
-                extract_config = st.text_area("Sélecteurs:", key=f"extract_{i}")
-                workflow_steps.append({"action": "extract", "params": {"selectors": {}}})
+            uploaded_file = st.file_uploader(
+                "Image",
+                type=["png","jpg","jpeg"],
+                key="chat_upload"
+            )
         
-        is_critical = st.checkbox("Étape critique (arrêter si échec)", key=f"critical_{i}")
-        if is_critical:
-            workflow_steps[i]["critical"] = True
-    
-    if st.button("🚀 Exécuter le workflow"):
-        if workflow_steps:
-            with st.spinner("Exécution du workflow..."):
-                operator = st.session_state.operator_gpt
-                
-                if not operator.driver:
-                    operator.initialize_browser()
-                
-                results = operator.execute_workflow(workflow_steps)
-                
-                st.subheader("Résultats du workflow:")
-                for result in results:
-                    status = "✅" if result["success"] else "❌"
-                    st.write(f"{status} Étape {result['step']}: {result['action']} - {result['message']}")
-    
-    st.markdown("---")
-    st.json(workflow_steps)
+        submit_chat = st.form_submit_button("Envoyer")
 
-# -------------------------
-# Statistiques OperatorGPT
-# -------------------------
-with st.expander("📊 Statistiques OperatorGPT"):
-    operator = st.session_state.operator_gpt
+with tab2:
+    st.write("Mode éditeur avec Qwen-Image-Edit")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.metric("Actions totales", len(operator.action_history))
+        st.subheader("Image à éditer")
+        editor_file = st.file_uploader(
+            "Image",
+            type=["png", "jpg", "jpeg"],
+            key="editor_upload"
+        )
+        
+        if editor_file:
+            editor_image = Image.open(editor_file).convert("RGBA")
+            st.image(editor_image, caption="Original", use_column_width=True)
+            
+            with st.spinner("Analyse..."):
+                original_desc = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
+                st.write(f"**Description:** {original_desc}")
     
     with col2:
-        browser_status = "🟢 Actif" if operator.driver else "🔴 Inactif"
-        st.metric("Navigateur", browser_status)
-    
-    with col3:
-        screenshots = len([f for f in os.listdir(BROWSER_SCREENSHOTS_DIR) if f.endswith('.png')])
-        st.metric("Screenshots", screenshots)
-    
-    st.markdown("**Historique complet des actions:**")
-    if operator.action_history:
-        history_df = pd.DataFrame({
-            "Action": operator.action_history,
-            "Horodatage": [f"{i+1}" for i in range(len(operator.action_history))]
-        })
-        st.dataframe(history_df, use_container_width=True)
-    else:
-        st.info("Aucune action encore effectuée")
-
-# -------------------------
-# Galerie de screenshots
-# -------------------------
-with st.expander("🖼️ Galerie de screenshots"):
-    screenshots = [f for f in os.listdir(BROWSER_SCREENSHOTS_DIR) if f.endswith('.png')]
-    
-    if screenshots:
-        cols = st.columns(3)
-        for i, screenshot in enumerate(screenshots[-9:]):  # Derniers 9 screenshots
-            with cols[i % 3]:
-                img_path = os.path.join(BROWSER_SCREENSHOTS_DIR, screenshot)
-                st.image(img_path, caption=screenshot, use_column_width=True)
+        st.subheader("Instructions d'édition")
+        
+        example_prompts = [
+            "Add a beautiful sunset background",
+            "Change to black and white", 
+            "Add flowers",
+            "Make it look like a painting",
+            "Add snow falling",
+            "Cyberpunk style",
+            "Remove background",
+            "Add a person",
+            "More colorful",
+            "Add magic effects"
+        ]
+        
+        selected_example = st.selectbox("Exemples", ["Custom..."] + example_prompts)
+        
+        if selected_example == "Custom...":
+            edit_instruction = st.text_area(
+                "Instruction (en anglais):",
+                height=120,
+                placeholder="ex: Add a man, change sky..."
+            )
+        else:
+            edit_instruction = st.text_area(
+                "Instruction:",
+                value=selected_example,
+                height=120
+            )
+        
+        if st.button("Éditer", type="primary", disabled=not (editor_file and edit_instruction.strip())):
+            if not st.session_state.conversation:
+                conv = create_conversation(st.session_state.user["id"], "Édition d'images")
+                if conv:
+                    st.session_state.conversation = conv
+            
+            if st.session_state.conversation:
+                original_caption = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
+                user_msg = f"**Édition demandée**\n\n**Image:** {original_caption}\n\n**Instruction:** {edit_instruction}"
+                original_b64 = image_to_base64(editor_image.convert("RGB"))
                 
-                if st.button("🗑️", key=f"del_{screenshot}"):
-                    os.remove(img_path)
+                add_message(
+                    st.session_state.conversation.get("conversation_id"),
+                    "user",
+                    user_msg,
+                    "image",
+                    original_b64
+                )
+                
+                st.session_state.messages_memory.append({
+                    "message_id": str(uuid.uuid4()),
+                    "sender": "user",
+                    "content": user_msg,
+                    "type": "image",
+                    "image_data": original_b64,
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+                
+                success = process_image_edit_request(
+                    editor_image,
+                    edit_instruction,
+                    st.session_state.conversation.get("conversation_id")
+                )
+                
+                if success:
                     st.rerun()
-    else:
-        st.info("Aucun screenshot disponible")
 
 # -------------------------
-# Configuration OperatorGPT
+# Traitement chat
 # -------------------------
-with st.expander("⚙️ Configuration OperatorGPT"):
-    st.markdown("""
-    ### Configuration du navigateur
-    
-    **Installation requise:**
-    ```bash
-    pip install selenium
-    pip install webdriver-manager
-    ```
-    
-    **Pour Streamlit Cloud:**
-    Ajoutez dans `packages.txt`:
-    ```
-    chromium-chromedriver
-    chromium
-    ```
-    
-    **Variables d'environnement:**
-    ```
-    CHROME_BIN=/usr/bin/chromium
-    CHROMEDRIVER_PATH=/usr/bin/chromedriver
-    ```
-    
-    **Mode headless:**
-    - Par défaut: navigateur invisible (headless=True)
-    - Pour déboguer: headless=False (nécessite display)
-    """)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("🔄 Réinitialiser navigateur"):
-            st.session_state.operator_gpt.close_browser()
-            if st.session_state.operator_gpt.initialize_browser():
-                st.success("Navigateur réinitialisé")
-    
-    with col2:
-        if st.button("🧹 Nettoyer l'historique"):
-            st.session_state.operator_gpt.action_history = []
-            st.success("Historique nettoyé")
-
-# -------------------------
-# Intégration complète dans le chat
-# -------------------------
-# Modification de la section de traitement du chat existant
-
 if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded_file):
     if not st.session_state.conversation:
         with st.spinner("Création conversation..."):
@@ -1213,7 +1454,6 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
     image_data = None
     msg_type = "text"
     
-    # Traitement image existant
     if uploaded_file:
         with st.spinner("Analyse de l'image..."):
             image = Image.open(uploaded_file)
@@ -1238,166 +1478,302 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         }
         st.session_state.messages_memory.append(user_msg)
         
-        # Construction du prompt enrichi
-        prompt = f"{SYSTEM_PROMPT}\n\n"
-        
-        # Date/heure
-        datetime_info = format_datetime_for_prompt()
-        prompt += f"{datetime_info}\n\n"
-        
-        # Détection OperatorGPT AVANT la recherche web
-        operator_results_text = ""
-        if detect_operator_intent(user_input):
-            with st.spinner("🤖 OperatorGPT en action..."):
-                command = parse_operator_command(user_input)
-                
-                if command["type"] != "unknown":
-                    success, results = execute_operator_action(command)
-                    
-                    if success:
-                        operator_results_text = format_operator_results(results)
-                        st.success("✅ Action OperatorGPT terminée")
-                        
-                        # Afficher un aperçu des résultats
-                        with st.expander("Voir les résultats OperatorGPT"):
-                            if results.get("action") == "screenshot" and results.get("path"):
-                                st.image(results["path"])
-                            elif results.get("action") == "navigate" and results.get("screenshot"):
-                                st.image(results["screenshot"])
-                            st.json(results)
-        
-        if operator_results_text:
-            prompt += f"{operator_results_text}\n\n"
-        
-        # Recherche web (si pas d'action OperatorGPT)
-        if not operator_results_text:
+        lower = user_input.lower()
+        if (any(k in lower for k in ["edit", "édite", "modifie"]) and uploaded_file):
+            edit_instruction = user_input.strip()
+            success = process_image_edit_request(
+                Image.open(uploaded_file).convert("RGBA"),
+                edit_instruction,
+                conv_id
+            )
+            if success:
+                st.rerun()
+        else:
+            edit_context = get_editing_context_from_conversation()
+            
+            # Construction du prompt enrichi - TOUJOURS avec date/heure
+            prompt = f"{SYSTEM_PROMPT}\n\n"
+            
+            # TOUJOURS ajouter les informations de date/heure en premier
+            datetime_info = format_datetime_for_prompt()
+            prompt += f"{datetime_info}\n\n"
+            
+            # Détecter et effectuer une recherche web si nécessaire
             search_type, search_query = detect_search_intent(user_input)
             if search_type and search_query:
-                with st.spinner(f"🔍 Recherche {search_type}..."):
+                with st.spinner(f"🔍 Recherche en cours sur {search_type}..."):
                     web_results = format_web_search_for_prompt(search_query, search_type)
                     prompt += f"{web_results}\n\n"
-        
-        # Contexte édition
-        edit_context = get_editing_context_from_conversation()
-        if edit_context:
-            prompt += f"[EDIT_CONTEXT] {edit_context}\n\n"
-        
-        prompt += f"\nUtilisateur: {message_content}"
-        
-        # Réponse AI
-        with st.chat_message("assistant"):
-            placeholder = st.empty()
+                    time.sleep(0.5)
             
-            response = get_ai_response(prompt)
-            stream_response_with_thinking(response, placeholder)
+            # Ajouter le contexte d'édition si disponible
+            if edit_context:
+                prompt += f"[EDIT_CONTEXT] {edit_context}\n\n"
             
-            add_message(conv_id, "assistant", response, "text")
+            # Message final très explicite
+            prompt += f"""
+==========================================
+INSTRUCTIONS FINALES AVANT DE RÉPONDRE:
+1. Si l'utilisateur demande la date/heure, utilisez les informations [DATETIME] ci-dessus
+2. Si des résultats [WEB_SEARCH] sont fournis, utilisez-les dans votre réponse
+3. Soyez précis et citez vos sources
+==========================================
+
+Utilisateur: {message_content}"""
             
-            ai_msg = {
-                "sender": "assistant",
-                "content": response,
-                "type": "text",
-                "image_data": None,
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-            }
-            st.session_state.messages_memory.append(ai_msg)
-            
+            with st.chat_message("assistant"):
+                placeholder = st.empty()
+                
+                if edit_context and any(w in user_input.lower() for w in ["edit", "image", "avant", "après"]):
+                    with st.spinner("Consultation mémoire..."):
+                        time.sleep(1)
+                
+                # Appel API avec Vision AI thinking
+                response = get_ai_response(prompt)
+                
+                # Afficher Vision AI thinking puis la réponse
+                stream_response_with_thinking(response, placeholder)
+                
+                add_message(conv_id, "assistant", response, "text")
+                
+                ai_msg = {
+                    "sender": "assistant",
+                    "content": response,
+                    "type": "text",
+                    "image_data": None,
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+                st.session_state.messages_memory.append(ai_msg)
+                
+                st.rerun()
+
+# -------------------------
+# Footer
+# -------------------------
+st.markdown("---")
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.write("**Vision AI:**")
+    st.write("- Analyse intelligente")
+    st.write("- Édition avec Qwen")
+    st.write("- Mémoire des éditions")
+
+with col2:
+    st.write("**Chat:**")
+    st.write("- Conversations sauvegardées")
+    st.write("- Contexte des éditions")
+    st.write("- Discussion modifications")
+
+with col3:
+    st.write("**Éditeur:**")
+    st.write("- Prompts personnalisés")
+    st.write("- API /global_edit")
+    st.write("- Analyse avant/après")
+
+st.markdown("---")
+col1, col2 = st.columns(2)
+
+with col1:
+    st.write("**Nouvelles fonctionnalités:**")
+    st.write("- Date et heure en temps réel")
+    st.write("- Google Search (puissant)")
+    st.write("- YouTube + transcriptions")
+    st.write("- Scraping de pages web")
+
+with col2:
+    st.write("**Sources disponibles:**")
+    st.write("- Google Custom Search")
+    st.write("- YouTube Data API v3")
+    st.write("- Wikipedia")
+    st.write("- Google News RSS")
+
+# -------------------------
+# Configuration API Keys
+# -------------------------
+with st.expander("⚙️ Configuration Google & YouTube APIs"):
+    st.markdown("""
+    ### 🔑 Configuration des API Keys
+    
+    **Configuration sécurisée dans Streamlit Cloud:**
+    Settings → Secrets → Ajoutez:
+    ```toml
+    GOOGLE_API_KEY = "votre_clé_google"
+    GOOGLE_SEARCH_ENGINE_ID = "511c9c9b776d246e4"
+    YOUTUBE_API_KEY = "votre_clé_youtube"
+    ```
+    
+    **Comment obtenir les clés:**
+    
+    **1. Google Custom Search:**
+    - https://console.cloud.google.com/
+    - Créez un projet → Activez "Custom Search API"
+    - Créez une clé API
+    - Créez un Search Engine: https://programmablesearchengine.google.com/
+    
+    **2. YouTube Data API v3:**
+    - Même console Google Cloud
+    - Activez "YouTube Data API v3"
+    - Utilisez la même clé API ou créez-en une nouvelle
+    
+    **Quotas:**
+    - Google Search: 100 requêtes/jour gratuit
+    - YouTube: 10,000 unités/jour gratuit
+    
+    **Installation supplémentaire:**
+    ```bash
+    pip install youtube-transcript-api
+    ```
+    
+    **Statut actuel:**
+    """)
+    
+    if GOOGLE_API_KEY:
+        st.success("✅ Google API configurée")
+    else:
+        st.error("❌ Google API manquante")
+    
+    if GOOGLE_SEARCH_ENGINE_ID:
+        st.success("✅ Search Engine ID configuré")
+    else:
+        st.error("❌ Search Engine ID manquant")
+    
+    if YOUTUBE_API_KEY:
+        st.success("✅ YouTube API configurée")
+    else:
+        st.warning("⚠️ YouTube API manquante (optionnel)")
+
+# -------------------------
+# Guide d'utilisation
+# -------------------------
+with st.expander("Guide d'utilisation"):
+    st.markdown("""
+    ### Comment utiliser Vision AI Chat
+    
+    **Mode Chat Normal:**
+    1. Uploadez une image pour l'analyser
+    2. Posez des questions sur l'image
+    3. Discutez des éditions précédentes
+    4. Demandez la date/heure actuelle
+    5. Recherchez sur le web avec Brave
+    6. Recherchez des vidéos YouTube
+    
+    **Mode Éditeur:**
+    1. Uploadez une image à éditer
+    2. Sélectionnez ou écrivez une instruction
+    3. Cliquez sur "Éditer l'image"
+    4. Téléchargez le résultat
+    
+    **Exemples de questions avec recherche:**
+    - "Recherche des informations sur Paris" → Google
+    - "Actualités du jour" → Google News
+    - "Quelle heure est-il ?" → Date/heure
+    - "Définition de IA" → Wikipedia
+    - "Fantastic Four 2025" → Google
+    
+    **Modèles utilisés:**
+    - **BLIP**: Description d'images
+    - **LLaMA 3.1 70B**: Conversations (connaissances jusqu'à janvier 2025)
+    - **Qwen ImageEditPro**: Édition d'images
+    - **Google Custom Search**: Recherche web temps réel
+    - **Wikipedia**: Encyclopédie
+    - **Google News**: Actualités
+    
+    **Note:** Vision AI affiche "Vision AI thinking..." pendant le traitement.
+    """)
+
+# -------------------------
+# Test Google & YouTube
+# -------------------------
+if st.sidebar.button("🧪 Test APIs"):
+    st.sidebar.subheader("Tests")
+    
+    dt_info = get_current_datetime_info()
+    if "error" not in dt_info:
+        st.sidebar.success("✅ Date/Heure OK")
+        st.sidebar.write(f"📅 {dt_info['date']} {dt_info['time']}")
+    
+    if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
+        with st.sidebar.expander("Test Google"):
+            google_query = st.text_input("Google Query:", "Fantastic Four 2025")
+            if st.button("Rechercher"):
+                with st.spinner("Recherche..."):
+                    results = search_google(google_query, max_results=5)
+                    if results:
+                        st.success(f"✅ {len(results)} résultats")
+                        for r in results:
+                            st.write(f"**{r['title']}**")
+                    else:
+                        st.warning("Aucun résultat")
+    else:
+        st.sidebar.error("⚠️ Google API non configurée")
+    
+    if YOUTUBE_API_KEY:
+        with st.sidebar.expander("Test YouTube"):
+            yt_query = st.text_input("YouTube Query:", "AI 2025")
+            if st.button("Chercher vidéos"):
+                with st.spinner("Recherche YouTube..."):
+                    results = search_youtube(yt_query, max_results=3)
+                    if results:
+                        st.success(f"✅ {len(results)} vidéos")
+                        for r in results:
+                            st.write(f"[{r['title']}]({r['url']})")
+                    else:
+                        st.warning("Aucune vidéo")
+    else:
+        st.sidebar.warning("⚠️ YouTube API non configurée")
+
+# -------------------------
+# Admin sidebar
+# -------------------------
+if st.session_state.user.get("role") == "admin":
+    with st.sidebar.expander("Fonctions Admin"):
+        st.write("Interface Administrateur disponible")
+        if st.button("Accéder Interface Admin", key="admin_launch"):
+            st.session_state.page = "admin"
             st.rerun()
 
 # -------------------------
-# Sidebar OperatorGPT
+# Diagnostics
 # -------------------------
-if st.session_state.user["id"] != "guest":
-    with st.sidebar.expander("🤖 OperatorGPT Quick Actions"):
-        quick_action = st.selectbox(
-            "Action rapide:",
-            [
-                "Aucune",
-                "Google Search",
-                "YouTube Search",
-                "Screenshot",
-                "Navigate to URL"
-            ]
-        )
-        
-        if quick_action == "Google Search":
-            query = st.text_input("Recherche:", key="quick_google")
-            if st.button("Chercher") and query:
-                with st.spinner("Recherche..."):
-                    operator = st.session_state.operator_gpt
-                    if not operator.driver:
-                        operator.initialize_browser()
-                    success, results = operator.execute_search("google", query)
-                    if success:
-                        st.success(f"{len(results)} résultats")
-        
-        elif quick_action == "YouTube Search":
-            query = st.text_input("Vidéo:", key="quick_youtube")
-            if st.button("Chercher") and query:
-                with st.spinner("Recherche..."):
-                    operator = st.session_state.operator_gpt
-                    if not operator.driver:
-                        operator.initialize_browser()
-                    success, results = operator.execute_search("youtube", query)
-                    if success:
-                        st.success(f"{len(results)} vidéos")
-        
-        elif quick_action == "Screenshot":
-            if st.button("Capturer"):
-                operator = st.session_state.operator_gpt
-                if operator.driver:
-                    success, path = operator.take_screenshot()
-                    if success:
-                        st.image(path)
-                else:
-                    st.warning("Navigateur non initialisé")
-        
-        elif quick_action == "Navigate to URL":
-            url = st.text_input("URL:", key="quick_url")
-            if st.button("Naviguer") and url:
-                operator = st.session_state.operator_gpt
-                if not operator.driver:
-                    operator.initialize_browser()
-                success, msg = operator.navigate_to(url)
-                if success:
-                    st.success(msg)
+if st.sidebar.button("Diagnostics"):
+    st.sidebar.subheader("Tests")
+    
+    if supabase:
+        try:
+            supabase.table("users").select("*").limit(1).execute()
+            st.sidebar.success("Supabase OK")
+        except:
+            st.sidebar.error("Supabase KO")
+    
+    if st.session_state.llama_client:
+        st.sidebar.success("LLaMA OK")
+    else:
+        st.sidebar.error("LLaMA KO")
+    
+    if st.session_state.qwen_client:
+        st.sidebar.success("Qwen OK")
+    else:
+        st.sidebar.error("Qwen KO")
+
+if st.sidebar.button("Nettoyer fichiers temp"):
+    cleanup_temp_files()
+    st.sidebar.success("Nettoyage effectué!")
 
 # -------------------------
-# Cleanup au démarrage
+# Statistiques utilisateur
 # -------------------------
-def cleanup_on_startup():
-    """Nettoie les ressources au démarrage"""
-    # Fermer tout navigateur zombie
-    if st.session_state.operator_gpt.driver:
-        try:
-            st.session_state.operator_gpt.close_browser()
-        except:
-            pass
-    
-    # Nettoyer vieux screenshots (plus de 24h)
+if st.session_state.user["id"] != "guest" and supabase:
     try:
-        current_time = time.time()
-        for filename in os.listdir(BROWSER_SCREENSHOTS_DIR):
-            filepath = os.path.join(BROWSER_SCREENSHOTS_DIR, filename)
-            if os.path.isfile(filepath):
-                if current_time - os.path.getctime(filepath) > 86400:  # 24h
-                    os.remove(filepath)
+        conv_count = len(get_conversations(st.session_state.user["id"]))
+        msg_count = len(st.session_state.messages_memory) if st.session_state.conversation else 0
+        
+        with st.sidebar.expander("Vos statistiques"):
+            st.write(f"Conversations: {conv_count}")
+            st.write(f"Messages: {msg_count}")
+            
+            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
+            st.write(f"Éditions: {edit_count}")
     except:
         pass
 
-# Exécuter au démarrage
-if "cleanup_done" not in st.session_state:
-    cleanup_on_startup()
-    st.session_state.cleanup_done = True
-
-# -------------------------
-# Footer final
-# -------------------------
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #666;'>
-    <p><strong>Vision AI Chat + OperatorGPT</strong></p>
-    <p>Créé par Pepe Musafiri | Powered by Meta AI, Qwen, BLIP, Selenium</p>
-    <p>🤖 Agent autonome avec vision, édition et contrôle de navigateur</p>
-</div>
-""", unsafe_allow_html=True)
