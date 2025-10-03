@@ -10,6 +10,8 @@ supabase
 gTTS
 beautifulsoup4
 youtube-transcript-api
+selenium
+webdriver-manager
 
 
 
