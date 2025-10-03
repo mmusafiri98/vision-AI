@@ -447,7 +447,7 @@ def format_datetime_for_prompt():
     if "error" in dt_info:
         return f"[DATETIME] Erreur: {dt_info['error']}"
     
-    return f"""[DATETIME] ⚠️ INFORMATIONS TEMPORELLES ACTUELLES (TEMPS RÉEL):
+    return f"""[DATETIME] INFORMATIONS TEMPORELLES ACTUELLES (TEMPS RÉEL):
 ==========================================
 Date et heure ACTUELLES: {dt_info['datetime']}
 Date AUJOURD'HUI: {dt_info['date']}
@@ -520,7 +520,6 @@ def search_google(query, max_results=10):
 
 def search_youtube(query, max_results=5):
     """Recherche YouTube avec plusieurs méthodes de fallback"""
-    # Méthode 1: API officielle si disponible
     if YOUTUBE_API_KEY:
         try:
             url = "https://www.googleapis.com/youtube/v3/search"
@@ -558,7 +557,6 @@ def search_youtube(query, max_results=5):
         except:
             pass
     
-    # Méthode 2: Scraping YouTube (gratuit, sans API)
     try:
         search_url = f"https://www.youtube.com/results?search_query={requests.utils.quote(query)}"
         headers = {
@@ -568,7 +566,6 @@ def search_youtube(query, max_results=5):
         response = requests.get(search_url, headers=headers, timeout=15)
         
         if response.status_code == 200:
-            # Extraction des données JSON embarquées
             start_marker = 'var ytInitialData = '
             end_marker = ';</script>'
             
@@ -641,11 +638,9 @@ def scrape_page_content(url, max_chars=3000):
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Supprimer scripts, styles, et éléments non pertinents
             for script in soup(["script", "style", "nav", "header", "footer", "aside", "form", "button"]):
                 script.decompose()
             
-            # Extraire le texte principal
             main_content = soup.find('main') or soup.find('article') or soup.find('div', class_=['content', 'main', 'article'])
             
             if main_content:
@@ -653,7 +648,6 @@ def scrape_page_content(url, max_chars=3000):
             else:
                 text = soup.get_text()
             
-            # Nettoyer
             lines = (line.strip() for line in text.splitlines())
             chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
             text = ' '.join(chunk for chunk in chunks if chunk)
@@ -667,7 +661,6 @@ def search_wikipedia(query):
     """Recherche sur Wikipedia (multilingue)"""
     results = []
     
-    # Essayer plusieurs langues
     languages = ['fr', 'en']
     
     for lang in languages:
@@ -741,7 +734,7 @@ Question: "{query}"
 Type: {search_type}
 Période couverte: TOUTES LES ANNÉES jusqu'à 2025
 
-⚠️ IMPORTANT: Ces résultats proviennent d'Internet EN TEMPS RÉEL.
+IMPORTANT: Ces résultats proviennent d'Internet EN TEMPS RÉEL.
 Vous DEVEZ utiliser ces informations pour répondre.
 Ces résultats incluent du contenu de TOUTES les années disponibles sur le web.
 
@@ -753,68 +746,65 @@ RÉSULTATS:
         
         if results:
             for i, result in enumerate(results, 1):
-                results_text += f"\n🔍 RÉSULTAT #{i} ({result.get('source', 'Web')}):\n"
+                results_text += f"\nRÉSULTAT #{i} ({result.get('source', 'Web')}):\n"
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
                 results_text += f"   Contenu: {result['snippet']}\n"
                 
-                # Scraping approfondi pour le premier résultat seulement (optimisation)
                 if i <= 3:
                     page_content = scrape_page_content(result['url'], max_chars=2000)
                     if page_content:
-                        results_text += f"   📄 Contenu détaillé: {page_content}...\n"
+                        results_text += f"   Contenu détaillé: {page_content}...\n"
                 
                 results_text += f"   ---\n"
         else:
-            results_text += "\n❌ Aucun résultat trouvé.\n"
+            results_text += "\nAucun résultat trouvé.\n"
     
     elif search_type == "youtube":
         results = search_youtube(query, max_results=10)
         
         if results:
             for i, result in enumerate(results, 1):
-                results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
+                results_text += f"\nVIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
                 results_text += f"   Chaîne: {result['channel']}\n"
                 results_text += f"   Date: {result['published']}\n"
                 results_text += f"   Description: {result['description'][:400]}...\n"
                 
-                # Transcription pour les premières vidéos
                 if i <= 2:
                     transcript = get_youtube_transcript(result['video_id'])
                     if transcript:
-                        results_text += f"   📝 Transcription: {transcript[:800]}...\n"
+                        results_text += f"   Transcription: {transcript[:800]}...\n"
                 
-                results_text += f"---\n"
+                results_text += f"   ---\n"
         else:
-            results_text += "\n❌ Aucune vidéo trouvée.\n"
+            results_text += "\nAucune vidéo trouvée.\n"
     
     elif search_type == "wikipedia":
         results = search_wikipedia(query)
         
         if results:
             for i, result in enumerate(results, 1):
-                results_text += f"\n📚 ARTICLE WIKIPEDIA #{i} ({result.get('language', 'FR')}):\n"
+                results_text += f"\nARTICLE WIKIPEDIA #{i} ({result.get('language', 'FR')}):\n"
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
                 results_text += f"   Extrait: {result['snippet']}\n"
                 
-                # Scraper le contenu complet de Wikipedia
                 page_content = scrape_page_content(result['url'], max_chars=2000)
                 if page_content:
-                    results_text += f"   📖 Contenu: {page_content}...\n"
+                    results_text += f"   Contenu: {page_content}...\n"
                 
                 results_text += f"   ---\n"
         else:
-            results_text += "\n❌ Aucun article trouvé.\n"
+            results_text += "\nAucun article trouvé.\n"
     
     elif search_type == "news":
         results = search_news(query)
         
         if results:
             for i, result in enumerate(results, 1):
-                results_text += f"\n📰 ACTUALITÉ #{i}:\n"
+                results_text += f"\nACTUALITÉ #{i}:\n"
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   Date: {result['date']}\n"
                 results_text += f"   URL: {result['url']}\n"
@@ -822,15 +812,15 @@ RÉSULTATS:
                 if i <= 3:
                     page_content = scrape_page_content(result['url'], max_chars=1500)
                     if page_content:
-                        results_text += f"   📄 Article: {page_content}...\n"
+                        results_text += f"   Article: {page_content}...\n"
                 
                 results_text += f"   ---\n"
         else:
-            results_text += "\n❌ Aucune actualité trouvée.\n"
+            results_text += "\nAucune actualité trouvée.\n"
     
     results_text += """
 ==========================================
-⚠️ RAPPEL CRITIQUE:
+RAPPEL CRITIQUE:
 - Ces résultats couvrent TOUTES LES ANNÉES disponibles sur Internet
 - Vous DEVEZ utiliser ces informations dans votre réponse
 - Citez les sources et dates mentionnées
@@ -843,7 +833,6 @@ def detect_search_intent(user_message):
     """Détecte le type de recherche nécessaire"""
     message_lower = user_message.lower()
     
-    # Mots-clés par catégorie
     search_keywords = [
         'recherche', 'cherche', 'trouve', 'informations sur', 'info sur',
         'actualité', 'news', 'dernières nouvelles', 'quoi de neuf',
@@ -868,11 +857,9 @@ def detect_search_intent(user_message):
         'voir video', 'regarder', 'visionner', 'film', 'clip'
     ]
     
-    # Vérifier si une recherche est nécessaire
     needs_search = any(keyword in message_lower for keyword in search_keywords)
     
     if not needs_search:
-        # Recherche intelligente: si la question semble nécessiter des infos récentes
         recent_indicators = ['2024', '2025', 'récent', 'dernier', 'nouveau', 'latest']
         if any(indicator in message_lower for indicator in recent_indicators):
             needs_search = True
@@ -880,7 +867,6 @@ def detect_search_intent(user_message):
     if not needs_search:
         return None, None
     
-    # Priorité: YouTube → News → Wiki → Google
     if any(keyword in message_lower for keyword in youtube_keywords):
         return "youtube", user_message
     elif any(keyword in message_lower for keyword in news_keywords):
@@ -1597,34 +1583,28 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         else:
             edit_context = get_editing_context_from_conversation()
             
-            # Construction du prompt enrichi avec TOUJOURS date/heure
             prompt = f"{SYSTEM_PROMPT}\n\n"
             
-            # TOUJOURS ajouter les informations de date/heure
             datetime_info = format_datetime_for_prompt()
             prompt += f"{datetime_info}\n\n"
             
-            # Détecter et effectuer une recherche web si nécessaire
             search_type, search_query = detect_search_intent(user_input)
             
             if search_type and search_query:
-                with st.spinner(f"🔍 Recherche {search_type} en cours..."):
-                    # Afficher un message informatif
+                with st.spinner(f"Recherche {search_type} en cours..."):
                     search_info = st.empty()
                     search_info.info(f"Recherche de '{search_query}' sur {search_type.upper()}...")
                     
                     web_results = format_web_search_for_prompt(search_query, search_type)
                     prompt += f"{web_results}\n\n"
                     
-                    search_info.success(f"✅ Recherche {search_type} terminée!")
+                    search_info.success(f"Recherche {search_type} terminée!")
                     time.sleep(1)
                     search_info.empty()
             
-            # Ajouter le contexte d'édition si disponible
             if edit_context:
                 prompt += f"[EDIT_CONTEXT] {edit_context}\n\n"
             
-            # Message final
             prompt += f"""
 ==========================================
 INSTRUCTIONS FINALES:
@@ -1643,10 +1623,8 @@ Utilisateur: {message_content}"""
                     with st.spinner("Consultation mémoire..."):
                         time.sleep(1)
                 
-                # Appel API avec Vision AI thinking
                 response = get_ai_response(prompt)
                 
-                # Afficher Vision AI thinking puis la réponse
                 stream_response_with_thinking(response, placeholder)
                 
                 add_message(conv_id, "assistant", response, "text")
@@ -1663,7 +1641,7 @@ Utilisateur: {message_content}"""
                 st.rerun()
 
 # -------------------------
-# Footer
+# Footer et Configuration
 # -------------------------
 st.markdown("---")
 col1, col2, col3 = st.columns(3)
@@ -1687,206 +1665,143 @@ with col3:
     st.write("- Wikipedia multilingue")
 
 st.markdown("---")
-col1, col2 = st.columns(2)
 
-with col1:
-    st.write("**Fonctionnalités améliorées:**")
-    st.write("- ✅ Date/heure temps réel")
-    st.write("- ✅ Recherche Google (si API)")
-    st.write("- ✅ DuckDuckGo (GRATUIT, sans API)")
-    st.write("- ✅ YouTube + transcriptions")
-    st.write("- ✅ Scraping de pages web")
-
-with col2:
-    st.write("**Sources disponibles:**")
-    st.write("- Google Custom Search")
-    st.write("- DuckDuckGo Search")
-    st.write("- YouTube Data API v3")
-    st.write("- Wikipedia FR/EN")
-    st.write("- Google News RSS")
-
-# -------------------------
-# Configuration API Keys
-# -------------------------
-with st.expander("⚙️ Configuration APIs & Installation"):
+with st.expander("Configuration APIs"):
     st.markdown("""
-    ### 🔑 Configuration des API Keys (OPTIONNEL)
+    ### Configuration des API Keys (OPTIONNEL)
     
-    **IMPORTANT:** L'application fonctionne maintenant SANS API keys grâce à DuckDuckGo !
+    L'application fonctionne SANS API keys grâce à DuckDuckGo !
     
-    **Configuration dans Streamlit Cloud:**
-    Settings → Secrets → Ajoutez (optionnel):
-```toml
-    GOOGLE_API_KEY = "votre_clé_google"
-    GOOGLE_SEARCH_ENGINE_ID = "votre_search_engine_id"
+    **Dans Streamlit Cloud (Settings → Secrets):**
+    ```toml
+    GOOGLE_API_KEY = "votre_clé"
+    GOOGLE_SEARCH_ENGINE_ID = "votre_id"
     YOUTUBE_API_KEY = "votre_clé_youtube"
-    **Avantages:**
-- ✅ **DuckDuckGo:** GRATUIT, ILLIMITÉ, sans API key
-- ✅ **YouTube scraping:** Fonctionne sans API
-- ✅ **Wikipedia:** Toujours gratuit
-- ✅ **Google News RSS:** Gratuit
-
-**APIs optionnelles (si quotas dépassés):**
-- Google Custom Search: 100 requêtes/jour
-- YouTube Data API v3: 10,000 unités/jour
-
-**Statut actuel:**
-""")
-
-st.write("**Moteurs de recherche:**")
-if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
-    st.success("✅ Google API configurée (utilisée en priorité)")
-else:
-    st.info("ℹ️ Google API non configurée → Utilisation de DuckDuckGo (gratuit)")
-
-st.success("✅ DuckDuckGo disponible (GRATUIT, ILLIMITÉ)")
-
-st.write("\n**YouTube:**")
-if YOUTUBE_API_KEY:
-    st.success("✅ YouTube API configurée (utilisée en priorité)")
-else:
-    st.info("ℹ️ YouTube API non configurée → Utilisation du scraping (gratuit)")
-
-st.success("✅ YouTube Scraping disponible (GRATUIT)")
-
-st.write("\n**Autres sources:**")
-st.success("✅ Wikipedia (GRATUIT)")
-st.success("✅ Google News RSS (GRATUIT)")
-st.success("✅ Scraping web (GRATUIT)")
-**Mode Chat Normal:**
-1. Uploadez une image pour l'analyser
-2. Posez des questions sur l'image
-3. Discutez des éditions précédentes
-4. Demandez la date/heure actuelle
-5. **Recherchez sur le web (GRATUIT avec DuckDuckGo)**
-6. Recherchez des vidéos YouTube
-
-**Mode Éditeur:**
-1. Uploadez une image à éditer
-2. Sélectionnez ou écrivez une instruction
-3. Cliquez sur "Éditer l'image"
-4. Téléchargez le résultat
-
-**Exemples de recherches (tout est GRATUIT!):**
-- "Recherche des informations sur Fantastic Four 2025"
-- "Actualités du jour"
-- "Quelle heure est-il ?"
-- "Définition de intelligence artificielle"
-- "Vidéo sur l'IA en 2025"
-- "Qui est Elon Musk"
-- "Dernières nouvelles sur l'espace"
-
-**Modèles utilisés:**
-- **BLIP**: Description d'images
-- **LLaMA 3.1 70B**: Conversations (cutoff: janvier 2025)
-- **Qwen ImageEditPro**: Édition d'images
-- **DuckDuckGo**: Recherche web GRATUITE et ILLIMITÉE
-- **Google Custom Search**: Si configuré (optionnel)
-- **Wikipedia**: Encyclopédie multilingue
-- **Google News**: Actualités en temps réel
-
-**Couverture temporelle:**
-- Les recherches couvrent **TOUTES les années** disponibles sur Internet
-- Accès aux contenus de 1990 jusqu'à 2025
-- Actualités en temps réel via Google News RSS
-- Vidéos YouTube de toutes les époques
-
-**Note:** Vision AI affiche "Vision AI thinking..." pendant le traitement.
-""")
-# Test Date/Heure
-if st.button("Test Date/Heure"):
-    dt_info = get_current_datetime_info()
-    if "error" not in dt_info:
-        st.success("✅ Date/Heure OK")
-        st.json(dt_info)
+    SUPABASE_URL = "votre_url"
+    SUPABASE_SERVICE_KEY = "votre_clé"
+    ```
+    
+    **Installations requises:**
+    ```bash
+    pip install duckduckgo-search
+    pip install youtube-transcript-api
+    ```
+    """)
+    
+    st.write("**Statut:**")
+    if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
+        st.success("✅ Google API configurée")
     else:
-        st.error(f"❌ Erreur: {dt_info['error']}")
+        st.info("ℹ️ Utilisation de DuckDuckGo (gratuit)")
+    
+    st.success("✅ DuckDuckGo disponible (GRATUIT)")
+    
+    if YOUTUBE_API_KEY:
+        st.success("✅ YouTube API configurée")
+    else:
+        st.info("ℹ️ Utilisation du scraping YouTube (gratuit)")
 
-# Test DuckDuckGo
-if st.button("Test DuckDuckGo"):
-    with st.spinner("Test DuckDuckGo..."):
-        results = search_duckduckgo("test", max_results=3)
-        if results:
-            st.success(f"✅ DuckDuckGo OK ({len(results)} résultats)")
-            for r in results:
-                st.write(f"- {r['title'][:50]}...")
+with st.expander("Guide d'utilisation"):
+    st.markdown("""
+    ### Comment utiliser Vision AI Chat
+    
+    **Mode Chat:**
+    - Uploadez une image pour l'analyser
+    - Posez des questions
+    - Recherchez sur le web (GRATUIT)
+    - Demandez la date/heure
+    
+    **Mode Éditeur:**
+    - Uploadez une image
+    - Donnez une instruction en anglais
+    - Téléchargez le résultat
+    
+    **Exemples de recherches:**
+    - "Recherche Fantastic Four 2025"
+    - "Actualités du jour"
+    - "Quelle heure est-il ?"
+    - "Vidéo sur l'IA"
+    
+    **Modèles:**
+    - BLIP: Description d'images
+    - LLaMA 3.1 70B: Conversations
+    - Qwen: Édition d'images
+    - DuckDuckGo: Recherche gratuite
+    """)
+
+with st.sidebar.expander("Tests système"):
+    if st.button("Test Date/Heure"):
+        dt_info = get_current_datetime_info()
+        if "error" not in dt_info:
+            st.success("✅ OK")
+            st.json(dt_info)
         else:
-            st.error("❌ DuckDuckGo KO")
-
-# Test Google (si configuré)
-if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
-    if st.button("Test Google API"):
-        with st.spinner("Test Google..."):
-            results = search_google("test", max_results=3)
+            st.error(f"❌ {dt_info['error']}")
+    
+    if st.button("Test DuckDuckGo"):
+        with st.spinner("Test..."):
+            results = search_duckduckgo("test", max_results=3)
             if results:
-                st.success(f"✅ Google OK ({len(results)} résultats)")
+                st.success(f"✅ OK ({len(results)} résultats)")
             else:
-                st.warning("⚠️ Google quota dépassé ou erreur")
+                st.error("❌ KO")
+    
+    if st.button("Test YouTube"):
+        with st.spinner("Test..."):
+            results = search_youtube("AI", max_results=2)
+            if results:
+                st.success(f"✅ OK ({len(results)} vidéos)")
+            else:
+                st.warning("⚠️ Erreur")
 
-# Test YouTube
-if st.button("Test YouTube"):
-    with st.spinner("Test YouTube..."):
-        results = search_youtube("AI 2025", max_results=2)
-        if results:
-            st.success(f"✅ YouTube OK ({len(results)} vidéos)")
-            for r in results:
-                st.write(f"- {r['title'][:50]}...")
-        else:
-            st.warning("⚠️ YouTube erreur")
+if st.session_state.user.get("role") == "admin":
+    with st.sidebar.expander("Fonctions Admin"):
+        if st.button("Interface Admin"):
+            st.session_state.page = "admin"
+            st.rerun()
 
-# Test Wikipedia
-if st.button("Test Wikipedia"):
-    with st.spinner("Test Wikipedia..."):
-        results = search_wikipedia("Intelligence artificielle")
-        if results:
-            st.success(f"✅ Wikipedia OK ({len(results)} articles)")
+if st.sidebar.button("Diagnostics"):
+    with st.sidebar:
+        st.subheader("État")
+        
+        if supabase:
+            try:
+                supabase.table("users").select("*").limit(1).execute()
+                st.success("✅ Supabase OK")
+            except:
+                st.error("❌ Supabase KO")
+        
+        if st.session_state.llama_client:
+            st.success("✅ LLaMA OK")
         else:
-            st.error("❌ Wikipedia KO")
-# Supabase
-    if supabase:
-        try:
-            supabase.table("users").select("*").limit(1).execute()
-            st.success("✅ Supabase OK")
-        except:
-            st.error("❌ Supabase KO")
-    else:
-        st.error("❌ Supabase non initialisé")
-    
-    # LLaMA
-    if st.session_state.llama_client:
-        st.success("✅ LLaMA 3.1 70B OK")
-    else:
-        st.error("❌ LLaMA KO")
-    
-    # Qwen
-    if st.session_state.qwen_client:
-        st.success("✅ Qwen ImageEdit OK")
-    else:
-        st.error("❌ Qwen KO")
-    
-    # BLIP
-    if st.session_state.processor and st.session_state.model:
-        st.success("✅ BLIP OK")
-    else:
-        st.error("❌ BLIP KO")
-    
-    # Recherche web
-    st.success("✅ DuckDuckGo OK (gratuit)")
-    st.success("✅ Wikipedia OK")
-    st.success("✅ Google News OK")
-    with st.sidebar.expander("📊 Vos statistiques"):
-        st.metric("Conversations", conv_count)
-        st.metric("Messages", msg_count)
+            st.error("❌ LLaMA KO")
         
-        edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
-        st.metric("Éditions d'images", edit_count)
-except:
-    pass
-with st.sidebar.expander("📊 Vos statistiques"):
-        st.metric("Conversations", conv_count)
-        st.metric("Messages", msg_count)
+        if st.session_state.qwen_client:
+            st.success("✅ Qwen OK")
+        else:
+            st.error("❌ Qwen KO")
         
-        edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
-        st.metric("Éditions d'images", edit_count)
-except:
-    pass
+        st.success("✅ DuckDuckGo OK")
+        st.success("✅ Wikipedia OK")
+
+if st.sidebar.button("Nettoyer fichiers"):
+    cleanup_temp_files()
+    st.sidebar.success("✅ Nettoyé!")
+
+if st.session_state.user["id"] != "guest" and supabase:
+    try:
+        conv_count = len(get_conversations(st.session_state.user["id"]))
+        msg_count = len(st.session_state.messages_memory) if st.session_state.conversation else 0
+        
+        with st.sidebar.expander("Statistiques"):
+            st.metric("Conversations", conv_count)
+            st.metric("Messages", msg_count)
+            
+            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
+            st.metric("Éditions", edit_count)
+    except:
+        pass
+
+st.sidebar.markdown("---")
+st.sidebar.caption("Vision AI Chat v2.0")
+st.sidebar.caption("Par Pepe Musafiri")
