@@ -1564,20 +1564,20 @@ if st.session_state.user["id"] == "guest":
                         st.error("Identifiants invalides")
 
   with tab2:
-    email_reg = st.text_input("Email", key="reg_email")
-    name_reg = st.text_input("Nom", key="reg_name")
-    pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
-    pass_confirm = st.text_input("Confirmer", type="password", key="reg_confirm")
+        email_reg = st.text_input("Email", key="reg_email")
+        name_reg = st.text_input("Nom", key="reg_name")
+        pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
+        pass_confirm = st.text_input("Confirmer", type="password", key="reg_confirm")
     
-    if st.button("Créer compte", key="create_account_btn"):
-        if not email_reg or not name_reg or not pass_reg or not pass_confirm:
-            st.error("⚠️ Tous les champs sont obligatoires")
-        elif pass_reg != pass_confirm:
-            st.error("❌ Les mots de passe ne correspondent pas")
-        elif len(pass_reg) < 6:
-            st.error("❌ Le mot de passe doit contenir au moins 6 caractères")
-        elif not "@" in email_reg:
-            st.error("❌ Format d'email invalide")
+         if st.button("Créer compte", key="create_account_btn"):
+            if not email_reg or not name_reg or not pass_reg or not pass_confirm:
+                st.error("⚠️ Tous les champs sont obligatoires")
+            elif pass_reg != pass_confirm:
+                st.error("❌ Les mots de passe ne correspondent pas")
+            elif len(pass_reg) < 6:
+                st.error("❌ Le mot de passe doit contenir au moins 6 caractères")
+            elif not "@" in email_reg:
+                st.error("❌ Format d'email invalide")
         else:
             with st.spinner("Création du compte en cours..."):
                 success = create_user(email_reg.strip(), pass_reg, name_reg.strip())
