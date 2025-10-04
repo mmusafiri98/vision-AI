@@ -2029,8 +2029,7 @@ if st.button("Test Wikipedia"):
         
         edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
         st.metric("Éditions d'images", edit_count)
-except:
-    pass
+
 # Suppression des lignes en double et correction de l'indentation
 with st.sidebar.expander("📊 Vos statistiques"):
     if supabase and st.session_state.user["id"] != "guest":
