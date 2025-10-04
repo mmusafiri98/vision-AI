@@ -1267,7 +1267,7 @@ def show_admin_page():
             st.error("❌ Supabase non connecté")
     
     # TAB 2: Conversations
-    with tab2:
+ with tab2:
         st.subheader("Toutes les conversations")
         
         if supabase:
