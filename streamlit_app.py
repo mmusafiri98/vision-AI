@@ -1199,205 +1199,207 @@ def show_admin_page():
     
     tab1, tab2, tab3, tab4 = st.tabs(["👥 Utilisateurs", "💬 Conversations", "📊 Statistiques", "📨 Messages"])
     
-    # TAB 1: Utilisateurs
-    with tab1:
-        st.subheader("Gestion des utilisateurs")
-        
-        if supabase:
-            try:
-                users = supabase.table("users").select("*").order("created_at", desc=True).execute()
-                
-                if users.data:
-                    st.write(f"**Total utilisateurs:** {len(users.data)}")
-                    
-                    # Tableau des utilisateurs
-                    for user in users.data:
-                        with st.expander(f"👤 {user.get('name', 'Sans nom')} ({user.get('email', 'N/A')})"):
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.write(f"**ID:** `{user.get('id', 'N/A')[:20]}...`")
-                                st.write(f"**Email:** {user.get('email', 'N/A')}")
-                                st.write(f"**Nom:** {user.get('name', 'N/A')}")
-                                st.write(f"**Rôle actuel:** `{user.get('role', 'user')}`")
-                                st.write(f"**Créé le:** {user.get('created_at', 'N/A')}")
-                            
-                            with col2:
-                                st.write("**Modifier le rôle:**")
-                                new_role = st.selectbox(
-                                    "Nouveau rôle",
-                                    ["user", "admin"],
-                                    index=0 if user.get('role') == 'user' else 1,
-                                    key=f"role_{user.get('id')}"
-                                )
-                                
-                                if st.button("💾 Sauvegarder rôle", key=f"save_role_{user.get('id')}"):
-                                    try:
-                                        response = supabase.table("users").update({
-                                            "role": new_role,
-                                            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                                        }).eq("id", user.get('id')).execute()
-                                        
-                                        if response.data:
-                                            st.success(f"✅ Rôle mis à jour: {new_role}")
-                                            time.sleep(1)
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ Erreur mise à jour")
-                                    except Exception as e:
-                                        st.error(f"❌ Erreur: {e}")
-                                
-                                # Bouton suppression
-                                if user.get('email') != ADMIN_CREDENTIALS["email"]:
-                                    if st.button("🗑️ Supprimer utilisateur", key=f"del_{user.get('id')}"):
-                                        try:
-                                            supabase.table("users").delete().eq("id", user.get('id')).execute()
-                                            st.success("✅ Utilisateur supprimé")
-                                            time.sleep(1)
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"❌ Erreur: {e}")
-                else:
-                    st.info("Aucun utilisateur trouvé")
-                    
-            except Exception as e:
-                st.error(f"❌ Erreur chargement utilisateurs: {e}")
-                st.code(traceback.format_exc())
-        else:
-            st.error("❌ Supabase non connecté")
-    
-    # TAB 2: Conversations
-    with tab2:
-        st.subheader("Toutes les conversations")
-        
-        if supabase:
-            try:
-                convs = supabase.table("conversations").select("*").order("created_at", desc=True).limit(50).execute()
-                
-                if convs.data:
-                    st.write(f"**Total conversations:** {len(convs.data)}")
-                    
-                    for conv in convs.data:
-                        with st.expander(f"💬 {conv.get('description', 'Sans titre')} - {conv.get('created_at', 'N/A')[:16]}"):
-                            st.write(f"**ID Conversation:** `{conv.get('conversation_id', conv.get('id', 'N/A'))}`")
-                            st.write(f"**User ID:** `{conv.get('user_id', 'N/A')}`")
-                            st.write(f"**Créée le:** {conv.get('created_at', 'N/A')}")
-                            st.write(f"**Description:** {conv.get('description', 'N/A')}")
-                            
-                            # Compter les messages
-                            try:
-                                conv_id = conv.get('conversation_id') or conv.get('id')
-                                msgs = supabase.table("messages").select("id", count="exact").eq("conversation_id", conv_id).execute()
-                                st.write(f"**Nombre de messages:** {msgs.count or 0}")
-                            except:
-                                pass
-                            
-                            # Bouton voir messages
-                            if st.button("📨 Voir messages", key=f"view_msgs_{conv.get('conversation_id', conv.get('id'))}"):
-                                st.session_state.admin_view_conv = conv.get('conversation_id') or conv.get('id')
-                                st.rerun()
-                            
-                            # Bouton suppression
-                            if st.button("🗑️ Supprimer conversation", key=f"del_conv_{conv.get('conversation_id', conv.get('id'))}"):
+   # TAB 1: Utilisateurs
+with tab1:
+    st.subheader("Gestion des utilisateurs")
+
+    if supabase:
+        try:
+            users = supabase.table("users").select("*").order("created_at", desc=True).execute()
+
+            if users.data:
+                st.write(f"**Total utilisateurs:** {len(users.data)}")
+
+                # Tableau des utilisateurs
+                for user in users.data:
+                    with st.expander(f"👤 {user.get('name', 'Sans nom')} ({user.get('email', 'N/A')})"):
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            st.write(f"**ID:** `{user.get('id', 'N/A')[:20]}...`")
+                            st.write(f"**Email:** {user.get('email', 'N/A')}")
+                            st.write(f"**Nom:** {user.get('name', 'N/A')}")
+                            st.write(f"**Rôle actuel:** `{user.get('role', 'user')}`")
+                            st.write(f"**Créé le:** {user.get('created_at', 'N/A')}")
+
+                        with col2:
+                            st.write("**Modifier le rôle:**")
+                            new_role = st.selectbox(
+                                "Nouveau rôle",
+                                ["user", "admin"],
+                                index=0 if user.get('role') == 'user' else 1,
+                                key=f"role_{user.get('id')}"
+                            )
+
+                            if st.button("💾 Sauvegarder rôle", key=f"save_role_{user.get('id')}"):
                                 try:
-                                    conv_id = conv.get('conversation_id') or conv.get('id')
-                                    supabase.table("messages").delete().eq("conversation_id", conv_id).execute()
-                                    supabase.table("conversations").delete().eq("conversation_id", conv_id).execute()
-                                    st.success("✅ Conversation supprimée")
-                                    time.sleep(1)
-                                    st.rerun()
+                                    response = supabase.table("users").update({
+                                        "role": new_role,
+                                        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                                    }).eq("id", user.get('id')).execute()
+
+                                    if response.data:
+                                        st.success(f"✅ Rôle mis à jour: {new_role}")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Erreur mise à jour")
                                 except Exception as e:
                                     st.error(f"❌ Erreur: {e}")
-                else:
-                    st.info("Aucune conversation trouvée")
-                    
-            except Exception as e:
-                st.error(f"❌ Erreur: {e}")
-                st.code(traceback.format_exc())
-        else:
-            st.error("❌ Supabase non connecté")
-    
-    # TAB 3: Statistiques
-    with tab3:
-        st.subheader("📊 Statistiques globales")
-        
-        if supabase:
-            try:
-                # Compter les utilisateurs
-                users_count = supabase.table("users").select("id", count="exact").execute()
-                
-                # Compter les conversations
-                convs_count = supabase.table("conversations").select("id", count="exact").execute()
-                
-                # Compter les messages
-                msgs_count = supabase.table("messages").select("id", count="exact").execute()
-                
-                # Afficher les métriques
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric("👥 Utilisateurs", users_count.count or 0)
-                
-                with col2:
-                    st.metric("💬 Conversations", convs_count.count or 0)
-                
-                with col3:
-                    st.metric("📨 Messages", msgs_count.count or 0)
-                
-                st.markdown("---")
-                
-                # Statistiques par utilisateur
-                st.subheader("Statistiques par utilisateur")
-                
-                users = supabase.table("users").select("*").execute()
-                
-                if users.data:
-                    stats_data = []
-                    
-                    for user in users.data:
-                        user_id = user.get('id')
-                        
-                        # Compter conversations
-                        user_convs = supabase.table("conversations").select("id", count="exact").eq("user_id", user_id).execute()
-                        
-                        # Compter messages (via conversations)
-                        convs = supabase.table("conversations").select("conversation_id").eq("user_id", user_id).execute()
-                        total_msgs = 0
-                        
-                        if convs.data:
-                            for conv in convs.data:
-                                conv_id = conv.get('conversation_id')
-                                msgs = supabase.table("messages").select("id", count="exact").eq("conversation_id", conv_id).execute()
-                                total_msgs += msgs.count or 0
-                        
-                        stats_data.append({
-                            "Nom": user.get('name', 'N/A'),
-                            "Email": user.get('email', 'N/A'),
-                            "Rôle": user.get('role', 'user'),
-                            "Conversations": user_convs.count or 0,
-                            "Messages": total_msgs,
-                            "Créé le": user.get('created_at', 'N/A')[:10]
-                        })
-                    
-                    # Afficher le tableau
-                    df = pd.DataFrame(stats_data)
-                    st.dataframe(df, use_container_width=True)
-                    
-                    # Export CSV
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Télécharger CSV",
-                        data=csv,
-                        file_name=f"stats_users_{int(time.time())}.csv",
-                        mime="text/csv"
-                    )
-                
-            except Exception as e:
-                st.error(f"❌ Erreur: {e}")
-                st.code(traceback.format_exc())
-        else:
-            st.error("❌ Supabase non connecté")
-    
+
+                            # Bouton suppression
+                            if user.get('email') != ADMIN_CREDENTIALS["email"]:
+                                if st.button("🗑️ Supprimer utilisateur", key=f"del_{user.get('id')}"):
+                                    try:
+                                        supabase.table("users").delete().eq("id", user.get('id')).execute()
+                                        st.success("✅ Utilisateur supprimé")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"❌ Erreur: {e}")
+            else:
+                st.info("Aucun utilisateur trouvé")
+
+        except Exception as e:
+            st.error(f"❌ Erreur chargement utilisateurs: {e}")
+            st.code(traceback.format_exc())
+    else:
+        st.error("❌ Supabase non connecté")
+
+
+# TAB 2: Conversations
+with tab2:
+    st.subheader("Toutes les conversations")
+
+    if supabase:
+        try:
+            convs = supabase.table("conversations").select("*").order("created_at", desc=True).limit(50).execute()
+
+            if convs.data:
+                st.write(f"**Total conversations:** {len(convs.data)}")
+
+                for conv in convs.data:
+                    with st.expander(f"💬 {conv.get('description', 'Sans titre')} - {conv.get('created_at', 'N/A')[:16]}"):
+                        st.write(f"**ID Conversation:** `{conv.get('conversation_id', conv.get('id', 'N/A'))}`")
+                        st.write(f"**User ID:** `{conv.get('user_id', 'N/A')}`")
+                        st.write(f"**Créée le:** {conv.get('created_at', 'N/A')}")
+                        st.write(f"**Description:** {conv.get('description', 'N/A')}")
+
+                        # Compter les messages
+                        try:
+                            conv_id = conv.get('conversation_id') or conv.get('id')
+                            msgs = supabase.table("messages").select("id", count="exact").eq("conversation_id", conv_id).execute()
+                            st.write(f"**Nombre de messages:** {msgs.count or 0}")
+                        except:
+                            pass
+
+                        # Bouton voir messages
+                        if st.button("📨 Voir messages", key=f"view_msgs_{conv.get('conversation_id', conv.get('id'))}"):
+                            st.session_state.admin_view_conv = conv.get('conversation_id') or conv.get('id')
+                            st.rerun()
+
+                        # Bouton suppression
+                        if st.button("🗑️ Supprimer conversation", key=f"del_conv_{conv.get('conversation_id', conv.get('id'))}"):
+                            try:
+                                conv_id = conv.get('conversation_id') or conv.get('id')
+                                supabase.table("messages").delete().eq("conversation_id", conv_id).execute()
+                                supabase.table("conversations").delete().eq("conversation_id", conv_id).execute()
+                                st.success("✅ Conversation supprimée")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur: {e}")
+            else:
+                st.info("Aucune conversation trouvée")
+
+        except Exception as e:
+            st.error(f"❌ Erreur: {e}")
+            st.code(traceback.format_exc())
+    else:
+        st.error("❌ Supabase non connecté")
+
+
+# TAB 3: Statistiques
+with tab3:
+    st.subheader("📊 Statistiques globales")
+
+    if supabase:
+        try:
+            # Compter les utilisateurs
+            users_count = supabase.table("users").select("id", count="exact").execute()
+
+            # Compter les conversations
+            convs_count = supabase.table("conversations").select("id", count="exact").execute()
+
+            # Compter les messages
+            msgs_count = supabase.table("messages").select("id", count="exact").execute()
+
+            # Afficher les métriques
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric("👥 Utilisateurs", users_count.count or 0)
+
+            with col2:
+                st.metric("💬 Conversations", convs_count.count or 0)
+
+            with col3:
+                st.metric("📨 Messages", msgs_count.count or 0)
+
+            st.markdown("---")
+
+            # Statistiques par utilisateur
+            st.subheader("Statistiques par utilisateur")
+
+            users = supabase.table("users").select("*").execute()
+
+            if users.data:
+                stats_data = []
+
+                for user in users.data:
+                    user_id = user.get('id')
+
+                    # Compter conversations
+                    user_convs = supabase.table("conversations").select("id", count="exact").eq("user_id", user_id).execute()
+
+                    # Compter messages (via conversations)
+                    convs = supabase.table("conversations").select("conversation_id").eq("user_id", user_id).execute()
+                    total_msgs = 0
+
+                    if convs.data:
+                        for conv in convs.data:
+                            conv_id = conv.get('conversation_id')
+                            msgs = supabase.table("messages").select("id", count="exact").eq("conversation_id", conv_id).execute()
+                            total_msgs += msgs.count or 0
+
+                    stats_data.append({
+                        "Nom": user.get('name', 'N/A'),
+                        "Email": user.get('email', 'N/A'),
+                        "Rôle": user.get('role', 'user'),
+                        "Conversations": user_convs.count or 0,
+                        "Messages": total_msgs,
+                        "Créé le": user.get('created_at', 'N/A')[:10]
+                    })
+
+                # Afficher le tableau
+                df = pd.DataFrame(stats_data)
+                st.dataframe(df, use_container_width=True)
+
+                # Export CSV
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Télécharger CSV",
+                    data=csv,
+                    file_name=f"stats_users_{int(time.time())}.csv",
+                    mime="text/csv"
+                )
+
+        except Exception as e:
+            st.error(f"❌ Erreur: {e}")
+            st.code(traceback.format_exc())
+    else:
+        st.error("❌ Supabase non connecté")
+
     # TAB 4: Messages
     with tab4:
         st.subheader("📨 Tous les messages")
