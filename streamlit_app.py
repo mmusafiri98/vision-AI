@@ -257,6 +257,11 @@ def create_user(email, password, name, role="user"):
         return False
         
     try:
+        # Vérifier si l'utilisateur existe déjà
+        existing = supabase.table("users").select("*").eq("email", email).execute()
+        if existing.data:
+            return False  # L'email existe déjà
+            
         try:
             response = supabase.auth.admin.create_user({
                 "email": email,
@@ -279,7 +284,8 @@ def create_user(email, password, name, role="user"):
         
         response = supabase.table("users").insert(user_data).execute()
         return bool(response.data)
-    except:
+    except Exception as e:
+        st.error(f"Erreur création utilisateur: {e}")
         return False
 
 def get_conversations(user_id):
@@ -1557,23 +1563,31 @@ if st.session_state.user["id"] == "guest":
                     else:
                         st.error("Identifiants invalides")
 
-    with tab2:
-        email_reg = st.text_input("Email", key="reg_email")
-        name_reg = st.text_input("Nom", key="reg_name")
-        pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
-        pass_confirm = st.text_input("Confirmer", type="password", key="reg_confirm")
-        
-        if st.button("Créer compte"):
-            if email_reg and name_reg and pass_reg and pass_confirm:
-                if pass_reg != pass_confirm:
-                    st.error("Mots de passe différents")
-                elif len(pass_reg) < 6:
-                    st.error("Minimum 6 caractères")
+  with tab2:
+    email_reg = st.text_input("Email", key="reg_email")
+    name_reg = st.text_input("Nom", key="reg_name")
+    pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
+    pass_confirm = st.text_input("Confirmer", type="password", key="reg_confirm")
+    
+    if st.button("Créer compte", key="create_account_btn"):
+        if not email_reg or not name_reg or not pass_reg or not pass_confirm:
+            st.error("⚠️ Tous les champs sont obligatoires")
+        elif pass_reg != pass_confirm:
+            st.error("❌ Les mots de passe ne correspondent pas")
+        elif len(pass_reg) < 6:
+            st.error("❌ Le mot de passe doit contenir au moins 6 caractères")
+        elif not "@" in email_reg:
+            st.error("❌ Format d'email invalide")
+        else:
+            with st.spinner("Création du compte en cours..."):
+                success = create_user(email_reg.strip(), pass_reg, name_reg.strip())
+                if success:
+                    st.success("✅ Compte créé avec succès!")
+                    st.info("👉 Vous pouvez maintenant vous connecter dans l'onglet 'Connexion'")
+                    time.sleep(2)
+                    st.rerun()
                 else:
-                    with st.spinner("Création..."):
-                        if create_user(email_reg, pass_reg, name_reg):
-                            st.success("Compte créé!")
-                            time.sleep(1)
+                    st.error("❌ Erreur: Cet email est peut-être déjà utilisé ou il y a un problème de connexion à la base de données")
 
     with tab3:
         show_password_reset()
@@ -1976,6 +1990,30 @@ with st.expander("Guide d'utilisation"):
     - Qwen: Édition d'images
     - DuckDuckGo: Recherche gratuite
     """)
+if st.sidebar.button("🧪 Test Création User"):
+    with st.sidebar:
+        test_email = f"test_{int(time.time())}@example.com"
+        st.write(f"Test avec: {test_email}")
+        
+        if supabase:
+            try:
+                result = create_user(test_email, "test123", "Test User")
+                if result:
+                    st.success("✅ Création OK!")
+                else:
+                    st.error("❌ Création échouée")
+                    
+                # Vérifier si l'utilisateur a été créé
+                check = supabase.table("users").select("*").eq("email", test_email).execute()
+                if check.data:
+                    st.success(f"✅ Utilisateur trouvé: {check.data[0].get('name')}")
+                else:
+                    st.error("❌ Utilisateur non trouvé dans la DB")
+            except Exception as e:
+                st.error(f"Erreur: {e}")
+                st.code(traceback.format_exc())
+        else:
+            st.error("Supabase non connecté")
 
 with st.sidebar.expander("Tests système"):
     if st.button("Test Date/Heure"):
