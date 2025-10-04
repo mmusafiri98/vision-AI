@@ -1949,11 +1949,7 @@ st.success("✅ Scraping web (GRATUIT)")
 5. ** Recherchez sur le web(GRATUIT avec DuckDuckGo)**
 6. Recherchez des vidéos YouTube
 
-**Mode Éditeur: **
-1. Uploadez une image à éditer
-2. Sélectionnez ou écrivez une instruction
-3. Cliquez sur "Éditer l'image"
-4. Téléchargez le résultat
+
 
 **Exemples de recherches(tout est GRATUIT!): **
 - "Recherche des informations sur Fantastic Four 2025"
