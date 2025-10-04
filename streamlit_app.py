@@ -1941,42 +1941,7 @@ st.write("\n**Autres sources:**")
 st.success("✅ Wikipedia (GRATUIT)")
 st.success("✅ Google News RSS (GRATUIT)")
 st.success("✅ Scraping web (GRATUIT)")
-**Mode Chat Normal: **
-1. Uploadez une image pour l'analyser
-2. Posez des questions sur l'image
-3. Discutez des éditions précédentes
-4. Demandez la date / heure actuelle
-5. ** Recherchez sur le web(GRATUIT avec DuckDuckGo)**
-6. Recherchez des vidéos YouTube
 
-
-
-**Exemples de recherches(tout est GRATUIT!): **
-- "Recherche des informations sur Fantastic Four 2025"
-- "Actualités du jour"
-- "Quelle heure est-il ?"
-- "Définition de intelligence artificielle"
-- "Vidéo sur l'IA en 2025"
-- "Qui est Elon Musk"
-- "Dernières nouvelles sur l'espace"
-
-**Modèles utilisés: **
-- **BLIP**: Description d'images
-- **LLaMA 3.1 70B**: Conversations(cutoff: janvier 2025)
-- **Qwen ImageEditPro**: Édition d'images
-- **DuckDuckGo**: Recherche web GRATUITE et ILLIMITÉE
-- **Google Custom Search**: Si configuré(optionnel)
-- **Wikipedia**: Encyclopédie multilingue
-- **Google News**: Actualités en temps réel
-
-**Couverture temporelle: **
-- Les recherches couvrent ** TOUTES les années ** disponibles sur Internet
-- Accès aux contenus de 1990 jusqu'à 2025
-- Actualités en temps réel via Google News RSS
-- Vidéos YouTube de toutes les époques
-
-**Note: ** Vision AI affiche "Vision AI thinking..." pendant le traitement.
-""")
 # Test Date/Heure
 if st.button("Test Date/Heure"):
     dt_info = get_current_datetime_info()
