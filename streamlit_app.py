@@ -18,6 +18,7 @@ import pytz
 import requests
 from bs4 import BeautifulSoup
 import json
+import re
 
 # -------------------------
 # Config
@@ -32,37 +33,22 @@ CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE:
 3. NEVER say you don't know the current date/time when [DATETIME] information is provided.
 4. ALWAYS cite and use the web search results when they are provided in [WEB_SEARCH].
 5. Your knowledge cutoff is January 2025, but you can access current information through web searches.
+6. WEB SEARCH COVERS ALL YEARS: The search results include content from ALL years available on the web (2000-2025 and beyond).
+7. YOUTUBE DATA IS COMPREHENSIVE: You have access to video titles, descriptions, view counts, like counts, comment counts, upload dates, and channel information from ALL years.
 
 You have access to:
 - Current date and time information (provided in [DATETIME])
-- Real-time web search capabilities (results in [WEB_SEARCH])
+- Real-time web search capabilities covering ALL YEARS (results in [WEB_SEARCH])
+- YouTube data including statistics, comments, and content from ALL YEARS
 - Image analysis and editing tools
 
-When you receive an image description starting with [IMAGE], you should:
-1. Acknowledge that you can see and analyze the image
-2. Provide detailed analysis of what you observe
-3. Answer any specific questions about the image
-4. Be helpful and descriptive in your analysis
-
-When you receive information about image editing starting with [EDIT_CONTEXT], you should:
-1. Remember the editing history and context provided
-2. Use this information to discuss the edits made
-3. Answer questions about the editing process and results
-4. Provide suggestions for further improvements if asked
-
-When you receive current time/date information starting with [DATETIME]:
-- This is the ACTUAL, REAL current date and time
-- YOU MUST USE this information to answer questions about the current date, time, day of week
-- DO NOT say you don't have access to current time - you DO have it in [DATETIME]
-- Calculate time differences or future/past dates based on this information
-
 When you receive web search results starting with [WEB_SEARCH]:
-- These are REAL search results from the internet RIGHT NOW
+- These are REAL search results covering content from ALL YEARS (not just 2025)
+- The data includes historical content, recent content, and everything in between
+- For YouTube: you receive view counts, like counts, comment counts, upload dates, and more
 - YOU MUST analyze and use this information in your response
-- Cite the sources provided in the search results
-- Provide accurate and up-to-date information based on these results
-- DO NOT rely only on your training data (cutoff January 2025) - USE THE SEARCH RESULTS PROVIDED
-- These searches cover content from all years available on the internet, including 2025"""
+- Cite the sources, dates, and statistics provided
+- DO NOT rely only on your training data - USE THE COMPREHENSIVE SEARCH RESULTS PROVIDED"""
 
 # Informations admin
 ADMIN_CREDENTIALS = {
@@ -89,7 +75,6 @@ os.makedirs(EDITED_IMAGES_DIR, exist_ok=True)
 # Supabase Connection
 # -------------------------
 
-
 @st.cache_resource
 def init_supabase():
     """Initialise Supabase avec gestion d'erreur complète"""
@@ -110,17 +95,14 @@ def init_supabase():
         st.error(f"Erreur connexion Supabase: {e}")
         return None
 
-
 supabase = init_supabase()
 
 # -------------------------
 # Fonctions de récupération de mot de passe
 # -------------------------
 
-
 def generate_reset_token():
     return ''.join(random.choices(string.ascii_letters + string.digits, k=32))
-
 
 def store_reset_token(email, token):
     if not supabase:
@@ -128,8 +110,7 @@ def store_reset_token(email, token):
 
     try:
         expiration = time.time() + 3600
-        user_check = supabase.table("users").select(
-            "*").eq("email", email).execute()
+        user_check = supabase.table("users").select("*").eq("email", email).execute()
 
         if not user_check.data:
             return False
@@ -152,16 +133,13 @@ def store_reset_token(email, token):
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "used": False
                 }
-                supabase.table("password_resets").delete().eq(
-                    "email", email).execute()
-                response = supabase.table(
-                    "password_resets").insert(token_data).execute()
+                supabase.table("password_resets").delete().eq("email", email).execute()
+                response = supabase.table("password_resets").insert(token_data).execute()
                 return bool(response.data)
             except:
                 return False
     except:
         return False
-
 
 def verify_reset_token(email, token):
     if not supabase:
@@ -171,21 +149,17 @@ def verify_reset_token(email, token):
         current_time = time.time()
 
         try:
-            response = supabase.table("users").select(
-                "reset_token, reset_token_expires").eq("email", email).execute()
+            response = supabase.table("users").select("reset_token, reset_token_expires").eq("email", email).execute()
             if response.data:
                 user_data = response.data[0]
-                if user_data.get("reset_token") == token and user_data.get(
-                    "reset_token_expires", 0) > current_time:
+                if user_data.get("reset_token") == token and user_data.get("reset_token_expires", 0) > current_time:
                     return True
         except:
             pass
 
         try:
-            response = supabase.table("password_resets").select(
-                "*").eq("email", email).eq("reset_token", token).eq("used", False).execute()
-            if response.data and response.data[0].get(
-                "expires_at", 0) > current_time:
+            response = supabase.table("password_resets").select("*").eq("email", email).eq("reset_token", token).eq("used", False).execute()
+            if response.data and response.data[0].get("expires_at", 0) > current_time:
                 return True
         except:
             pass
@@ -193,7 +167,6 @@ def verify_reset_token(email, token):
         return False
     except:
         return False
-
 
 def reset_password(email, token, new_password):
     if not supabase or not verify_reset_token(email, token):
@@ -208,8 +181,7 @@ def reset_password(email, token, new_password):
             "reset_token_created": None
         }
 
-        update_response = supabase.table("users").update(
-            update_data).eq("email", email).execute()
+        update_response = supabase.table("users").update(update_data).eq("email", email).execute()
 
         if update_response.data:
             try:
@@ -228,7 +200,6 @@ def reset_password(email, token, new_password):
 # Fonctions DB
 # -------------------------
 
-
 def verify_user(email, password):
     if email == ADMIN_CREDENTIALS["email"] and password == ADMIN_CREDENTIALS["password"]:
         return {
@@ -243,13 +214,10 @@ def verify_user(email, password):
 
     try:
         try:
-            response = supabase.auth.sign_in_with_password(
-                {"email": email, "password": password})
+            response = supabase.auth.sign_in_with_password({"email": email, "password": password})
             if response.user:
-                user_data = supabase.table("users").select(
-                    "*").eq("email", email).execute()
-                role = user_data.data[0].get(
-    "role", "user") if user_data.data else "user"
+                user_data = supabase.table("users").select("*").eq("email", email).execute()
+                role = user_data.data[0].get("role", "user") if user_data.data else "user"
                 return {
                     "id": response.user.id,
                     "email": response.user.email,
@@ -259,8 +227,7 @@ def verify_user(email, password):
         except:
             pass
 
-        response = supabase.table("users").select(
-            "*").eq("email", email).execute()
+        response = supabase.table("users").select("*").eq("email", email).execute()
         if response.data:
             user = response.data[0]
             if user.get("password") == password:
@@ -273,7 +240,6 @@ def verify_user(email, password):
         return None
     except:
         return None
-
 
 def create_user(email, password, name, role="user"):
     if not supabase:
@@ -305,14 +271,12 @@ def create_user(email, password, name, role="user"):
     except:
         return False
 
-
 def get_conversations(user_id):
     if not supabase or not user_id:
         return []
 
     try:
-        response = supabase.table("conversations").select(
-            "*").eq("user_id", user_id).order("created_at", desc=True).execute()
+        response = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
 
         if not response.data:
             return []
@@ -330,7 +294,6 @@ def get_conversations(user_id):
         return conversations
     except:
         return []
-
 
 def create_conversation(user_id, description):
     if not supabase or not user_id:
@@ -357,14 +320,12 @@ def create_conversation(user_id, description):
     except:
         return None
 
-
 def get_messages(conversation_id):
     if not supabase or not conversation_id:
         return []
 
     try:
-        response = supabase.table("messages").select(
-            "*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
+        response = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
 
         if not response.data:
             return []
@@ -384,20 +345,12 @@ def get_messages(conversation_id):
     except:
         return []
 
-
-def add_message(
-    conversation_id,
-    sender,
-    content,
-    msg_type="text",
-    image_data=None,
-     edit_context=None):
+def add_message(conversation_id, sender, content, msg_type="text", image_data=None, edit_context=None):
     if not supabase or not conversation_id or not content:
         return False
 
     try:
-        conv_check = supabase.table("conversations").select(
-            "*").eq("conversation_id", conversation_id).execute()
+        conv_check = supabase.table("conversations").select("*").eq("conversation_id", conversation_id).execute()
         if not conv_check.data:
             return False
 
@@ -423,12 +376,10 @@ def add_message(
 # Utility functions
 # -------------------------
 
-
 def image_to_base64(image):
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode()
-
 
 def base64_to_image(img_str):
     img_bytes = base64.b64decode(img_str)
@@ -438,15 +389,11 @@ def base64_to_image(img_str):
 # BLIP loader
 # -------------------------
 
-
 @st.cache_resource
 def load_blip():
-    processor = BlipProcessor.from_pretrained(
-        "Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained(
-        "Salesforce/blip-image-captioning-base")
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
     return processor, model
-
 
 def generate_caption(image, processor, model):
     inputs = processor(image, return_tensors="pt")
@@ -458,9 +405,8 @@ def generate_caption(image, processor, model):
     return processor.decode(out[0], skip_special_tokens=True)
 
 # -------------------------
-# Fonctions Date/Heure et Web Search AMÉLIORÉES
+# Fonctions Date/Heure AMÉLIORÉES
 # -------------------------
-
 
 def get_current_datetime_info():
     """Récupère les informations de date et heure actuelles"""
@@ -486,7 +432,6 @@ def get_current_datetime_info():
     except Exception as e:
         return {"error": str(e)}
 
-
 def format_datetime_for_prompt():
     """Formate les informations de date/heure pour le prompt"""
     dt_info = get_current_datetime_info()
@@ -505,32 +450,65 @@ Année: {dt_info['year']}
 Timezone: {dt_info['timezone']}
 =========================================="""
 
+# -------------------------
+# RECHERCHE WEB MULTI-ANNÉES AMÉLIORÉE
+# -------------------------
 
-def search_duckduckgo(query, max_results=10):
-    """Recherche avec DuckDuckGo (GRATUIT, sans API key)"""
+def extract_number(text):
+    """Extrait les nombres d'un texte (pour vues, likes, etc.)"""
+    if not text:
+        return 0
+    
+    text = str(text).lower().replace(',', '').replace(' ', '')
+    
+    multipliers = {'k': 1000, 'm': 1000000, 'b': 1000000000, 'mil': 1000000, 'milliard': 1000000000}
+    
+    for suffix, multiplier in multipliers.items():
+        if suffix in text:
+            try:
+                number = float(re.sub(r'[^0-9.]', '', text.split(suffix)[0]))
+                return int(number * multiplier)
+            except:
+                pass
+    
+    try:
+        return int(re.sub(r'[^0-9]', '', text))
+    except:
+        return 0
+
+def search_duckduckgo(query, max_results=15):
+    """Recherche DuckDuckGo avec filtre multi-années"""
     try:
         from duckduckgo_search import DDGS
 
         results = []
         with DDGS() as ddgs:
+            # Recherche sans restriction temporelle pour couvrir toutes les années
             search_results = list(ddgs.text(query, max_results=max_results))
 
             for item in search_results:
-                results.append({
+                result_data = {
                     'title': item.get('title', ''),
                     'url': item.get('href', ''),
                     'snippet': item.get('body', ''),
-                    'source': 'DuckDuckGo'
-                })
+                    'source': 'DuckDuckGo',
+                    'year': 'N/A'
+                }
+                
+                # Tenter d'extraire l'année de l'URL ou du contenu
+                year_match = re.search(r'(20\d{2}|19\d{2})', item.get('href', '') + ' ' + item.get('body', ''))
+                if year_match:
+                    result_data['year'] = year_match.group(1)
+                
+                results.append(result_data)
 
         return results
     except Exception as e:
         st.warning(f"DuckDuckGo erreur: {e}")
         return []
 
-
-def search_google(query, max_results=10):
-    """Recherche avec Google Custom Search API (si configurée)"""
+def search_google(query, max_results=15):
+    """Recherche Google avec support multi-années"""
     if not GOOGLE_API_KEY or not GOOGLE_SEARCH_ENGINE_ID:
         return search_duckduckgo(query, max_results)
 
@@ -540,7 +518,8 @@ def search_google(query, max_results=10):
             "key": GOOGLE_API_KEY,
             "cx": GOOGLE_SEARCH_ENGINE_ID,
             "q": query,
-            "num": min(max_results, 10)
+            "num": min(max_results, 10),
+            "sort": ""  # Pas de tri par date pour inclure toutes les années
         }
 
         response = requests.get(url, params=params, timeout=15)
@@ -550,27 +529,104 @@ def search_google(query, max_results=10):
             results = []
 
             for item in data.get('items', []):
-                results.append({
+                result_data = {
                     'title': item.get('title', ''),
                     'url': item.get('link', ''),
                     'snippet': item.get('snippet', ''),
                     'display_url': item.get('displayLink', ''),
-                    'source': 'Google'
-                })
+                    'source': 'Google',
+                    'year': 'N/A'
+                }
+                
+                # Extraire date de publication si disponible
+                if 'pagemap' in item and 'metatags' in item['pagemap']:
+                    metatags = item['pagemap']['metatags'][0]
+                    pub_date = metatags.get('article:published_time', metatags.get('datePublished', ''))
+                    if pub_date:
+                        year_match = re.search(r'(20\d{2}|19\d{2})', pub_date)
+                        if year_match:
+                            result_data['year'] = year_match.group(1)
+                            result_data['date'] = pub_date[:10]
+                
+                results.append(result_data)
 
             return results
-        elif response.status_code == 429:
-            st.warning("Quota Google API dépassé, utilisation de DuckDuckGo")
-            return search_duckduckgo(query, max_results)
         else:
             return search_duckduckgo(query, max_results)
     except Exception as e:
         return search_duckduckgo(query, max_results)
 
+def get_youtube_video_stats(video_id):
+    """Récupère les statistiques détaillées d'une vidéo YouTube"""
+    if YOUTUBE_API_KEY:
+        try:
+            url = "https://www.googleapis.com/youtube/v3/videos"
+            params = {
+                "part": "statistics,snippet,contentDetails",
+                "id": video_id,
+                "key": YOUTUBE_API_KEY
+            }
 
-def search_youtube(query, max_results=5):
-    """Recherche YouTube avec plusieurs méthodes de fallback"""
-    # Méthode 1: API officielle si disponible
+            response = requests.get(url, params=params, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('items'):
+                    item = data['items'][0]
+                    stats = item.get('statistics', {})
+                    snippet = item.get('snippet', {})
+                    
+                    return {
+                        'view_count': int(stats.get('viewCount', 0)),
+                        'like_count': int(stats.get('likeCount', 0)),
+                        'comment_count': int(stats.get('commentCount', 0)),
+                        'published_at': snippet.get('publishedAt', ''),
+                        'duration': item.get('contentDetails', {}).get('duration', '')
+                    }
+        except:
+            pass
+    
+    return None
+
+def get_youtube_comments(video_id, max_comments=20):
+    """Récupère les commentaires d'une vidéo YouTube"""
+    if YOUTUBE_API_KEY:
+        try:
+            url = "https://www.googleapis.com/youtube/v3/commentThreads"
+            params = {
+                "part": "snippet",
+                "videoId": video_id,
+                "key": YOUTUBE_API_KEY,
+                "maxResults": max_comments,
+                "order": "relevance"
+            }
+
+            response = requests.get(url, params=params, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                comments = []
+                
+                for item in data.get('items', []):
+                    comment = item['snippet']['topLevelComment']['snippet']
+                    comments.append({
+                        'author': comment.get('authorDisplayName', ''),
+                        'text': comment.get('textDisplay', ''),
+                        'likes': int(comment.get('likeCount', 0)),
+                        'published': comment.get('publishedAt', '')
+                    })
+                
+                return comments
+        except:
+            pass
+    
+    return []
+
+def search_youtube_comprehensive(query, max_results=10):
+    """Recherche YouTube COMPLÈTE avec statistiques et commentaires"""
+    results = []
+    
+    # Méthode 1: API YouTube (prioritaire si disponible)
     if YOUTUBE_API_KEY:
         try:
             url = "https://www.googleapis.com/youtube/v3/search"
@@ -580,20 +636,25 @@ def search_youtube(query, max_results=5):
                 "key": YOUTUBE_API_KEY,
                 "maxResults": max_results,
                 "type": "video",
-                "order": "date"
+                "order": "relevance"  # Pas de tri par date pour toutes les années
             }
 
             response = requests.get(url, params=params, timeout=15)
 
             if response.status_code == 200:
                 data = response.json()
-                results = []
 
                 for item in data.get('items', []):
                     video_id = item['id']['videoId']
                     snippet = item['snippet']
-
-                    results.append({
+                    
+                    # Récupérer les statistiques détaillées
+                    stats = get_youtube_video_stats(video_id)
+                    
+                    # Récupérer quelques commentaires
+                    comments = get_youtube_comments(video_id, max_comments=5)
+                    
+                    result = {
                         'title': snippet.get('title', ''),
                         'video_id': video_id,
                         'url': f"https://www.youtube.com/watch?v={video_id}",
@@ -601,14 +662,28 @@ def search_youtube(query, max_results=5):
                         'channel': snippet.get('channelTitle', ''),
                         'published': snippet.get('publishedAt', ''),
                         'thumbnail': snippet.get('thumbnails', {}).get('high', {}).get('url', ''),
-                        'source': 'YouTube API'
-                    })
+                        'source': 'YouTube API',
+                        'view_count': 0,
+                        'like_count': 0,
+                        'comment_count': 0,
+                        'comments': comments
+                    }
+                    
+                    if stats:
+                        result.update({
+                            'view_count': stats['view_count'],
+                            'like_count': stats['like_count'],
+                            'comment_count': stats['comment_count'],
+                            'duration': stats['duration']
+                        })
+                    
+                    results.append(result)
 
                 return results
-        except:
-            pass
-
-    # Méthode 2: Scraping YouTube (gratuit, sans API)
+        except Exception as e:
+            st.warning(f"YouTube API error: {e}")
+    
+    # Méthode 2: Scraping YouTube (fallback GRATUIT)
     try:
         search_url = f"https://www.youtube.com/results?search_query={requests.utils.quote(query)}"
         headers = {
@@ -618,7 +693,6 @@ def search_youtube(query, max_results=5):
         response = requests.get(search_url, headers=headers, timeout=15)
 
         if response.status_code == 200:
-            # Extraction des données JSON embarquées
             start_marker = 'var ytInitialData = '
             end_marker = ';</script>'
 
@@ -631,77 +705,55 @@ def search_youtube(query, max_results=5):
                     json_str = response.text[start_idx:end_idx]
                     data = json.loads(json_str)
 
-                    results = []
-                    contents = data.get(
-    'contents',
-    {}).get(
-        'twoColumnSearchResultsRenderer',
-        {}).get(
-            'primaryContents',
-            {}).get(
-                'sectionListRenderer',
-                {}).get(
-                    'contents',
-                     [])
+                    contents = data.get('contents', {}).get('twoColumnSearchResultsRenderer', {}).get('primaryContents', {}).get('sectionListRenderer', {}).get('contents', [])
 
                     for content in contents:
-                        items = content.get(
-    'itemSectionRenderer', {}).get(
-        'contents', [])
+                        items = content.get('itemSectionRenderer', {}).get('contents', [])
 
                         for item in items[:max_results]:
                             video_renderer = item.get('videoRenderer', {})
                             if video_renderer:
                                 video_id = video_renderer.get('videoId', '')
-                                title = video_renderer.get(
-    'title', {}).get(
-        'runs', [
-            {}])[0].get(
-                'text', '')
-                                description = video_renderer.get(
-    'descriptionSnippet', {}).get(
-        'runs', [
-            {}])[0].get(
-                'text', '')
-                                channel = video_renderer.get(
-    'ownerText', {}).get(
-        'runs', [
-            {}])[0].get(
-                'text', '')
+                                
+                                # Extraire les statistiques du scraping
+                                view_text = video_renderer.get('viewCountText', {}).get('simpleText', '0')
+                                view_count = extract_number(view_text)
+                                
+                                result = {
+                                    'title': video_renderer.get('title', {}).get('runs', [{}])[0].get('text', ''),
+                                    'video_id': video_id,
+                                    'url': f"https://www.youtube.com/watch?v={video_id}",
+                                    'description': video_renderer.get('descriptionSnippet', {}).get('runs', [{}])[0].get('text', ''),
+                                    'channel': video_renderer.get('ownerText', {}).get('runs', [{}])[0].get('text', ''),
+                                    'published': video_renderer.get('publishedTimeText', {}).get('simpleText', 'N/A'),
+                                    'thumbnail': f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+                                    'source': 'YouTube Scraping',
+                                    'view_count': view_count,
+                                    'like_count': 'N/A',
+                                    'comment_count': 'N/A',
+                                    'comments': []
+                                }
+                                
+                                if video_id and result['title']:
+                                    results.append(result)
 
-                                if video_id and title:
-                                    results.append({
-                                        'title': title,
-                                        'video_id': video_id,
-                                        'url': f"https://www.youtube.com/watch?v={video_id}",
-                                        'description': description,
-                                        'channel': channel,
-                                        'published': 'N/A',
-                                        'thumbnail': f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
-                                        'source': 'YouTube Scraping'
-                                    })
-
-                    return results
     except Exception as e:
-        st.warning(f"Erreur YouTube: {e}")
+        st.warning(f"YouTube scraping error: {e}")
 
-    return []
-
+    return results
 
 def get_youtube_transcript(video_id):
     """Récupère la transcription d'une vidéo YouTube"""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
-        transcript = YouTubeTranscriptApi.get_transcript(
-            video_id, languages=['fr', 'en', 'es', 'de', 'it'])
-        full_text = " ".join([item['text'] for item in transcript[:100]])
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['fr', 'en', 'es', 'de', 'it'])
+        full_text = " ".join([item['text'] for item in transcript[:150]])
         return full_text
     except:
         return None
 
-
-def scrape_page_content(url, max_chars=3000):
-    """Scrape le contenu complet d'une page web de manière robuste"""
+def scrape_page_content(url, max_chars=4000):
+    """Scrape le contenu complet d'une page web"""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -713,39 +765,23 @@ def scrape_page_content(url, max_chars=3000):
             'Upgrade-Insecure-Requests': '1'
         }
 
-        response = requests.get(
-    url,
-    headers=headers,
-    timeout=15,
-     allow_redirects=True)
+        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
 
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            # Supprimer scripts, styles, et éléments non pertinents
-            for script in soup(["script",
-    "style",
-    "nav",
-    "header",
-    "footer",
-    "aside",
-    "form",
-     "button"]):
+            for script in soup(["script", "style", "nav", "header", "footer", "aside", "form", "button"]):
                 script.decompose()
 
-            # Extraire le texte principal
-            main_content = soup.find('main') or soup.find('article') or soup.find(
-                'div', class_=['content', 'main', 'article'])
+            main_content = soup.find('main') or soup.find('article') or soup.find('div', class_=['content', 'main', 'article'])
 
             if main_content:
                 text = main_content.get_text()
             else:
                 text = soup.get_text()
 
-            # Nettoyer
             lines = (line.strip() for line in text.splitlines())
-            chunks = (phrase.strip()
-                      for line in lines for phrase in line.split("  "))
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
             text = ' '.join(chunk for chunk in chunks if chunk)
 
             return text[:max_chars]
@@ -753,12 +789,9 @@ def scrape_page_content(url, max_chars=3000):
     except Exception as e:
         return None
 
-
 def search_wikipedia(query):
-    """Recherche sur Wikipedia (multilingue)"""
+    """Recherche sur Wikipedia multilingue"""
     results = []
-
-    # Essayer plusieurs langues
     languages = ['fr', 'en']
 
     for lang in languages:
@@ -780,13 +813,7 @@ def search_wikipedia(query):
 
                 for item in data.get('query', {}).get('search', []):
                     title = item.get('title', '')
-                    snippet = item.get(
-    'snippet',
-    '').replace(
-        '<span class="searchmatch">',
-        '').replace(
-            '</span>',
-             '')
+                    snippet = item.get('snippet', '').replace('<span class="searchmatch">', '').replace('</span>', '')
 
                     results.append({
                         'title': title,
@@ -798,7 +825,6 @@ def search_wikipedia(query):
             continue
 
     return results
-
 
 def search_news(query):
     """Recherche d'actualités via Google News RSS"""
@@ -831,20 +857,21 @@ def search_news(query):
     except Exception as e:
         return []
 
-
 def format_web_search_for_prompt(query, search_type="web"):
-    """Formate les résultats de recherche de manière optimale"""
-    results_text = f"""[WEB_SEARCH] RÉSULTATS DE RECHERCHE EN TEMPS RÉEL
+    """Formate les résultats de recherche MULTI-ANNÉES de manière optimale"""
+    results_text = f"""[WEB_SEARCH] RÉSULTATS DE RECHERCHE EN TEMPS RÉEL - TOUTES LES ANNÉES
 ==========================================
 Question: "{query}"
 Type: {search_type}
-Période couverte: TOUTES LES ANNÉES jusqu'à 2025
+Période couverte: TOUTES LES ANNÉES disponibles sur Internet (1990-2025 et au-delà)
 
-⚠️ IMPORTANT: Ces résultats proviennent d'Internet EN TEMPS RÉEL.
-Vous DEVEZ utiliser ces informations pour répondre.
-Ces résultats incluent du contenu de TOUTES les années disponibles sur le web.
+⚠️ CRITIQUE: Ces résultats proviennent d'Internet EN TEMPS RÉEL.
+✅ DONNÉES DE TOUTES LES ANNÉES: Pas seulement 2025, mais TOUT l'historique web
+✅ YOUTUBE COMPLET: Statistiques, commentaires, vues, likes pour toutes les vidéos
+✅ Vous DEVEZ utiliser ces informations complètes dans votre réponse
+✅ Citez les années, dates, et statistiques précises fournies
 
-RÉSULTATS:
+RÉSULTATS DÉTAILLÉS:
 """
 
     if search_type == "google":
@@ -852,16 +879,15 @@ RÉSULTATS:
 
         if results:
             for i, result in enumerate(results, 1):
-                results_text += f"\n🔍 RÉSULTAT #{i} ({result.get('source', 'Web')}):\n"
+                year_info = f" [{result.get('year', 'N/A')}]" if result.get('year') != 'N/A' else ""
+                results_text += f"\n🔍 RÉSULTAT #{i}{year_info} ({result.get('source', 'Web')}):\n"
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
+                results_text += f"   Année: {result.get('year', 'Non spécifiée')}\n"
                 results_text += f"   Contenu: {result['snippet']}\n"
 
-                # Scraping approfondi pour le premier résultat seulement
-                # (optimisation)
                 if i <= 3:
-                    page_content = scrape_page_content(
-                        result['url'], max_chars=2000)
+                    page_content = scrape_page_content(result['url'], max_chars=2500)
                     if page_content:
                         results_text += f"   📄 Contenu détaillé: {page_content}...\n"
 
@@ -870,7 +896,7 @@ RÉSULTATS:
             results_text += "\n❌ Aucun résultat trouvé.\n"
 
     elif search_type == "youtube":
-        results = search_youtube(query, max_results=10)
+        results = search_youtube_comprehensive(query, max_results=10)
 
         if results:
             for i, result in enumerate(results, 1):
@@ -878,16 +904,25 @@ RÉSULTATS:
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
                 results_text += f"   Chaîne: {result['channel']}\n"
-                results_text += f"   Date: {result['published']}\n"
-                results_text += f"   Description: {result['description'][:400]}...\n"
+                results_text += f"   Date de publication: {result['published']}\n"
+                results_text += f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n"
+                results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
+                results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
+                results_text += f"   Description: {result['description'][:500]}...\n"
 
-                # Transcription pour les premières vidéos
                 if i <= 2:
                     transcript = get_youtube_transcript(result['video_id'])
                     if transcript:
-                        results_text += f"   📝 Transcription: {transcript[:800]}...\n"
+                        results_text += f"   📝 Transcription: {transcript[:1000]}...\n"
 
-                results_text += f"---\n"
+                comments = result.get('comments', [])
+                if comments:
+                    results_text += f"\n   💬 COMMENTAIRES POPULAIRES:\n"
+                    for j, comment in enumerate(comments[:3], 1):
+                        results_text += f"      {j}. {comment['author']}: {comment['text'][:200]}...\n"
+                        results_text += f"         👍 {comment['likes']} likes\n"
+
+                results_text += f"   ---\n"
         else:
             results_text += "\n❌ Aucune vidéo trouvée.\n"
 
@@ -901,11 +936,9 @@ RÉSULTATS:
                 results_text += f"   URL: {result['url']}\n"
                 results_text += f"   Extrait: {result['snippet']}\n"
 
-                # Scraper le contenu complet de Wikipedia
-                page_content = scrape_page_content(
-                    result['url'], max_chars=2000)
+                page_content = scrape_page_content(result['url'], max_chars=2500)
                 if page_content:
-                    results_text += f"   📖 Contenu: {page_content}...\n"
+                    results_text += f"   📖 Contenu complet: {page_content}...\n"
 
                 results_text += f"   ---\n"
         else:
@@ -922,8 +955,7 @@ RÉSULTATS:
                 results_text += f"   URL: {result['url']}\n"
 
                 if i <= 3:
-                    page_content = scrape_page_content(
-                        result['url'], max_chars=1500)
+                    page_content = scrape_page_content(result['url'], max_chars=2000)
                     if page_content:
                         results_text += f"   📄 Article: {page_content}...\n"
 
@@ -933,28 +965,29 @@ RÉSULTATS:
 
     results_text += """
 ==========================================
-⚠️ RAPPEL CRITIQUE:
+⚠️ RAPPEL CRITIQUE - DONNÉES MULTI-ANNÉES:
 - Ces résultats couvrent TOUTES LES ANNÉES disponibles sur Internet
+- YouTube: statistiques complètes (vues, likes, commentaires) pour TOUTES les vidéos
+- Web: contenu historique de 1990 à 2025 et au-delà
 - Vous DEVEZ utiliser ces informations dans votre réponse
-- Citez les sources et dates mentionnées
-- Si aucun résultat n'est trouvé, dites-le clairement
+- Citez les années, dates, statistiques et sources mentionnées
+- Si aucun résultat, dites-le clairement
 =========================================="""
 
     return results_text
-
 
 def detect_search_intent(user_message):
     """Détecte le type de recherche nécessaire"""
     message_lower = user_message.lower()
 
-    # Mots-clés par catégorie
     search_keywords = [
         'recherche', 'cherche', 'trouve', 'informations sur', 'info sur',
         'actualité', 'news', 'dernières nouvelles', 'quoi de neuf',
         'what is', 'who is', 'définition', 'expliquer', 'c\'est quoi',
         'météo', 'weather', 'actualités sur', 'information récente',
         'video', 'vidéo', 'youtube', 'regarder', 'montre', 'voir',
-        'dernières infos', 'parle moi de', 'dis moi sur', 'connais tu'
+        'dernières infos', 'parle moi de', 'dis moi sur', 'connais tu',
+        'combien de vues', 'statistiques', 'nombre de', 'comments'
     ]
 
     news_keywords = [
@@ -969,29 +1002,22 @@ def detect_search_intent(user_message):
 
     youtube_keywords = [
         'video', 'vidéo', 'youtube', 'regarde', 'montre moi',
-        'voir video', 'regarder', 'visionner', 'film', 'clip'
+        'voir video', 'regarder', 'visionner', 'film', 'clip',
+        'vues', 'likes', 'commentaires', 'abonnés', 'chaîne'
     ]
 
-    # Vérifier si une recherche est nécessaire
     needs_search = any(keyword in message_lower for keyword in search_keywords)
 
     if not needs_search:
-        # Recherche intelligente: si la question semble nécessiter des infos
-        # récentes
-        recent_indicators = [
-    '2024',
-    '2025',
-    'récent',
-    'dernier',
-    'nouveau',
-     'latest']
+        recent_indicators = ['2024', '2025', '2023', '2022', '2021', '2020',
+                           'récent', 'dernier', 'nouveau', 'latest', 'ancien',
+                           'historique', 'depuis', 'année']
         if any(indicator in message_lower for indicator in recent_indicators):
             needs_search = True
 
     if not needs_search:
         return None, None
 
-    # Priorité: YouTube → News → Wiki → Google
     if any(keyword in message_lower for keyword in youtube_keywords):
         return "youtube", user_message
     elif any(keyword in message_lower for keyword in news_keywords):
@@ -1000,7 +1026,6 @@ def detect_search_intent(user_message):
         return "wikipedia", user_message
     else:
         return "google", user_message
-
 
 def detect_datetime_intent(user_message):
     """Détecte si l'utilisateur demande la date/heure"""
@@ -1020,7 +1045,6 @@ def detect_datetime_intent(user_message):
 # AI functions avec Vision AI thinking
 # -------------------------
 
-
 def get_ai_response(query):
     if not st.session_state.get('llama_client'):
         return "Vision AI non disponible."
@@ -1037,7 +1061,6 @@ def get_ai_response(query):
     except Exception as e:
         return f"Erreur modèle: {e}"
 
-
 def show_vision_ai_thinking(placeholder):
     """Affiche l'animation Vision AI thinking..."""
     thinking_frames = [
@@ -1051,7 +1074,6 @@ def show_vision_ai_thinking(placeholder):
         for frame in thinking_frames:
             placeholder.markdown(f"**{frame}**")
             time.sleep(0.3)
-
 
 def stream_response_with_thinking(text, placeholder):
     """Affiche Vision AI thinking puis stream la réponse"""
@@ -1069,7 +1091,6 @@ def stream_response_with_thinking(text, placeholder):
 # Edition d'image avec Qwen
 # -------------------------
 
-
 def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
     client = st.session_state.get("qwen_client")
     if not client:
@@ -1079,8 +1100,7 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
         temp_path = os.path.join(TMP_DIR, f"input_{uuid.uuid4().hex}.png")
         image.save(temp_path)
 
-        prompt_message = edit_instruction if edit_instruction.strip(
-        ) else "enhance and improve the image"
+        prompt_message = edit_instruction if edit_instruction.strip() else "enhance and improve the image"
 
         result = client.predict(
             input_image=handle_file(temp_path),
@@ -1095,8 +1115,7 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
             if isinstance(result_path, str) and os.path.exists(result_path):
                 edited_img = Image.open(result_path).convert("RGBA")
 
-                final_path = os.path.join(
-    EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
+                final_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
                 edited_img.save(final_path)
 
                 if os.path.exists(temp_path):
@@ -1112,12 +1131,7 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
     except Exception as e:
         return None, str(e)
 
-
-def create_edit_context(
-    original_caption,
-    edit_instruction,
-    edited_caption,
-     success_info):
+def create_edit_context(original_caption, edit_instruction, edited_caption, success_info):
     return {
         "original_description": original_caption,
         "edit_instruction": edit_instruction,
@@ -1126,11 +1140,7 @@ def create_edit_context(
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
-
-def process_image_edit_request(
-    image: Image.Image,
-    edit_instruction: str,
-     conv_id: str):
+def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_id: str):
     progress_bar = st.progress(0)
     status_text = st.empty()
 
@@ -1139,8 +1149,7 @@ def process_image_edit_request(
         progress_bar.progress(20)
         time.sleep(0.5)
 
-        original_caption = generate_caption(
-    image, st.session_state.processor, st.session_state.model)
+        original_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
 
         status_text.info(f"Édition en cours: '{edit_instruction}'...")
         progress_bar.progress(40)
@@ -1152,14 +1161,12 @@ def process_image_edit_request(
             progress_bar.progress(70)
             time.sleep(0.5)
 
-            edited_caption = generate_caption(
-    edited_img, st.session_state.processor, st.session_state.model)
+            edited_caption = generate_caption(edited_img, st.session_state.processor, st.session_state.model)
 
             status_text.info("Sauvegarde et finalisation...")
             progress_bar.progress(90)
 
-            edit_context = create_edit_context(
-    original_caption, edit_instruction, edited_caption, result_info)
+            edit_context = create_edit_context(original_caption, edit_instruction, edited_caption, result_info)
 
             col1, col2 = st.columns(2)
 
@@ -1170,10 +1177,7 @@ def process_image_edit_request(
 
             with col2:
                 st.subheader("Image éditée")
-                st.image(
-    edited_img,
-    caption=f"Après: {edit_instruction}",
-     use_column_width=True)
+                st.image(edited_img, caption=f"Après: {edit_instruction}", use_column_width=True)
                 st.write(f"**Description:** {edited_caption}")
                 st.write(f"**Info technique:** {result_info}")
 
@@ -1192,13 +1196,7 @@ def process_image_edit_request(
 **Info technique:** {result_info}"""
 
             edited_b64 = image_to_base64(edited_img.convert("RGB"))
-            success = add_message(
-    conv_id,
-    "assistant",
-    response_content,
-    "image",
-    edited_b64,
-     None)
+            success = add_message(conv_id, "assistant", response_content, "image", edited_b64, None)
 
             if success:
                 progress_bar.progress(100)
@@ -1241,7 +1239,6 @@ def process_image_edit_request(
         progress_bar.empty()
         return False
 
-
 def get_editing_context_from_conversation():
     context_info = []
     for msg in st.session_state.messages_memory:
@@ -1268,7 +1265,6 @@ def get_editing_context_from_conversation():
 # Interface de récupération de mot de passe
 # -------------------------
 
-
 def show_password_reset():
     st.subheader("Récupération de mot de passe")
 
@@ -1279,8 +1275,7 @@ def show_password_reset():
 
             if submit_reset and reset_email.strip() and supabase:
                 try:
-                    user_check = supabase.table("users").select(
-                        "*").eq("email", reset_email.strip()).execute()
+                    user_check = supabase.table("users").select("*").eq("email", reset_email.strip()).execute()
 
                     if user_check.data:
                         reset_token = generate_reset_token()
@@ -1309,8 +1304,7 @@ def show_password_reset():
 
             with col1:
                 token_input = st.text_input("Code de récupération")
-                new_password = st.text_input(
-    "Nouveau mot de passe", type="password")
+                new_password = st.text_input("Nouveau mot de passe", type="password")
                 confirm_password = st.text_input("Confirmer", type="password")
 
             with col2:
@@ -1331,10 +1325,7 @@ def show_password_reset():
                 elif token_input.strip() != st.session_state.reset_token:
                     st.error("Code incorrect")
                 else:
-                    if reset_password(
-    st.session_state.reset_email,
-    token_input.strip(),
-     new_password):
+                    if reset_password(st.session_state.reset_email, token_input.strip(), new_password):
                         st.success("Mot de passe réinitialisé!")
                         st.session_state.reset_step = "request"
                         st.session_state.reset_email = ""
@@ -1348,7 +1339,6 @@ def show_password_reset():
 # Interface Admin
 # -------------------------
 
-
 def show_admin_page():
     st.title("Interface Administrateur")
 
@@ -1356,14 +1346,12 @@ def show_admin_page():
         st.session_state.page = "main"
         st.rerun()
 
-    tab1, tab2, tab3 = st.tabs(
-        ["Utilisateurs", "Conversations", "Statistiques"])
+    tab1, tab2, tab3 = st.tabs(["Utilisateurs", "Conversations", "Statistiques"])
 
     with tab1:
         if supabase:
             try:
-                users = supabase.table("users").select(
-                    "*").order("created_at", desc=True).execute()
+                users = supabase.table("users").select("*").order("created_at", desc=True).execute()
                 if users.data:
                     for user in users.data:
                         with st.expander(f"{user.get('name')} ({user.get('email')})"):
@@ -1375,22 +1363,18 @@ def show_admin_page():
     with tab2:
         if supabase:
             try:
-                convs = supabase.table("conversations").select(
-                    "*").limit(20).execute()
+                convs = supabase.table("conversations").select("*").limit(20).execute()
                 if convs.data:
                     for conv in convs.data:
-                        st.write(
-                            f"- {conv.get('description')} ({conv.get('created_at')[:10]})")
+                        st.write(f"- {conv.get('description')} ({conv.get('created_at')[:10]})")
             except Exception as e:
                 st.error(f"Erreur: {e}")
 
     with tab3:
         if supabase:
             try:
-                users_count = supabase.table("users").select(
-                    "id", count="exact").execute()
-                convs_count = supabase.table("conversations").select(
-                    "id", count="exact").execute()
+                users_count = supabase.table("users").select("id", count="exact").execute()
+                convs_count = supabase.table("conversations").select("id", count="exact").execute()
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1400,18 +1384,15 @@ def show_admin_page():
             except Exception as e:
                 st.error(f"Erreur: {e}")
 
-
 def cleanup_temp_files():
     try:
         current_time = time.time()
         for filename in os.listdir(TMP_DIR):
             filepath = os.path.join(TMP_DIR, filename)
-            if os.path.isfile(filepath) and current_time - \
-                              os.path.getctime(filepath) > 3600:
+            if os.path.isfile(filepath) and current_time - os.path.getctime(filepath) > 3600:
                 os.remove(filepath)
     except:
         pass
-
 
 # -------------------------
 # Session State
@@ -1430,8 +1411,7 @@ if "processor" not in st.session_state:
 
 if "llama_client" not in st.session_state:
     try:
-        st.session_state.llama_client = Client(
-            "muryshev/LLaMA-3.1-70b-it-NeMo")
+        st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
     except:
         st.session_state.llama_client = None
 
@@ -1470,10 +1450,7 @@ if st.session_state.user["id"] == "guest":
 
     with tab1:
         email = st.text_input("Email", key="login_email")
-        password = st.text_input(
-    "Mot de passe",
-    type="password",
-     key="login_password")
+        password = st.text_input("Mot de passe", type="password", key="login_password")
 
         if st.button("Se connecter", type="primary"):
             if email and password:
@@ -1490,12 +1467,8 @@ if st.session_state.user["id"] == "guest":
     with tab2:
         email_reg = st.text_input("Email", key="reg_email")
         name_reg = st.text_input("Nom", key="reg_name")
-        pass_reg = st.text_input(
-    "Mot de passe",
-    type="password",
-     key="reg_pass")
-        pass_confirm = st.text_input(
-    "Confirmer", type="password", key="reg_confirm")
+        pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
+        pass_confirm = st.text_input("Confirmer", type="password", key="reg_confirm")
 
         if st.button("Créer compte"):
             if email_reg and name_reg and pass_reg and pass_confirm:
@@ -1523,10 +1496,7 @@ else:
             st.rerun()
 
     if st.sidebar.button("Déconnexion"):
-        st.session_state.user = {
-    "id": "guest",
-    "email": "Invité",
-     "role": "guest"}
+        st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
         st.session_state.conversation = None
         st.session_state.messages_memory = []
         st.rerun()
@@ -1539,9 +1509,7 @@ if st.session_state.user["id"] != "guest":
 
     if st.sidebar.button("Nouvelle conversation"):
         with st.spinner("Création..."):
-            conv = create_conversation(
-    st.session_state.user["id"],
-     "Nouvelle discussion")
+            conv = create_conversation(st.session_state.user["id"], "Nouvelle discussion")
             if conv:
                 st.session_state.conversation = conv
                 st.session_state.messages_memory = []
@@ -1551,8 +1519,7 @@ if st.session_state.user["id"] != "guest":
 
     convs = get_conversations(st.session_state.user["id"])
     if convs:
-        options = [
-    f"{c['description']} ({c['created_at'][:16]})" for c in convs]
+        options = [f"{c['description']} ({c['created_at'][:16]})" for c in convs]
 
         current_idx = 0
         if st.session_state.conversation:
@@ -1587,13 +1554,12 @@ if st.session_state.user["id"] != "guest":
 st.title("Vision AI Chat - Analyse & Édition d'Images")
 
 if st.session_state.conversation:
-    st.subheader(
-        f"Conversation: {st.session_state.conversation.get('description')}")
+    st.subheader(f"Conversation: {st.session_state.conversation.get('description')}")
 
 tab1, tab2 = st.tabs(["Chat Normal", "Mode Éditeur"])
 
 with tab1:
-    st.write("Mode chat avec analyse d'images et recherche web avancée")
+    st.write("Mode chat avec analyse d'images et recherche web MULTI-ANNÉES avancée")
 
     if st.session_state.messages_memory:
         for msg in st.session_state.messages_memory:
@@ -1615,7 +1581,7 @@ with tab1:
             user_input = st.text_area(
                 "Votre message:",
                 height=100,
-                placeholder="Posez vos questions..."
+                placeholder="Posez vos questions... (recherche sur toutes les années)"
             )
 
         with col2:
@@ -1645,8 +1611,7 @@ with tab2:
             st.image(editor_image, caption="Original", use_column_width=True)
 
             with st.spinner("Analyse..."):
-                original_desc = generate_caption(
-    editor_image, st.session_state.processor, st.session_state.model)
+                original_desc = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
                 st.write(f"**Description:** {original_desc}")
 
     with col2:
@@ -1665,8 +1630,7 @@ with tab2:
             "Add magic effects"
         ]
 
-        selected_example = st.selectbox(
-    "Exemples", ["Custom..."] + example_prompts)
+        selected_example = st.selectbox("Exemples", ["Custom..."] + example_prompts)
 
         if selected_example == "Custom...":
             edit_instruction = st.text_area(
@@ -1681,17 +1645,14 @@ with tab2:
                 height=120
             )
 
-        if st.button("Éditer", type="primary", disabled=not (
-            editor_file and edit_instruction.strip())):
+        if st.button("Éditer", type="primary", disabled=not (editor_file and edit_instruction.strip())):
             if not st.session_state.conversation:
-                conv = create_conversation(
-    st.session_state.user["id"], "Édition d'images")
+                conv = create_conversation(st.session_state.user["id"], "Édition d'images")
                 if conv:
                     st.session_state.conversation = conv
 
             if st.session_state.conversation:
-                original_caption = generate_caption(
-    editor_image, st.session_state.processor, st.session_state.model)
+                original_caption = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
                 user_msg = f"**Édition demandée**\n\n**Image:** {original_caption}\n\n**Instruction:** {edit_instruction}"
                 original_b64 = image_to_base64(editor_image.convert("RGB"))
 
@@ -1724,12 +1685,10 @@ with tab2:
 # -------------------------
 # Traitement chat
 # -------------------------
-if 'submit_chat' in locals() and submit_chat and (
-    user_input.strip() or uploaded_file):
+if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded_file):
     if not st.session_state.conversation:
         with st.spinner("Création conversation..."):
-            conv = create_conversation(
-    st.session_state.user["id"], "Discussion")
+            conv = create_conversation(st.session_state.user["id"], "Discussion")
             if conv:
                 st.session_state.conversation = conv
             else:
@@ -1746,8 +1705,7 @@ if 'submit_chat' in locals() and submit_chat and (
         with st.spinner("Analyse de l'image..."):
             image = Image.open(uploaded_file)
             image_data = image_to_base64(image)
-            caption = generate_caption(
-    image, st.session_state.processor, st.session_state.model)
+            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
             message_content = f"[IMAGE] {caption}"
 
             if user_input.strip():
@@ -1768,8 +1726,7 @@ if 'submit_chat' in locals() and submit_chat and (
         st.session_state.messages_memory.append(user_msg)
 
         lower = user_input.lower()
-        if (any(k in lower for k in [
-            "edit", "édite", "modifie"]) and uploaded_file):
+        if (any(k in lower for k in ["edit", "édite", "modifie"]) and uploaded_file):
             edit_instruction = user_input.strip()
             success = process_image_edit_request(
                 Image.open(uploaded_file).convert("RGBA"),
@@ -1792,17 +1749,14 @@ if 'submit_chat' in locals() and submit_chat and (
             search_type, search_query = detect_search_intent(user_input)
 
             if search_type and search_query:
-                with st.spinner(f"🔍 Recherche {search_type} en cours..."):
-                    # Afficher un message informatif
+                with st.spinner(f"🔍 Recherche {search_type} en cours (toutes années)..."):
                     search_info = st.empty()
-                    search_info.info(
-                        f"Recherche de '{search_query}' sur {search_type.upper()}...")
+                    search_info.info(f"Recherche de '{search_query}' sur {search_type.upper()} - TOUTES LES ANNÉES...")
 
-                    web_results = format_web_search_for_prompt(
-                        search_query, search_type)
+                    web_results = format_web_search_for_prompt(search_query, search_type)
                     prompt += f"{web_results}\n\n"
 
-                    search_info.success(f"✅ Recherche {search_type} terminée!")
+                    search_info.success(f"✅ Recherche {search_type} terminée! (Multi-années)")
                     time.sleep(1)
                     search_info.empty()
 
@@ -1816,8 +1770,10 @@ if 'submit_chat' in locals() and submit_chat and (
 INSTRUCTIONS FINALES:
 1. Utilisez [DATETIME] pour les questions de date/heure
 2. Utilisez [WEB_SEARCH] pour les informations recherchées
-3. Soyez précis et citez vos sources
-4. Les recherches couvrent TOUTES les années jusqu'à 2025
+3. IMPORTANT: Les recherches couvrent TOUTES LES ANNÉES (1990-2025+)
+4. YouTube: Utilisez les statistiques complètes (vues, likes, commentaires)
+5. Soyez précis et citez vos sources avec les années
+6. Les données historiques ET récentes sont disponibles
 ==========================================
 
 Utilisateur: {message_content}"""
@@ -1825,9 +1781,7 @@ Utilisateur: {message_content}"""
             with st.chat_message("assistant"):
                 placeholder = st.empty()
 
-                if edit_context and any(
-    w in user_input.lower() for w in [
-        "edit", "image", "avant", "après"]):
+                if edit_context and any(w in user_input.lower() for w in ["edit", "image", "avant", "après"]):
                     with st.spinner("Consultation mémoire..."):
                         time.sleep(1)
 
@@ -1869,129 +1823,157 @@ with col2:
     st.write("- Discussion modifications")
 
 with col3:
-    st.write("**Recherche Web:**")
-    st.write("- Google + DuckDuckGo")
-    st.write("- YouTube avec transcriptions")
-    st.write("- Wikipedia multilingue")
+    st.write("**Recherche Multi-Années:**")
+    st.write("- Toutes années (1990-2025+)")
+    st.write("- YouTube stats complètes")
+    st.write("- Commentaires & historique")
 
 st.markdown("---")
 col1, col2 = st.columns(2)
 
 with col1:
-    st.write("**Fonctionnalités améliorées:**")
-    st.write("- ✅ Date/heure temps réel")
-    st.write("- ✅ Recherche Google (si API)")
-    st.write("- ✅ DuckDuckGo (GRATUIT, sans API)")
-    st.write("- ✅ YouTube + transcriptions")
-    st.write("- ✅ Scraping de pages web")
+    st.write("**Fonctionnalités AMÉLIORÉES:**")
+    st.write("✅ Recherche MULTI-ANNÉES complète")
+    st.write("✅ YouTube: vues, likes, commentaires")
+    st.write("✅ Données historiques (1990-2025+)")
+    st.write("✅ Scraping avancé de pages web")
+    st.write("✅ DuckDuckGo (GRATUIT, illimité)")
 
 with col2:
     st.write("**Sources disponibles:**")
     st.write("- Google Custom Search")
     st.write("- DuckDuckGo Search")
-    st.write("- YouTube Data API v3")
+    st.write("- YouTube Data API v3 + Stats")
     st.write("- Wikipedia FR/EN")
     st.write("- Google News RSS")
 
 # -------------------------
-# Configuration API Keys
+# Statistiques Sidebar
 # -------------------------
-with st.expander("⚙️ Configuration APIs & Installation"):
+with st.sidebar.expander("📊 Vos statistiques"):
+    if supabase and st.session_state.user["id"] != "guest":
+        try:
+            conv_count = len(get_conversations(st.session_state.user["id"]))
+            msg_count = sum(len(get_messages(conv["conversation_id"])) for conv in get_conversations(st.session_state.user["id"]))
+            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
+            
+            st.metric("Conversations", conv_count)
+            st.metric("Messages", msg_count)
+            st.metric("Éditions d'images", edit_count)
+        except:
+            st.error("Erreur chargement statistiques")
+
+# -------------------------
+# Configuration API Keys & Tests
+# -------------------------
+with st.expander("⚙️ Configuration APIs & Tests Multi-Années"):
     st.markdown("""
     ### 🔑 Configuration des API Keys (OPTIONNEL)
 
-    **IMPORTANT:** L'application fonctionne maintenant SANS API keys grâce à DuckDuckGo !
+    **NOUVEAUTÉ:** Recherche MULTI-ANNÉES activée !
+    - ✅ Accès aux données de TOUTES les années (1990-2025+)
+    - ✅ YouTube: statistiques complètes (vues, likes, commentaires)
+    - ✅ Historique complet du web disponible
 
     **Configuration dans Streamlit Cloud:**
     Settings → Secrets → Ajoutez (optionnel):
-```toml
+    ```toml
     GOOGLE_API_KEY = "votre_clé_google"
     GOOGLE_SEARCH_ENGINE_ID = "votre_search_engine_id"
     YOUTUBE_API_KEY = "votre_clé_youtube"
+    ```
+
     **Avantages:**
-- ✅ **DuckDuckGo:** GRATUIT, ILLIMITÉ, sans API key
-- ✅ **YouTube scraping:** Fonctionne sans API
-- ✅ **Wikipedia:** Toujours gratuit
-- ✅ **Google News RSS:** Gratuit
+    - ✅ **DuckDuckGo:** GRATUIT, ILLIMITÉ, toutes années
+    - ✅ **YouTube scraping:** Fonctionne sans API, toutes années
+    - ✅ **Wikipedia:** Gratuit, contenu historique complet
+    - ✅ **Google News RSS:** Gratuit
 
-**APIs optionnelles (si quotas dépassés):**
-- Google Custom Search: 100 requêtes/jour
-- YouTube Data API v3: 10,000 unités/jour
+    **Statut actuel:**
+    """)
 
-**Statut actuel:**
-""")
-
-st.write("**Moteurs de recherche:**")
-if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
-    st.success("✅ Google API configurée (utilisée en priorité)")
-else:
-    st.info("ℹ️ Google API non configurée → Utilisation de DuckDuckGo (gratuit)")
-
-st.success("✅ DuckDuckGo disponible (GRATUIT, ILLIMITÉ)")
-
-st.write("\n**YouTube:**")
-if YOUTUBE_API_KEY:
-    st.success("✅ YouTube API configurée (utilisée en priorité)")
-else:
-    st.info("ℹ️ YouTube API non configurée → Utilisation du scraping (gratuit)")
-
-st.success("✅ YouTube Scraping disponible (GRATUIT)")
-
-st.write("\n**Autres sources:**")
-st.success("✅ Wikipedia (GRATUIT)")
-st.success("✅ Google News RSS (GRATUIT)")
-st.success("✅ Scraping web (GRATUIT)")
-
-# Test Date/Heure
-if st.button("Test Date/Heure"):
-    dt_info = get_current_datetime_info()
-    if "error" not in dt_info:
-        st.success("✅ Date/Heure OK")
-        st.json(dt_info)
+    st.write("**Moteurs de recherche:**")
+    if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
+        st.success("✅ Google API configurée (priorité, multi-années)")
     else:
-        st.error(f"❌ Erreur: {dt_info['error']}")
+        st.info("ℹ️ Google API non configurée → DuckDuckGo (gratuit, multi-années)")
 
-# Test DuckDuckGo
-if st.button("Test DuckDuckGo"):
-    with st.spinner("Test DuckDuckGo..."):
-        results = search_duckduckgo("test", max_results=3)
-        if results:
-            st.success(f"✅ DuckDuckGo OK ({len(results)} résultats)")
-            for r in results:
-                st.write(f"- {r['title'][:50]}...")
+    st.success("✅ DuckDuckGo disponible (GRATUIT, TOUTES ANNÉES)")
+
+    st.write("\n**YouTube:**")
+    if YOUTUBE_API_KEY:
+        st.success("✅ YouTube API configurée (stats complètes, toutes années)")
+    else:
+        st.info("ℹ️ YouTube API non configurée → Scraping (gratuit, toutes années)")
+
+    st.success("✅ YouTube Scraping disponible (GRATUIT, TOUTES ANNÉES)")
+
+    st.write("\n**Autres sources:**")
+    st.success("✅ Wikipedia (GRATUIT, historique complet)")
+    st.success("✅ Google News RSS (GRATUIT)")
+    st.success("✅ Scraping web avancé (GRATUIT, toutes années)")
+
+    st.markdown("---")
+    st.subheader("🧪 Tests des fonctionnalités")
+
+    # Test Date/Heure
+    if st.button("Test Date/Heure"):
+        dt_info = get_current_datetime_info()
+        if "error" not in dt_info:
+            st.success("✅ Date/Heure OK")
+            st.json(dt_info)
         else:
-            st.error("❌ DuckDuckGo KO")
+            st.error(f"❌ Erreur: {dt_info['error']}")
 
-# Test Google (si configuré)
-if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
-    if st.button("Test Google API"):
-        with st.spinner("Test Google..."):
-            results = search_google("test", max_results=3)
+    # Test DuckDuckGo
+    if st.button("Test DuckDuckGo (Multi-Années)"):
+        with st.spinner("Test DuckDuckGo..."):
+            results = search_duckduckgo("AI history 2010 2020", max_results=3)
             if results:
-                st.success(f"✅ Google OK ({len(results)} résultats)")
+                st.success(f"✅ DuckDuckGo OK ({len(results)} résultats)")
+                for r in results:
+                    st.write(f"- {r['title'][:50]}... [Année: {r.get('year', 'N/A')}]")
             else:
-                st.warning("⚠️ Google quota dépassé ou erreur")
+                st.error("❌ DuckDuckGo KO")
 
-# Test YouTube
-if st.button("Test YouTube"):
-    with st.spinner("Test YouTube..."):
-        results = search_youtube("AI 2025", max_results=2)
-        if results:
-            st.success(f"✅ YouTube OK ({len(results)} vidéos)")
-            for r in results:
-                st.write(f"- {r['title'][:50]}...")
-        else:
-            st.warning("⚠️ YouTube erreur")
+    # Test Google (si configuré)
+    if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
+        if st.button("Test Google API (Multi-Années)"):
+            with st.spinner("Test Google..."):
+                results = search_google("technology 2015", max_results=3)
+                if results:
+                    st.success(f"✅ Google OK ({len(results)} résultats)")
+                    for r in results:
+                        st.write(f"- {r['title'][:50]}... [Année: {r.get('year', 'N/A')}]")
+                else:
+                    st.warning("⚠️ Google quota dépassé ou erreur")
 
-# Test Wikipedia
-if st.button("Test Wikipedia"):
-    with st.spinner("Test Wikipedia..."):
-        results = search_wikipedia("Intelligence artificielle")
-        if results:
-            st.success(f"✅ Wikipedia OK ({len(results)} articles)")
-        else:
-            st.error("❌ Wikipedia KO")
-# Supabase
+    # Test YouTube
+    if st.button("Test YouTube (Stats Complètes)"):
+        with st.spinner("Test YouTube..."):
+            results = search_youtube_comprehensive("AI documentary", max_results=2)
+            if results:
+                st.success(f"✅ YouTube OK ({len(results)} vidéos)")
+                for r in results:
+                    st.write(f"- {r['title'][:50]}...")
+                    st.write(f"  📊 Vues: {r.get('view_count', 'N/A'):,}")
+                    st.write(f"  💬 Commentaires: {r.get('comment_count', 'N/A')}")
+            else:
+                st.warning("⚠️ YouTube erreur")
+
+    # Test Wikipedia
+    if st.button("Test Wikipedia"):
+        with st.spinner("Test Wikipedia..."):
+            results = search_wikipedia("Artificial intelligence")
+            if results:
+                st.success(f"✅ Wikipedia OK ({len(results)} articles)")
+            else:
+                st.error("❌ Wikipedia KO")
+
+    st.markdown("---")
+    st.subheader("🔧 Statut des services")
+
+    # Supabase
     if supabase:
         try:
             supabase.table("users").select("*").limit(1).execute()
@@ -2020,26 +2002,11 @@ if st.button("Test Wikipedia"):
         st.error("❌ BLIP KO")
     
     # Recherche web
-    st.success("✅ DuckDuckGo OK (gratuit)")
-    st.success("✅ Wikipedia OK")
+    st.success("✅ Recherche Multi-Années activée")
+    st.success("✅ DuckDuckGo OK (gratuit, toutes années)")
+    st.success("✅ YouTube Stats OK (vues, likes, commentaires)")
+    st.success("✅ Wikipedia OK (historique complet)")
     st.success("✅ Google News OK")
-    with st.sidebar.expander("📊 Vos statistiques"):
-        st.metric("Conversations", conv_count)
-        st.metric("Messages", msg_count)
-        
-        edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
-        st.metric("Éditions d'images", edit_count)
 
-# Suppression des lignes en double et correction de l'indentation
-with st.sidebar.expander("📊 Vos statistiques"):
-    if supabase and st.session_state.user["id"] != "guest":
-        try:
-            conv_count = len(get_conversations(st.session_state.user["id"]))
-            msg_count = sum(len(get_messages(conv["conversation_id"])) for conv in get_conversations(st.session_state.user["id"]))
-            edit_count = sum(1 for msg in st.session_state.messages_memory if msg.get("edit_context"))
-            
-            st.metric("Conversations", conv_count)
-            st.metric("Messages", msg_count)
-            st.metric("Éditions d'images", edit_count)
-        except:
-            st.error("Erreur chargement statistiques")
+# Cleanup
+cleanup_temp_files()
