@@ -622,9 +622,15 @@ def get_youtube_comments(video_id, max_comments=20):
     
     return []
 
-def search_youtube_comprehensive(query, max_results=10):
-    """Recherche YouTube COMPLÈTE avec statistiques et commentaires"""
+def search_youtube_comprehensive(query, max_results=10, year_filter=None):
+    """Recherche YouTube COMPLÈTE avec statistiques, commentaires et filtre par année"""
     results = []
+    
+    # Extraire l'année de la requête si présente
+    if not year_filter:
+        year_match = re.search(r'(20\d{2})', query)
+        if year_match:
+            year_filter = year_match.group(1)
     
     # Méthode 1: API YouTube (prioritaire si disponible)
     if YOUTUBE_API_KEY:
@@ -636,8 +642,15 @@ def search_youtube_comprehensive(query, max_results=10):
                 "key": YOUTUBE_API_KEY,
                 "maxResults": max_results,
                 "type": "video",
-                "order": "relevance"  # Pas de tri par date pour toutes les années
+                "order": "date"  # Changé pour obtenir les plus récentes d'abord
             }
+            
+            # Ajouter filtre temporel si année spécifiée
+            if year_filter:
+                # Rechercher vidéos de l'année spécifiée
+                params["publishedAfter"] = f"{year_filter}-01-01T00:00:00Z"
+                if int(year_filter) < datetime.now().year:
+                    params["publishedBefore"] = f"{int(year_filter)+1}-01-01T00:00:00Z"
 
             response = requests.get(url, params=params, timeout=15)
 
@@ -654,13 +667,18 @@ def search_youtube_comprehensive(query, max_results=10):
                     # Récupérer quelques commentaires
                     comments = get_youtube_comments(video_id, max_comments=5)
                     
+                    # Extraire l'année de publication
+                    published_date = snippet.get('publishedAt', '')
+                    published_year = published_date[:4] if published_date else 'N/A'
+                    
                     result = {
                         'title': snippet.get('title', ''),
                         'video_id': video_id,
                         'url': f"https://www.youtube.com/watch?v={video_id}",
                         'description': snippet.get('description', ''),
                         'channel': snippet.get('channelTitle', ''),
-                        'published': snippet.get('publishedAt', ''),
+                        'published': published_date,
+                        'published_year': published_year,
                         'thumbnail': snippet.get('thumbnails', {}).get('high', {}).get('url', ''),
                         'source': 'YouTube API',
                         'view_count': 0,
@@ -679,13 +697,63 @@ def search_youtube_comprehensive(query, max_results=10):
                     
                     results.append(result)
 
-                return results
+                if results:
+                    return results
         except Exception as e:
             st.warning(f"YouTube API error: {e}")
     
-    # Méthode 2: Scraping YouTube (fallback GRATUIT)
+    # Méthode 2: Recherche Google sur YouTube (plus fiable pour contenu récent)
     try:
-        search_url = f"https://www.youtube.com/results?search_query={requests.utils.quote(query)}"
+        if year_filter:
+            search_query = f"{query} {year_filter} site:youtube.com"
+        else:
+            search_query = f"{query} site:youtube.com"
+        
+        google_results = search_google(search_query, max_results=max_results)
+        
+        for item in google_results:
+            if 'youtube.com/watch?v=' in item['url']:
+                # Extraire video_id
+                video_id_match = re.search(r'watch\?v=([a-zA-Z0-9_-]+)', item['url'])
+                if video_id_match:
+                    video_id = video_id_match.group(1)
+                    
+                    # Récupérer stats si API disponible
+                    stats = get_youtube_video_stats(video_id) if YOUTUBE_API_KEY else None
+                    comments = get_youtube_comments(video_id, max_comments=5) if YOUTUBE_API_KEY else []
+                    
+                    result = {
+                        'title': item['title'],
+                        'video_id': video_id,
+                        'url': item['url'],
+                        'description': item['snippet'],
+                        'channel': 'N/A',
+                        'published': item.get('date', 'N/A'),
+                        'published_year': item.get('year', year_filter or 'N/A'),
+                        'thumbnail': f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+                        'source': 'Google Search',
+                        'view_count': stats['view_count'] if stats else 'N/A',
+                        'like_count': stats['like_count'] if stats else 'N/A',
+                        'comment_count': stats['comment_count'] if stats else 'N/A',
+                        'comments': comments
+                    }
+                    
+                    results.append(result)
+        
+        if results:
+            return results
+    except Exception as e:
+        st.warning(f"Google YouTube search error: {e}")
+    
+    # Méthode 3: Scraping YouTube (fallback GRATUIT)
+    try:
+        # Ajouter l'année dans la recherche si spécifiée
+        if year_filter:
+            search_query_youtube = f"{query} {year_filter}"
+        else:
+            search_query_youtube = query
+            
+        search_url = f"https://www.youtube.com/results?search_query={requests.utils.quote(search_query_youtube)}&sp=CAI%253D"  # Trier par date
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
@@ -719,13 +787,17 @@ def search_youtube_comprehensive(query, max_results=10):
                                 view_text = video_renderer.get('viewCountText', {}).get('simpleText', '0')
                                 view_count = extract_number(view_text)
                                 
+                                # Extraire date de publication
+                                published_text = video_renderer.get('publishedTimeText', {}).get('simpleText', 'N/A')
+                                
                                 result = {
                                     'title': video_renderer.get('title', {}).get('runs', [{}])[0].get('text', ''),
                                     'video_id': video_id,
                                     'url': f"https://www.youtube.com/watch?v={video_id}",
                                     'description': video_renderer.get('descriptionSnippet', {}).get('runs', [{}])[0].get('text', ''),
                                     'channel': video_renderer.get('ownerText', {}).get('runs', [{}])[0].get('text', ''),
-                                    'published': video_renderer.get('publishedTimeText', {}).get('simpleText', 'N/A'),
+                                    'published': published_text,
+                                    'published_year': year_filter or 'N/A',
                                     'thumbnail': f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
                                     'source': 'YouTube Scraping',
                                     'view_count': view_count,
