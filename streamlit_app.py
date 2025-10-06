@@ -971,13 +971,14 @@ RÉSULTATS DÉTAILLÉS:
         results = search_youtube_comprehensive(query, max_results=10)
 
         if results:
-            for i, result in enumerate(results, 1):
+                            for i, result in enumerate(results, 1):
                 results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
                 results_text += f"   Chaîne: {result['channel']}\n"
                 results_text += f"   Date de publication: {result['published']}\n"
-                results_text += f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n"
+                results_text += f"   Année: {result.get('published_year', 'N/A')}\n"
+                results_text += f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n" if isinstance(result.get('view_count'), int) else f"   📊 Vues: {result.get('view_count', 'N/A')}\n"
                 results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
                 results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
                 results_text += f"   Description: {result['description'][:500]}...\n"
@@ -1418,43 +1419,176 @@ def show_admin_page():
         st.session_state.page = "main"
         st.rerun()
 
-    tab1, tab2, tab3 = st.tabs(["Utilisateurs", "Conversations", "Statistiques"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Utilisateurs", "Conversations", "Messages", "Statistiques"])
 
     with tab1:
+        st.subheader("Gestion des Utilisateurs")
+        
         if supabase:
             try:
                 users = supabase.table("users").select("*").order("created_at", desc=True).execute()
                 if users.data:
                     for user in users.data:
-                        with st.expander(f"{user.get('name')} ({user.get('email')})"):
-                            st.write(f"**ID:** {user.get('id')[:8]}...")
-                            st.write(f"**Rôle:** {user.get('role', 'user')}")
+                        with st.expander(f"{user.get('name', 'N/A')} ({user.get('email', 'N/A')})"):
+                            col1, col2 = st.columns([2, 1])
+                            
+                            with col1:
+                                st.write(f"**ID:** {user.get('id', 'N/A')[:12]}...")
+                                st.write(f"**Email:** {user.get('email', 'N/A')}")
+                                st.write(f"**Nom:** {user.get('name', 'N/A')}")
+                                st.write(f"**Rôle actuel:** {user.get('role', 'user')}")
+                                st.write(f"**Créé le:** {user.get('created_at', 'N/A')[:16]}")
+                            
+                            with col2:
+                                # Changement de rôle
+                                new_role = st.selectbox(
+                                    "Changer rôle:",
+                                    ["user", "admin"],
+                                    index=0 if user.get('role', 'user') == 'user' else 1,
+                                    key=f"role_{user.get('id')}"
+                                )
+                                
+                                if st.button(f"Mettre à jour", key=f"update_{user.get('id')}"):
+                                    try:
+                                        response = supabase.table("users").update({
+                                            "role": new_role,
+                                            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                                        }).eq("id", user.get('id')).execute()
+                                        
+                                        if response.data:
+                                            st.success(f"Rôle changé en {new_role}!")
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error("Échec mise à jour")
+                                    except Exception as e:
+                                        st.error(f"Erreur: {e}")
+                else:
+                    st.info("Aucun utilisateur trouvé")
             except Exception as e:
-                st.error(f"Erreur: {e}")
+                st.error(f"Erreur chargement utilisateurs: {e}")
 
     with tab2:
+        st.subheader("Toutes les Conversations")
+        
         if supabase:
             try:
-                convs = supabase.table("conversations").select("*").limit(20).execute()
+                # Correction: utiliser conversation_id au lieu de id
+                convs = supabase.table("conversations").select("*").order("created_at", desc=True).limit(50).execute()
+                
                 if convs.data:
                     for conv in convs.data:
-                        st.write(f"- {conv.get('description')} ({conv.get('created_at')[:10]})")
+                        conv_id = conv.get('conversation_id') or conv.get('id')
+                        
+                        with st.expander(f"📝 {conv.get('description', 'Sans titre')} - {conv.get('created_at', 'N/A')[:16]}"):
+                            st.write(f"**ID Conversation:** {conv_id[:12]}...")
+                            st.write(f"**User ID:** {conv.get('user_id', 'N/A')[:12]}...")
+                            st.write(f"**Description:** {conv.get('description', 'N/A')}")
+                            st.write(f"**Créée le:** {conv.get('created_at', 'N/A')}")
+                            
+                            # Compter les messages
+                            try:
+                                msg_count = supabase.table("messages").select("id", count="exact").eq("conversation_id", conv_id).execute()
+                                st.write(f"**Nombre de messages:** {msg_count.count or 0}")
+                            except:
+                                st.write("**Nombre de messages:** N/A")
+                else:
+                    st.info("Aucune conversation trouvée")
             except Exception as e:
-                st.error(f"Erreur: {e}")
+                st.error(f"Erreur chargement conversations: {e}")
 
     with tab3:
+        st.subheader("Messages par Conversation")
+        
         if supabase:
             try:
-                users_count = supabase.table("users").select("id", count="exact").execute()
-                convs_count = supabase.table("conversations").select("id", count="exact").execute()
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Utilisateurs", users_count.count or 0)
-                with col2:
-                    st.metric("Conversations", convs_count.count or 0)
+                # Sélectionner une conversation pour voir les messages
+                convs = supabase.table("conversations").select("*").order("created_at", desc=True).limit(20).execute()
+                
+                if convs.data:
+                    conv_options = {f"{c.get('description', 'Sans titre')} - {c.get('created_at', 'N/A')[:16]}": c.get('conversation_id') or c.get('id') for c in convs.data}
+                    
+                    selected_conv_name = st.selectbox("Sélectionner une conversation:", list(conv_options.keys()))
+                    selected_conv_id = conv_options[selected_conv_name]
+                    
+                    if selected_conv_id:
+                        messages = supabase.table("messages").select("*").eq("conversation_id", selected_conv_id).order("created_at", desc=False).execute()
+                        
+                        if messages.data:
+                            st.write(f"**{len(messages.data)} messages trouvés**")
+                            
+                            for msg in messages.data:
+                                sender = msg.get('sender', 'unknown')
+                                msg_type = "👤 Utilisateur" if sender == "user" else "🤖 Assistant"
+                                
+                                with st.expander(f"{msg_type} - {msg.get('created_at', 'N/A')[:16]}"):
+                                    st.write(f"**Type:** {msg.get('type', 'text')}")
+                                    st.write(f"**Contenu:**")
+                                    st.text(msg.get('content', 'N/A')[:500])
+                                    
+                                    if msg.get('image_data'):
+                                        st.write("📷 Contient une image")
+                        else:
+                            st.info("Aucun message dans cette conversation")
+                else:
+                    st.info("Aucune conversation disponible")
             except Exception as e:
-                st.error(f"Erreur: {e}")
+                st.error(f"Erreur chargement messages: {e}")
+
+    with tab4:
+        st.subheader("Statistiques Globales")
+        
+        if supabase:
+            try:
+                # Correction: ne pas utiliser la colonne 'id' dans count
+                users_count = supabase.table("users").select("*", count="exact").execute()
+                convs_count = supabase.table("conversations").select("*", count="exact").execute()
+                messages_count = supabase.table("messages").select("*", count="exact").execute()
+
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("👥 Utilisateurs", users_count.count or 0)
+                
+                with col2:
+                    st.metric("💬 Conversations", convs_count.count or 0)
+                
+                with col3:
+                    st.metric("📨 Messages", messages_count.count or 0)
+                
+                st.markdown("---")
+                
+                # Statistiques détaillées
+                st.subheader("Détails")
+                
+                # Utilisateurs par rôle
+                try:
+                    admins = supabase.table("users").select("*", count="exact").eq("role", "admin").execute()
+                    users_regular = supabase.table("users").select("*", count="exact").eq("role", "user").execute()
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Admins", admins.count or 0)
+                    with col2:
+                        st.metric("Users", users_regular.count or 0)
+                except Exception as e:
+                    st.warning(f"Erreur stats rôles: {e}")
+                
+                # Messages par type
+                try:
+                    text_msgs = supabase.table("messages").select("*", count="exact").eq("type", "text").execute()
+                    image_msgs = supabase.table("messages").select("*", count="exact").eq("type", "image").execute()
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Messages texte", text_msgs.count or 0)
+                    with col2:
+                        st.metric("Messages image", image_msgs.count or 0)
+                except Exception as e:
+                    st.warning(f"Erreur stats messages: {e}")
+                    
+            except Exception as e:
+                st.error(f"Erreur statistiques: {e}")
 
 def cleanup_temp_files():
     try:
@@ -2021,17 +2155,21 @@ with st.expander("⚙️ Configuration APIs & Tests Multi-Années"):
                     st.warning("⚠️ Google quota dépassé ou erreur")
 
     # Test YouTube
-    if st.button("Test YouTube (Stats Complètes)"):
+    if st.button("Test YouTube (Stats Complètes + 2025)"):
         with st.spinner("Test YouTube..."):
-            results = search_youtube_comprehensive("AI documentary", max_results=2)
+            results = search_youtube_comprehensive("X Factor 2025", max_results=3)
             if results:
-                st.success(f"✅ YouTube OK ({len(results)} vidéos)")
+                st.success(f"✅ YouTube OK ({len(results)} vidéos trouvées)")
                 for r in results:
-                    st.write(f"- {r['title'][:50]}...")
-                    st.write(f"  📊 Vues: {r.get('view_count', 'N/A'):,}")
+                    st.write(f"- {r['title'][:60]}...")
+                    st.write(f"  📅 Année: {r.get('published_year', 'N/A')}")
+                    if isinstance(r.get('view_count'), int):
+                        st.write(f"  📊 Vues: {r.get('view_count'):,}")
+                    else:
+                        st.write(f"  📊 Vues: {r.get('view_count', 'N/A')}")
                     st.write(f"  💬 Commentaires: {r.get('comment_count', 'N/A')}")
             else:
-                st.warning("⚠️ YouTube erreur")
+                st.warning("⚠️ Aucune vidéo trouvée - Essayez avec une API YouTube configurée")
 
     # Test Wikipedia
     if st.button("Test Wikipedia"):
