@@ -1228,17 +1228,17 @@ RÉSULTATS DÉTAILLÉS:
         results = search_youtube_comprehensive(query, max_results=10)
 
         if results:
-                            for i, result in enumerate(results, 1):
-                results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
-                results_text += f"   Titre: {result['title']}\n"
-                results_text += f"   URL: {result['url']}\n"
-                results_text += f"   Chaîne: {result['channel']}\n"
-                results_text += f"   Date de publication: {result['published']}\n"
-                results_text += f"   Année: {result.get('published_year', 'N/A')}\n"
-                results_text += f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n" if isinstance(result.get('view_count'), int) else f"   📊 Vues: {result.get('view_count', 'N/A')}\n"
-                results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
-                results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
-                results_text += f"   Description: {result['description'][:500]}...\n"
+                for i, result in enumerate(results, 1):
+                    results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
+                    results_text += f"   Titre: {result['title']}\n"
+                    results_text += f"   URL: {result['url']}\n"
+                    results_text += f"   Chaîne: {result['channel']}\n"
+                    results_text += f"   Date de publication: {result['published']}\n"
+                    results_text += f"   Année: {result.get('published_year', 'N/A')}\n"
+                    results_text += f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n" if isinstance(result.get('view_count'), int) else f"   📊 Vues: {result.get('view_count', 'N/A')}\n"
+                    results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
+                    results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
+                    results_text += f"   Description: {result['description'][:500]}...\n"
 
                 if i <= 2:
                     transcript = get_youtube_transcript(result['video_id'])
