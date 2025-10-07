@@ -75,6 +75,7 @@ os.makedirs(EDITED_IMAGES_DIR, exist_ok=True)
 # Supabase Connection
 # -------------------------
 
+
 @st.cache_resource
 def init_supabase():
     """Initialise Supabase avec gestion d'erreur complète"""
@@ -95,14 +96,17 @@ def init_supabase():
         st.error(f"Erreur connexion Supabase: {e}")
         return None
 
+
 supabase = init_supabase()
 
 # -------------------------
 # Fonctions de récupération de mot de passe
 # -------------------------
 
+
 def generate_reset_token():
     return ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+
 
 def store_reset_token(email, token):
     if not supabase:
@@ -110,7 +114,8 @@ def store_reset_token(email, token):
 
     try:
         expiration = time.time() + 3600
-        user_check = supabase.table("users").select("*").eq("email", email).execute()
+        user_check = supabase.table("users").select(
+            "*").eq("email", email).execute()
 
         if not user_check.data:
             return False
@@ -133,13 +138,16 @@ def store_reset_token(email, token):
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "used": False
                 }
-                supabase.table("password_resets").delete().eq("email", email).execute()
-                response = supabase.table("password_resets").insert(token_data).execute()
+                supabase.table("password_resets").delete().eq(
+                    "email", email).execute()
+                response = supabase.table(
+                    "password_resets").insert(token_data).execute()
                 return bool(response.data)
             except:
                 return False
     except:
         return False
+
 
 def verify_reset_token(email, token):
     if not supabase:
@@ -149,17 +157,21 @@ def verify_reset_token(email, token):
         current_time = time.time()
 
         try:
-            response = supabase.table("users").select("reset_token, reset_token_expires").eq("email", email).execute()
+            response = supabase.table("users").select(
+                "reset_token, reset_token_expires").eq("email", email).execute()
             if response.data:
                 user_data = response.data[0]
-                if user_data.get("reset_token") == token and user_data.get("reset_token_expires", 0) > current_time:
+                if user_data.get("reset_token") == token and user_data.get(
+                    "reset_token_expires", 0) > current_time:
                     return True
         except:
             pass
 
         try:
-            response = supabase.table("password_resets").select("*").eq("email", email).eq("reset_token", token).eq("used", False).execute()
-            if response.data and response.data[0].get("expires_at", 0) > current_time:
+            response = supabase.table("password_resets").select(
+                "*").eq("email", email).eq("reset_token", token).eq("used", False).execute()
+            if response.data and response.data[0].get(
+                "expires_at", 0) > current_time:
                 return True
         except:
             pass
@@ -167,6 +179,7 @@ def verify_reset_token(email, token):
         return False
     except:
         return False
+
 
 def reset_password(email, token, new_password):
     if not supabase or not verify_reset_token(email, token):
@@ -181,7 +194,8 @@ def reset_password(email, token, new_password):
             "reset_token_created": None
         }
 
-        update_response = supabase.table("users").update(update_data).eq("email", email).execute()
+        update_response = supabase.table("users").update(
+            update_data).eq("email", email).execute()
 
         if update_response.data:
             try:
@@ -200,6 +214,7 @@ def reset_password(email, token, new_password):
 # Fonctions DB
 # -------------------------
 
+
 def verify_user(email, password):
     if email == ADMIN_CREDENTIALS["email"] and password == ADMIN_CREDENTIALS["password"]:
         return {
@@ -214,10 +229,13 @@ def verify_user(email, password):
 
     try:
         try:
-            response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+            response = supabase.auth.sign_in_with_password(
+                {"email": email, "password": password})
             if response.user:
-                user_data = supabase.table("users").select("*").eq("email", email).execute()
-                role = user_data.data[0].get("role", "user") if user_data.data else "user"
+                user_data = supabase.table("users").select(
+                    "*").eq("email", email).execute()
+                role = user_data.data[0].get(
+    "role", "user") if user_data.data else "user"
                 return {
                     "id": response.user.id,
                     "email": response.user.email,
@@ -227,7 +245,8 @@ def verify_user(email, password):
         except:
             pass
 
-        response = supabase.table("users").select("*").eq("email", email).execute()
+        response = supabase.table("users").select(
+            "*").eq("email", email).execute()
         if response.data:
             user = response.data[0]
             if user.get("password") == password:
@@ -240,6 +259,7 @@ def verify_user(email, password):
         return None
     except:
         return None
+
 
 def create_user(email, password, name, role="user"):
     if not supabase:
@@ -271,12 +291,14 @@ def create_user(email, password, name, role="user"):
     except:
         return False
 
+
 def get_conversations(user_id):
     if not supabase or not user_id:
         return []
 
     try:
-        response = supabase.table("conversations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+        response = supabase.table("conversations").select(
+            "*").eq("user_id", user_id).order("created_at", desc=True).execute()
 
         if not response.data:
             return []
@@ -294,6 +316,7 @@ def get_conversations(user_id):
         return conversations
     except:
         return []
+
 
 def create_conversation(user_id, description):
     if not supabase or not user_id:
@@ -320,12 +343,14 @@ def create_conversation(user_id, description):
     except:
         return None
 
+
 def get_messages(conversation_id):
     if not supabase or not conversation_id:
         return []
 
     try:
-        response = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
+        response = supabase.table("messages").select(
+            "*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
 
         if not response.data:
             return []
@@ -345,12 +370,20 @@ def get_messages(conversation_id):
     except:
         return []
 
-def add_message(conversation_id, sender, content, msg_type="text", image_data=None, edit_context=None):
+
+def add_message(
+    conversation_id,
+    sender,
+    content,
+    msg_type="text",
+    image_data=None,
+     edit_context=None):
     if not supabase or not conversation_id or not content:
         return False
 
     try:
-        conv_check = supabase.table("conversations").select("*").eq("conversation_id", conversation_id).execute()
+        conv_check = supabase.table("conversations").select(
+            "*").eq("conversation_id", conversation_id).execute()
         if not conv_check.data:
             return False
 
@@ -376,10 +409,12 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
 # Utility functions
 # -------------------------
 
+
 def image_to_base64(image):
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode()
+
 
 def base64_to_image(img_str):
     img_bytes = base64.b64decode(img_str)
@@ -389,11 +424,15 @@ def base64_to_image(img_str):
 # BLIP loader
 # -------------------------
 
+
 @st.cache_resource
 def load_blip():
-    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+    processor = BlipProcessor.from_pretrained(
+        "Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained(
+        "Salesforce/blip-image-captioning-base")
     return processor, model
+
 
 def generate_caption(image, processor, model):
     inputs = processor(image, return_tensors="pt")
@@ -408,6 +447,7 @@ def generate_caption(image, processor, model):
 # LLaVA-OneVision loader (NOUVEAU)
 # -------------------------
 
+
 @st.cache_resource
 def load_llava_onevision():
     """Charge le client LLaVA-OneVision pour description avancée d'images"""
@@ -418,17 +458,22 @@ def load_llava_onevision():
         st.warning(f"LLaVA-OneVision non disponible: {e}")
         return None
 
-def generate_llava_description(image, llava_client, custom_prompt="Describe this image in detail"):
+
+def generate_llava_description(
+    image,
+    llava_client,
+     custom_prompt="Describe this image in detail"):
     """Génère une description détaillée avec LLaVA-OneVision"""
     if not llava_client:
         return None
-    
+
     try:
         # Sauvegarder temporairement l'image
-        temp_path = os.path.join(TMP_DIR, f"temp_input_{uuid.uuid4().hex}.png")
+        temp_path = os.path.join(
+    TMP_DIR, f"llava_input_{uuid.uuid4().hex}.png")
         image.save(temp_path)
-        
-        # Appel au modèle
+
+        # Appel à LLaVA-OneVision
         result = llava_client.predict(
             message={
                 "text": custom_prompt,
@@ -437,77 +482,117 @@ def generate_llava_description(image, llava_client, custom_prompt="Describe this
             model_name="LLaVA-OneVision-1.5-8B-Instruct",
             api_name="/chat"
         )
-        
+
         # Nettoyage
         if os.path.exists(temp_path):
             os.remove(temp_path)
-        
+
         # Extraire le texte de la réponse
         if isinstance(result, dict):
             return result.get('text', str(result))
         return str(result)
-        
+
     except Exception as e:
+        st.warning(f"Erreur LLaVA-OneVision: {e}")
         return None
 
 # -------------------------
 # Fonction de description FUSION (3 MODÈLES)
 # -------------------------
 
-def generate_comprehensive_description(image, blip_processor, blip_model, llama_client, llava_client):
+
+def generate_comprehensive_description(
+    image,
+    blip_processor,
+    blip_model,
+    llama_client,
+     llava_client):
     """
-    Génère une description RAPIDE en utilisant les modèles de manière optimisée
-    Priorité: vitesse > détails exhaustifs
+    Génère une description complète en combinant 3 modèles:
+    1. BLIP - Description rapide et précise
+    2. LLaVA-OneVision - Analyse détaillée des éléments visuels
+    3. LLaMA - Synthèse et enrichissement contextuel
     """
     descriptions = {}
-    
-    # 1. BLIP uniquement (le plus rapide) - TOUJOURS exécuté
-    try:
-        blip_desc = generate_caption(image, blip_processor, blip_model)
-        descriptions['blip'] = blip_desc
-    except Exception as e:
-        descriptions['blip'] = "Image analysis unavailable"
-    
-    # 2. LLaVA OU LLaMA (pas les deux) - choix stratégique
-    # Si LLaVA disponible, on l'utilise directement (évite double traitement)
-    if llava_client:
+
+    # 1. BLIP - Description de base
+    with st.spinner("🔍 BLIP analyse l'image..."):
+        try:
+            blip_desc = generate_caption(image, blip_processor, blip_model)
+            descriptions['blip'] = blip_desc
+        except Exception as e:
+            descriptions['blip'] = f"Erreur BLIP: {e}"
+
+    # 2. LLaVA-OneVision - Description détaillée
+    with st.spinner("👁️ LLaVA-OneVision analyse en profondeur..."):
         try:
             llava_desc = generate_llava_description(
-                image, 
+                image,
                 llava_client,
-                "Describe this image concisely (max 100 words). Focus on: main subjects, colors, composition."
+                "Describe this image in great detail. Include: objects, people, colors, composition, mood, and any text visible."
             )
-            if llava_desc and len(llava_desc) > 20:
-                descriptions['final'] = llava_desc
-                return descriptions
-        except:
-            pass
-    
-    # 3. Fallback: utiliser seulement BLIP (très rapide)
-    descriptions['final'] = descriptions['blip']
-    
+            descriptions['llava'] = llava_desc or "Non disponible"
+        except Exception as e:
+            descriptions['llava'] = f"Erreur LLaVA: {e}"
+
+    # 3. LLaMA - Synthèse enrichie
+    with st.spinner("🤖 LLaMA crée une synthèse enrichie..."):
+        try:
+            fusion_prompt = f"""Analyse ces descriptions d'image et crée une description complète, détaillée et naturelle:
+
+BLIP (description de base): {descriptions['blip']}
+
+LLaVA-OneVision (analyse détaillée): {descriptions['llava']}
+
+Créé une description fusionnée qui:
+1. Combine les informations des deux sources
+2. Est naturelle et fluide à lire
+3. Décrit précisément tous les éléments visuels
+4. Mentionne les couleurs, la composition, l'ambiance
+5. Est concise mais complète (150-200 mots maximum)
+
+Description finale:"""
+
+            llama_synthesis = get_ai_response(
+                fusion_prompt) if llama_client else "LLaMA non disponible"
+            descriptions['llama_synthesis'] = llama_synthesis
+
+        except Exception as e:
+            descriptions['llama_synthesis'] = f"Erreur LLaMA: {e}"
+
     return descriptions
 
+
 def format_image_analysis_for_prompt(descriptions):
-    """Formate l'analyse pour le prompt Vision AI de manière optimisée"""
-    
-    # Utiliser la description finale (déjà optimisée)
-    final_desc = descriptions.get('final', descriptions.get('blip', 'Image non analysée'))
-    
-    analysis_text = f"""[IMAGE] 📸 ANALYSE D'IMAGE
+    """Formate l'analyse multi-modèle pour le prompt Vision AI"""
 
-{final_desc}
+    analysis_text = """[IMAGE] 📸 ANALYSE MULTI-MODÈLE COMPLÈTE
+
+=== DESCRIPTION RAPIDE (BLIP) ===
+{blip}
+
+=== ANALYSE DÉTAILLÉE (LLaVA-OneVision) ===
+{llava}
+
+=== SYNTHÈSE ENRICHIE (LLaMA) ===
+{synthesis}
 
 ==========================================
-Utilisez cette description pour répondre aux questions sur l'image.
+Cette image a été analysée par 3 modèles d'IA pour garantir une compréhension complète.
+Utilisez ces informations pour répondre aux questions de l'utilisateur.
 ==========================================
-"""
-    
+""".format(
+        blip=descriptions.get('blip', 'N/A'),
+        llava=descriptions.get('llava', 'N/A'),
+        synthesis=descriptions.get('llama_synthesis', 'N/A')
+    )
+
     return analysis_text
 
 # -------------------------
 # Fonctions Date/Heure AMÉLIORÉES
 # -------------------------
+
 
 def get_current_datetime_info():
     """Récupère les informations de date et heure actuelles"""
@@ -533,6 +618,7 @@ def get_current_datetime_info():
     except Exception as e:
         return {"error": str(e)}
 
+
 def format_datetime_for_prompt():
     """Formate les informations de date/heure pour le prompt"""
     dt_info = get_current_datetime_info()
@@ -555,15 +641,21 @@ Timezone: {dt_info['timezone']}
 # RECHERCHE WEB MULTI-ANNÉES AMÉLIORÉE
 # -------------------------
 
+
 def extract_number(text):
     """Extrait les nombres d'un texte (pour vues, likes, etc.)"""
     if not text:
         return 0
-    
+
     text = str(text).lower().replace(',', '').replace(' ', '')
-    
-    multipliers = {'k': 1000, 'm': 1000000, 'b': 1000000000, 'mil': 1000000, 'milliard': 1000000000}
-    
+
+    multipliers = {
+    'k': 1000,
+    'm': 1000000,
+    'b': 1000000000,
+    'mil': 1000000,
+     'milliard': 1000000000}
+
     for suffix, multiplier in multipliers.items():
         if suffix in text:
             try:
@@ -571,11 +663,12 @@ def extract_number(text):
                 return int(number * multiplier)
             except:
                 pass
-    
+
     try:
         return int(re.sub(r'[^0-9]', '', text))
     except:
         return 0
+
 
 def search_duckduckgo(query, max_results=15):
     """Recherche DuckDuckGo avec filtre multi-années"""
@@ -584,7 +677,8 @@ def search_duckduckgo(query, max_results=15):
 
         results = []
         with DDGS() as ddgs:
-            # Recherche sans restriction temporelle pour couvrir toutes les années
+            # Recherche sans restriction temporelle pour couvrir toutes les
+            # années
             search_results = list(ddgs.text(query, max_results=max_results))
 
             for item in search_results:
@@ -595,18 +689,27 @@ def search_duckduckgo(query, max_results=15):
                     'source': 'DuckDuckGo',
                     'year': 'N/A'
                 }
-                
+
                 # Tenter d'extraire l'année de l'URL ou du contenu
-                year_match = re.search(r'(20\d{2}|19\d{2})', item.get('href', '') + ' ' + item.get('body', ''))
+                year_match = re.search(
+    r'(20\d{2}|19\d{2})',
+    item.get(
+        'href',
+        '') +
+        ' ' +
+        item.get(
+            'body',
+             ''))
                 if year_match:
                     result_data['year'] = year_match.group(1)
-                
+
                 results.append(result_data)
 
         return results
     except Exception as e:
         st.warning(f"DuckDuckGo erreur: {e}")
         return []
+
 
 def search_google(query, max_results=15):
     """Recherche Google avec support multi-années"""
@@ -638,17 +741,19 @@ def search_google(query, max_results=15):
                     'source': 'Google',
                     'year': 'N/A'
                 }
-                
+
                 # Extraire date de publication si disponible
                 if 'pagemap' in item and 'metatags' in item['pagemap']:
                     metatags = item['pagemap']['metatags'][0]
-                    pub_date = metatags.get('article:published_time', metatags.get('datePublished', ''))
+                    pub_date = metatags.get(
+    'article:published_time', metatags.get(
+        'datePublished', ''))
                     if pub_date:
                         year_match = re.search(r'(20\d{2}|19\d{2})', pub_date)
                         if year_match:
                             result_data['year'] = year_match.group(1)
                             result_data['date'] = pub_date[:10]
-                
+
                 results.append(result_data)
 
             return results
@@ -656,6 +761,7 @@ def search_google(query, max_results=15):
             return search_duckduckgo(query, max_results)
     except Exception as e:
         return search_duckduckgo(query, max_results)
+
 
 def get_youtube_video_stats(video_id):
     """Récupère les statistiques détaillées d'une vidéo YouTube"""
@@ -676,7 +782,7 @@ def get_youtube_video_stats(video_id):
                     item = data['items'][0]
                     stats = item.get('statistics', {})
                     snippet = item.get('snippet', {})
-                    
+
                     return {
                         'view_count': int(stats.get('viewCount', 0)),
                         'like_count': int(stats.get('likeCount', 0)),
@@ -686,8 +792,9 @@ def get_youtube_video_stats(video_id):
                     }
         except:
             pass
-    
+
     return None
+
 
 def get_youtube_comments(video_id, max_comments=20):
     """Récupère les commentaires d'une vidéo YouTube"""
@@ -707,7 +814,7 @@ def get_youtube_comments(video_id, max_comments=20):
             if response.status_code == 200:
                 data = response.json()
                 comments = []
-                
+
                 for item in data.get('items', []):
                     comment = item['snippet']['topLevelComment']['snippet']
                     comments.append({
@@ -716,23 +823,24 @@ def get_youtube_comments(video_id, max_comments=20):
                         'likes': int(comment.get('likeCount', 0)),
                         'published': comment.get('publishedAt', '')
                     })
-                
+
                 return comments
         except:
             pass
-    
+
     return []
+
 
 def search_youtube_comprehensive(query, max_results=10, year_filter=None):
     """Recherche YouTube COMPLÈTE avec statistiques, commentaires et filtre par année"""
     results = []
-    
+
     # Extraire l'année de la requête si présente
     if not year_filter:
         year_match = re.search(r'(20\d{2})', query)
         if year_match:
             year_filter = year_match.group(1)
-    
+
     # Méthode 1: API YouTube (prioritaire si disponible)
     if YOUTUBE_API_KEY:
         try:
@@ -745,7 +853,7 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                 "type": "video",
                 "order": "date"  # Changé pour obtenir les plus récentes d'abord
             }
-            
+
             # Ajouter filtre temporel si année spécifiée
             if year_filter:
                 # Rechercher vidéos de l'année spécifiée
@@ -761,17 +869,18 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                 for item in data.get('items', []):
                     video_id = item['id']['videoId']
                     snippet = item['snippet']
-                    
+
                     # Récupérer les statistiques détaillées
                     stats = get_youtube_video_stats(video_id)
-                    
+
                     # Récupérer quelques commentaires
                     comments = get_youtube_comments(video_id, max_comments=5)
-                    
+
                     # Extraire l'année de publication
                     published_date = snippet.get('publishedAt', '')
-                    published_year = published_date[:4] if published_date else 'N/A'
-                    
+                    published_year = published_date[:
+                        4] if published_date else 'N/A'
+
                     result = {
                         'title': snippet.get('title', ''),
                         'video_id': video_id,
@@ -787,7 +896,7 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                         'comment_count': 0,
                         'comments': comments
                     }
-                    
+
                     if stats:
                         result.update({
                             'view_count': stats['view_count'],
@@ -795,34 +904,37 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                             'comment_count': stats['comment_count'],
                             'duration': stats['duration']
                         })
-                    
+
                     results.append(result)
 
                 if results:
                     return results
         except Exception as e:
             st.warning(f"YouTube API error: {e}")
-    
+
     # Méthode 2: Recherche Google sur YouTube (plus fiable pour contenu récent)
     try:
         if year_filter:
             search_query = f"{query} {year_filter} site:youtube.com"
         else:
             search_query = f"{query} site:youtube.com"
-        
+
         google_results = search_google(search_query, max_results=max_results)
-        
+
         for item in google_results:
             if 'youtube.com/watch?v=' in item['url']:
                 # Extraire video_id
-                video_id_match = re.search(r'watch\?v=([a-zA-Z0-9_-]+)', item['url'])
+                video_id_match = re.search(
+    r'watch\?v=([a-zA-Z0-9_-]+)', item['url'])
                 if video_id_match:
                     video_id = video_id_match.group(1)
-                    
+
                     # Récupérer stats si API disponible
-                    stats = get_youtube_video_stats(video_id) if YOUTUBE_API_KEY else None
-                    comments = get_youtube_comments(video_id, max_comments=5) if YOUTUBE_API_KEY else []
-                    
+                    stats = get_youtube_video_stats(
+                        video_id) if YOUTUBE_API_KEY else None
+                    comments = get_youtube_comments(
+    video_id, max_comments=5) if YOUTUBE_API_KEY else []
+
                     result = {
                         'title': item['title'],
                         'video_id': video_id,
@@ -838,14 +950,14 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                         'comment_count': stats['comment_count'] if stats else 'N/A',
                         'comments': comments
                     }
-                    
+
                     results.append(result)
-        
+
         if results:
             return results
     except Exception as e:
         st.warning(f"Google YouTube search error: {e}")
-    
+
     # Méthode 3: Scraping YouTube (fallback GRATUIT)
     try:
         # Ajouter l'année dans la recherche si spécifiée
@@ -853,8 +965,9 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
             search_query_youtube = f"{query} {year_filter}"
         else:
             search_query_youtube = query
-            
-        search_url = f"https://www.youtube.com/results?search_query={requests.utils.quote(search_query_youtube)}&sp=CAI%253D"  # Trier par date
+
+        # Trier par date
+        search_url = f"https://www.youtube.com/results?search_query={requests.utils.quote(search_query_youtube)}&sp=CAI%253D"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
@@ -874,23 +987,39 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                     json_str = response.text[start_idx:end_idx]
                     data = json.loads(json_str)
 
-                    contents = data.get('contents', {}).get('twoColumnSearchResultsRenderer', {}).get('primaryContents', {}).get('sectionListRenderer', {}).get('contents', [])
+                    contents = data.get(
+    'contents',
+    {}).get(
+        'twoColumnSearchResultsRenderer',
+        {}).get(
+            'primaryContents',
+            {}).get(
+                'sectionListRenderer',
+                {}).get(
+                    'contents',
+                     [])
 
                     for content in contents:
-                        items = content.get('itemSectionRenderer', {}).get('contents', [])
+                        items = content.get(
+    'itemSectionRenderer', {}).get(
+        'contents', [])
 
                         for item in items[:max_results]:
                             video_renderer = item.get('videoRenderer', {})
                             if video_renderer:
                                 video_id = video_renderer.get('videoId', '')
-                                
+
                                 # Extraire les statistiques du scraping
-                                view_text = video_renderer.get('viewCountText', {}).get('simpleText', '0')
+                                view_text = video_renderer.get(
+    'viewCountText', {}).get(
+        'simpleText', '0')
                                 view_count = extract_number(view_text)
-                                
+
                                 # Extraire date de publication
-                                published_text = video_renderer.get('publishedTimeText', {}).get('simpleText', 'N/A')
-                                
+                                published_text = video_renderer.get(
+    'publishedTimeText', {}).get(
+        'simpleText', 'N/A')
+
                                 result = {
                                     'title': video_renderer.get('title', {}).get('runs', [{}])[0].get('text', ''),
                                     'video_id': video_id,
@@ -906,7 +1035,7 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                                     'comment_count': 'N/A',
                                     'comments': []
                                 }
-                                
+
                                 if video_id and result['title']:
                                     results.append(result)
 
@@ -915,15 +1044,18 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
 
     return results
 
+
 def get_youtube_transcript(video_id):
     """Récupère la transcription d'une vidéo YouTube"""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['fr', 'en', 'es', 'de', 'it'])
+        transcript = YouTubeTranscriptApi.get_transcript(
+            video_id, languages=['fr', 'en', 'es', 'de', 'it'])
         full_text = " ".join([item['text'] for item in transcript[:150]])
         return full_text
     except:
         return None
+
 
 def scrape_page_content(url, max_chars=4000):
     """Scrape le contenu complet d'une page web"""
@@ -938,15 +1070,27 @@ def scrape_page_content(url, max_chars=4000):
             'Upgrade-Insecure-Requests': '1'
         }
 
-        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        response = requests.get(
+    url,
+    headers=headers,
+    timeout=15,
+     allow_redirects=True)
 
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            for script in soup(["script", "style", "nav", "header", "footer", "aside", "form", "button"]):
+            for script in soup(["script",
+    "style",
+    "nav",
+    "header",
+    "footer",
+    "aside",
+    "form",
+     "button"]):
                 script.decompose()
 
-            main_content = soup.find('main') or soup.find('article') or soup.find('div', class_=['content', 'main', 'article'])
+            main_content = soup.find('main') or soup.find('article') or soup.find(
+                'div', class_=['content', 'main', 'article'])
 
             if main_content:
                 text = main_content.get_text()
@@ -954,13 +1098,15 @@ def scrape_page_content(url, max_chars=4000):
                 text = soup.get_text()
 
             lines = (line.strip() for line in text.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            chunks = (phrase.strip()
+                      for line in lines for phrase in line.split("  "))
             text = ' '.join(chunk for chunk in chunks if chunk)
 
             return text[:max_chars]
         return None
     except Exception as e:
         return None
+
 
 def search_wikipedia(query):
     """Recherche sur Wikipedia multilingue"""
@@ -986,7 +1132,13 @@ def search_wikipedia(query):
 
                 for item in data.get('query', {}).get('search', []):
                     title = item.get('title', '')
-                    snippet = item.get('snippet', '').replace('<span class="searchmatch">', '').replace('</span>', '')
+                    snippet = item.get(
+    'snippet',
+    '').replace(
+        '<span class="searchmatch">',
+        '').replace(
+            '</span>',
+             '')
 
                     results.append({
                         'title': title,
@@ -998,6 +1150,7 @@ def search_wikipedia(query):
             continue
 
     return results
+
 
 def search_news(query):
     """Recherche d'actualités via Google News RSS"""
@@ -1030,6 +1183,7 @@ def search_news(query):
     except Exception as e:
         return []
 
+
 def format_web_search_for_prompt(query, search_type="web"):
     """Formate les résultats de recherche MULTI-ANNÉES de manière optimale"""
     results_text = f"""[WEB_SEARCH] RÉSULTATS DE RECHERCHE EN TEMPS RÉEL - TOUTES LES ANNÉES
@@ -1052,7 +1206,8 @@ RÉSULTATS DÉTAILLÉS:
 
         if results:
             for i, result in enumerate(results, 1):
-                year_info = f" [{result.get('year', 'N/A')}]" if result.get('year') != 'N/A' else ""
+                year_info = f" [{result.get('year', 'N/A')}]" if result.get(
+                    'year') != 'N/A' else ""
                 results_text += f"\n🔍 RÉSULTAT #{i}{year_info} ({result.get('source', 'Web')}):\n"
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
@@ -1060,7 +1215,8 @@ RÉSULTATS DÉTAILLÉS:
                 results_text += f"   Contenu: {result['snippet']}\n"
 
                 if i <= 3:
-                    page_content = scrape_page_content(result['url'], max_chars=2500)
+                    page_content = scrape_page_content(
+                        result['url'], max_chars=2500)
                     if page_content:
                         results_text += f"   📄 Contenu détaillé: {page_content}...\n"
 
@@ -1072,17 +1228,17 @@ RÉSULTATS DÉTAILLÉS:
         results = search_youtube_comprehensive(query, max_results=10)
 
         if results:
-            for i, result in enumerate(results, 1):
-                results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
-                results_text += f"   Titre: {result['title']}\n"
-                results_text += f"   URL: {result['url']}\n"
-                results_text += f"   Chaîne: {result['channel']}\n"
-                results_text += f"   Date de publication: {result['published']}\n"
-                results_text += f"   Année: {result.get('published_year', 'N/A')}\n"
-                results_text += f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n" if isinstance(result.get('view_count'), int) else f"   📊 Vues: {result.get('view_count', 'N/A')}\n"
-                results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
-                results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
-                results_text += f"   Description: {result['description'][:500]}...\n"
+                for i, result in enumerate(results, 1):
+                    results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
+                    results_text += f"   Titre: {result['title']}\n"
+                    results_text += f"   URL: {result['url']}\n"
+                    results_text += f"   Chaîne: {result['channel']}\n"
+                    results_text += f"   Date de publication: {result['published']}\n"
+                    results_text += f"   Année: {result.get('published_year', 'N/A')}\n"
+                    results_text += f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n" if isinstance(result.get('view_count'), int) else f"   📊 Vues: {result.get('view_count', 'N/A')}\n"
+                    results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
+                    results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
+                    results_text += f"   Description: {result['description'][:500]}...\n"
 
                 if i <= 2:
                     transcript = get_youtube_transcript(result['video_id'])
@@ -1925,8 +2081,8 @@ with tab2:
             editor_image = Image.open(editor_file).convert("RGBA")
             st.image(editor_image, caption="Original", use_column_width=True)
 
-            with st.spinner("Analyse de l'image..."):
-                # Utiliser la description FUSION (sans afficher les noms des modèles)
+            with st.spinner("Analyse multi-modèle..."):
+                # Utiliser la description FUSION
                 descriptions = generate_comprehensive_description(
                     editor_image,
                     st.session_state.processor,
@@ -1935,27 +2091,14 @@ with tab2:
                     st.session_state.llava_client
                 )
                 
-                # Afficher seulement la meilleure description
-                best_description = ""
-                if descriptions.get('llama_synthesis') and "Erreur" not in descriptions['llama_synthesis']:
-                    best_description = descriptions['llama_synthesis']
-                elif descriptions.get('llava') and descriptions['llava'] != "Non disponible":
-                    best_description = descriptions['llava']
-                else:
-                    best_description = descriptions.get('blip', 'N/A')
+                st.write("**🔍 BLIP:**", descriptions.get('blip', 'N/A'))
                 
-                st.write("**Description:**", best_description[:300] + "..." if len(best_description) > 300 else best_description)
-                
-                # Option pour voir les détails techniques (masqué par défaut)
-                with st.expander("🔧 Voir détails techniques d'analyse"):
-                    st.caption("**Analyse rapide:**")
-                    st.caption(descriptions.get('blip', 'N/A'))
+                with st.expander("📊 Voir analyse complète"):
+                    st.write("**👁️ LLaVA-OneVision:**")
+                    st.write(descriptions.get('llava', 'N/A'))
                     
-                    st.caption("\n**Analyse détaillée:**")
-                    st.caption(descriptions.get('llava', 'N/A')[:500])
-                    
-                    st.caption("\n**Synthèse enrichie:**")
-                    st.caption(descriptions.get('llama_synthesis', 'N/A')[:500])
+                    st.write("\n**🤖 Synthèse LLaMA:**")
+                    st.write(descriptions.get('llama_synthesis', 'N/A'))
 
     with col2:
         st.subheader("Instructions d'édition")
@@ -2045,11 +2188,13 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
     msg_type = "text"
 
     if uploaded_file:
-        with st.spinner("Analyse rapide de l'image..."):
+        with st.spinner("Analyse de l'image..."):
             image = Image.open(uploaded_file)
             image_data = image_to_base64(image)
             
-            # Analyse RAPIDE et OPTIMISÉE
+            # Utiliser la fonction de description FUSION (3 modèles)
+            st.info("🚀 Analyse multi-modèle en cours (BLIP + LLaVA + LLaMA)...")
+            
             descriptions = generate_comprehensive_description(
                 image,
                 st.session_state.processor,
@@ -2058,12 +2203,20 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
                 st.session_state.llava_client
             )
             
-            # Afficher un aperçu court
-            preview = descriptions.get('final', descriptions.get('blip', 'N/A'))
-            if len(preview) > 120:
-                preview = preview[:120] + "..."
+            # Afficher les 3 descriptions dans des colonnes
+            col1, col2, col3 = st.columns(3)
             
-            st.success(f"✅ {preview}")
+            with col1:
+                st.info("**BLIP**")
+                st.caption(descriptions.get('blip', 'N/A')[:100] + "...")
+            
+            with col2:
+                st.info("**LLaVA-OneVision**")
+                st.caption(descriptions.get('llava', 'N/A')[:100] + "...")
+            
+            with col3:
+                st.info("**Synthèse LLaMA**")
+                st.caption(descriptions.get('llama_synthesis', 'N/A')[:100] + "...")
             
             # Formater pour le prompt
             message_content = format_image_analysis_for_prompt(descriptions)
@@ -2072,6 +2225,7 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
                 message_content += f"\n\nQuestion utilisateur: {user_input.strip()}"
             
             msg_type = "image"
+            time.sleep(0.5)
 
     if message_content:
         add_message(conv_id, "user", message_content, msg_type, image_data)
@@ -2386,3 +2540,5 @@ with st.expander("⚙️ Configuration APIs & Tests Multi-Années"):
 
 # Cleanup
 cleanup_temp_files()
+
+ 
