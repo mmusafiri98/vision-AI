@@ -456,76 +456,50 @@ def generate_llava_description(image, llava_client, custom_prompt="Describe this
 
 def generate_comprehensive_description(image, blip_processor, blip_model, llama_client, llava_client):
     """
-    Génère une description complète en combinant 3 modèles (de manière silencieuse)
-    Les noms des modèles ne sont jamais exposés à l'utilisateur final
+    Génère une description RAPIDE en utilisant les modèles de manière optimisée
+    Priorité: vitesse > détails exhaustifs
     """
     descriptions = {}
     
-    # 1. Première analyse (rapide)
+    # 1. BLIP uniquement (le plus rapide) - TOUJOURS exécuté
     try:
         blip_desc = generate_caption(image, blip_processor, blip_model)
         descriptions['blip'] = blip_desc
     except Exception as e:
-        descriptions['blip'] = ""
+        descriptions['blip'] = "Image analysis unavailable"
     
-    # 2. Analyse détaillée
-    try:
-        llava_desc = generate_llava_description(
-            image, 
-            llava_client,
-            "Describe this image in great detail. Include: objects, people, colors, composition, mood, and any text visible."
-        )
-        descriptions['llava'] = llava_desc or ""
-    except Exception as e:
-        descriptions['llava'] = ""
+    # 2. LLaVA OU LLaMA (pas les deux) - choix stratégique
+    # Si LLaVA disponible, on l'utilise directement (évite double traitement)
+    if llava_client:
+        try:
+            llava_desc = generate_llava_description(
+                image, 
+                llava_client,
+                "Describe this image concisely (max 100 words). Focus on: main subjects, colors, composition."
+            )
+            if llava_desc and len(llava_desc) > 20:
+                descriptions['final'] = llava_desc
+                return descriptions
+        except:
+            pass
     
-    # 3. Synthèse enrichie (sans mentionner les sources)
-    try:
-        fusion_prompt = f"""Analyse ces observations sur une image et crée UNE SEULE description naturelle et fluide:
-
-Observation 1: {descriptions['blip']}
-
-Observation 2: {descriptions['llava']}
-
-Crée une description unifiée qui:
-1. Combine toutes les informations disponibles
-2. Est naturelle et fluide à lire
-3. Ne mentionne JAMAIS les sources ou méthodes d'analyse
-4. Décrit précisément tous les éléments visuels
-5. Mentionne les couleurs, la composition, l'ambiance
-6. Est concise mais complète (150-200 mots maximum)
-
-Description:"""
-
-        llama_synthesis = get_ai_response(fusion_prompt) if llama_client else ""
-        descriptions['llama_synthesis'] = llama_synthesis
-        
-    except Exception as e:
-        descriptions['llama_synthesis'] = ""
+    # 3. Fallback: utiliser seulement BLIP (très rapide)
+    descriptions['final'] = descriptions['blip']
     
     return descriptions
 
 def format_image_analysis_for_prompt(descriptions):
-    """Formate l'analyse multi-modèle pour le prompt Vision AI SANS mentionner les noms des modèles"""
+    """Formate l'analyse pour le prompt Vision AI de manière optimisée"""
     
-    # Créer une description unifiée sans mentionner les sources
-    unified_description = ""
-    
-    # Utiliser la synthèse LLaMA comme description principale (la plus naturelle)
-    if descriptions.get('llama_synthesis') and descriptions['llama_synthesis'] != "LLaMA non disponible":
-        unified_description = descriptions['llama_synthesis']
-    elif descriptions.get('llava') and descriptions['llava'] != "Non disponible":
-        unified_description = descriptions['llava']
-    elif descriptions.get('blip'):
-        unified_description = descriptions['blip']
+    # Utiliser la description finale (déjà optimisée)
+    final_desc = descriptions.get('final', descriptions.get('blip', 'Image non analysée'))
     
     analysis_text = f"""[IMAGE] 📸 ANALYSE D'IMAGE
 
-{unified_description}
+{final_desc}
 
 ==========================================
-Cette image a été analysée en profondeur pour garantir une compréhension complète.
-Utilisez ces informations pour répondre aux questions de l'utilisateur.
+Utilisez cette description pour répondre aux questions sur l'image.
 ==========================================
 """
     
@@ -1098,17 +1072,17 @@ RÉSULTATS DÉTAILLÉS:
         results = search_youtube_comprehensive(query, max_results=10)
 
         if results:
-                for i, result in enumerate(results, 1):
-                    results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
-                    results_text += f"   Titre: {result['title']}\n"
-                    results_text += f"   URL: {result['url']}\n"
-                    results_text += f"   Chaîne: {result['channel']}\n"
-                    results_text += f"   Date de publication: {result['published']}\n"
-                    results_text += f"   Année: {result.get('published_year', 'N/A')}\n"
-                    results_text += f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n" if isinstance(result.get('view_count'), int) else f"   📊 Vues: {result.get('view_count', 'N/A')}\n"
-                    results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
-                    results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
-                    results_text += f"   Description: {result['description'][:500]}...\n"
+                            for i, result in enumerate(results, 1):
+                results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
+                results_text += f"   Titre: {result['title']}\n"
+                results_text += f"   URL: {result['url']}\n"
+                results_text += f"   Chaîne: {result['channel']}\n"
+                results_text += f"   Date de publication: {result['published']}\n"
+                results_text += f"   Année: {result.get('published_year', 'N/A')}\n"
+                results_text += f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n" if isinstance(result.get('view_count'), int) else f"   📊 Vues: {result.get('view_count', 'N/A')}\n"
+                results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
+                results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
+                results_text += f"   Description: {result['description'][:500]}...\n"
 
                 if i <= 2:
                     transcript = get_youtube_transcript(result['video_id'])
@@ -2071,11 +2045,11 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
     msg_type = "text"
 
     if uploaded_file:
-        with st.spinner("Analyse de l'image en cours..."):
+        with st.spinner("Analyse rapide de l'image..."):
             image = Image.open(uploaded_file)
             image_data = image_to_base64(image)
             
-            # Utiliser la fonction de description FUSION (3 modèles) - silencieusement
+            # Analyse RAPIDE et OPTIMISÉE
             descriptions = generate_comprehensive_description(
                 image,
                 st.session_state.processor,
@@ -2084,25 +2058,20 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
                 st.session_state.llava_client
             )
             
-            # Afficher seulement un aperçu unifié (sans noms de modèles)
-            preview_text = ""
-            if descriptions.get('llama_synthesis') and "Erreur" not in descriptions['llama_synthesis']:
-                preview_text = descriptions['llama_synthesis'][:150] + "..."
-            elif descriptions.get('llava') and descriptions['llava'] != "Non disponible":
-                preview_text = descriptions['llava'][:150] + "..."
-            else:
-                preview_text = descriptions.get('blip', 'N/A')[:150] + "..."
+            # Afficher un aperçu court
+            preview = descriptions.get('final', descriptions.get('blip', 'N/A'))
+            if len(preview) > 120:
+                preview = preview[:120] + "..."
             
-            st.success(f"✅ Image analysée: {preview_text}")
+            st.success(f"✅ {preview}")
             
-            # Formater pour le prompt (sans mentionner les modèles)
+            # Formater pour le prompt
             message_content = format_image_analysis_for_prompt(descriptions)
 
             if user_input.strip():
                 message_content += f"\n\nQuestion utilisateur: {user_input.strip()}"
             
             msg_type = "image"
-            time.sleep(0.5)
 
     if message_content:
         add_message(conv_id, "user", message_content, msg_type, image_data)
