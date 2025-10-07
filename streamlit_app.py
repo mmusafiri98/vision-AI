@@ -1098,7 +1098,7 @@ RÉSULTATS DÉTAILLÉS:
         results = search_youtube_comprehensive(query, max_results=10)
 
         if results:
-                            for i, result in enumerate(results, 1):
+                for i, result in enumerate(results, 1):
                 results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
