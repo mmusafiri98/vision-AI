@@ -1747,6 +1747,14 @@ if "messages_memory" not in st.session_state:
 if "processor" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
 
+if "llava_client" not in st.session_state:
+    try:
+        st.session_state.llava_client = load_llava_onevision()
+        if st.session_state.llava_client:
+            st.success("✅ LLaVA-OneVision chargé avec succès!")
+    except:
+        st.session_state.llava_client = None
+
 if "llama_client" not in st.session_state:
     try:
         st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
@@ -1948,9 +1956,24 @@ with tab2:
             editor_image = Image.open(editor_file).convert("RGBA")
             st.image(editor_image, caption="Original", use_column_width=True)
 
-            with st.spinner("Analyse..."):
-                original_desc = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
-                st.write(f"**Description:** {original_desc}")
+            with st.spinner("Analyse multi-modèle..."):
+                # Utiliser la description FUSION
+                descriptions = generate_comprehensive_description(
+                    editor_image,
+                    st.session_state.processor,
+                    st.session_state.model,
+                    st.session_state.llama_client,
+                    st.session_state.llava_client
+                )
+                
+                st.write("**🔍 BLIP:**", descriptions.get('blip', 'N/A'))
+                
+                with st.expander("📊 Voir analyse complète"):
+                    st.write("**👁️ LLaVA-OneVision:**")
+                    st.write(descriptions.get('llava', 'N/A'))
+                    
+                    st.write("\n**🤖 Synthèse LLaMA:**")
+                    st.write(descriptions.get('llama_synthesis', 'N/A'))
 
     with col2:
         st.subheader("Instructions d'édition")
@@ -2043,11 +2066,39 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
         with st.spinner("Analyse de l'image..."):
             image = Image.open(uploaded_file)
             image_data = image_to_base64(image)
-            caption = generate_caption(image, st.session_state.processor, st.session_state.model)
-            message_content = f"[IMAGE] {caption}"
+            
+            # Utiliser la fonction de description FUSION (3 modèles)
+            st.info("🚀 Analyse multi-modèle en cours (BLIP + LLaVA + LLaMA)...")
+            
+            descriptions = generate_comprehensive_description(
+                image,
+                st.session_state.processor,
+                st.session_state.model,
+                st.session_state.llama_client,
+                st.session_state.llava_client
+            )
+            
+            # Afficher les 3 descriptions dans des colonnes
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.info("**BLIP**")
+                st.caption(descriptions.get('blip', 'N/A')[:100] + "...")
+            
+            with col2:
+                st.info("**LLaVA-OneVision**")
+                st.caption(descriptions.get('llava', 'N/A')[:100] + "...")
+            
+            with col3:
+                st.info("**Synthèse LLaMA**")
+                st.caption(descriptions.get('llama_synthesis', 'N/A')[:100] + "...")
+            
+            # Formater pour le prompt
+            message_content = format_image_analysis_for_prompt(descriptions)
 
             if user_input.strip():
-                message_content += f"\n\nQuestion: {user_input.strip()}"
+                message_content += f"\n\nQuestion utilisateur: {user_input.strip()}"
+            
             msg_type = "image"
             time.sleep(0.5)
 
@@ -2149,10 +2200,12 @@ st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.write("**Vision AI:**")
-    st.write("- Analyse intelligente")
-    st.write("- Édition avec Qwen")
-    st.write("- Mémoire des éditions")
+    st.write("**Vision AI - Analyse Images:**")
+    st.write("- 🔍 BLIP (rapide)")
+    st.write("- 👁️ LLaVA-OneVision (détaillé)")
+    st.write("- 🤖 LLaMA (synthèse)")
+    st.write("- ✏️ Édition avec Qwen")
+    st.write("- 💾 Mémoire des éditions")
 
 with col2:
     st.write("**Chat:**")
@@ -2171,6 +2224,10 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.write("**Fonctionnalités AMÉLIORÉES:**")
+    st.write("✅ **3 Modèles** de description d'images")
+    st.write("   • BLIP (rapide, précis)")
+    st.write("   • LLaVA-OneVision (détails visuels)")
+    st.write("   • LLaMA (synthèse enrichie)")
     st.write("✅ Recherche MULTI-ANNÉES complète")
     st.write("✅ YouTube: vues, likes, commentaires")
     st.write("✅ Données historiques (1990-2025+)")
@@ -2324,6 +2381,12 @@ with st.expander("⚙️ Configuration APIs & Tests Multi-Années"):
             st.error("❌ Supabase KO")
     else:
         st.error("❌ Supabase non initialisé")
+    
+    # LLaVA-OneVision
+    if st.session_state.llava_client:
+        st.success("✅ LLaVA-OneVision OK")
+    else:
+        st.error("❌ LLaVA-OneVision KO")
     
     # LLaMA
     if st.session_state.llama_client:
