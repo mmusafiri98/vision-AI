@@ -1105,7 +1105,7 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
         result = client.predict(
             input_image=handle_file(temp_path),
             prompt=prompt_message,
-            api_name="/global_edit"
+            #api_name="/global_edit"
         )
         if result and isinstance(result, (list, tuple)) and len(result) >= 2:
             result_path = result[0]
