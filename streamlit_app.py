@@ -349,7 +349,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
         st.write("[DEBUG] Insert response:", response.data)
         return bool(response.data)
     except Exception as e:
-        st.error("[DEBUG] Exception in add_message:", e)
+        st.error("[DEBUG] Exception in add_message: " + str(e))
         return False
 
 # -------------------------
@@ -999,7 +999,7 @@ def detect_search_intent(user_message):
     search_keywords = [
         'recherche', 'cherche', 'trouve', 'informations sur', 'info sur',
         'actualité', 'news', 'dernières nouvelles', 'quoi de neuf',
-        'what is', 'who is', 'définition', 'expliquer', 'c\'est quoi',
+        'what is', 'who is', 'définition', 'expliquer', "c'est quoi",
         'météo', 'weather', 'actualités sur', 'information récente',
         'video', 'vidéo', 'youtube', 'regarder', 'montre', 'voir',
         'dernières infos', 'parle moi de', 'dis moi sur', 'connais tu',
@@ -1007,11 +1007,11 @@ def detect_search_intent(user_message):
     ]
     news_keywords = [
         'actualité', 'news', 'nouvelles', 'dernières nouvelles',
-        'quoi de neuf', 'info du jour', 'breaking', 'flash', 'aujourd\'hui'
+        'quoi de neuf', 'info du jour', 'breaking', 'flash', "aujourd'hui"
     ]
     wiki_keywords = [
-        'définition', 'c\'est quoi', 'qui est', 'what is', 'who is',
-        'expliquer', 'wikipedia', 'définir', 'qu\'est-ce que'
+        'définition', "c'est quoi", 'qui est', 'what is', 'who is',
+        'expliquer', 'wikipedia', 'définir', "qu'est-ce que"
     ]
     youtube_keywords = [
         'video', 'vidéo', 'youtube', 'regarde', 'montre moi',
@@ -1039,12 +1039,12 @@ def detect_search_intent(user_message):
 def detect_datetime_intent(user_message):
     """Détecte si l'utilisateur demande la date/heure"""
     datetime_keywords = [
-        'quelle heure', 'quel jour', 'quelle date', 'aujourd\'hui',
+        'quelle heure', 'quel jour', 'quelle date', "aujourd'hui",
         'maintenant', 'heure actuelle', 'date actuelle', 'quel mois',
         'quelle année', 'what time', 'what date', 'current time',
         'current date', 'today', 'now', 'heure', 'date', 'jour',
-        'sommes-nous', 'est-il', 'c\'est quel jour', 'on est quel jour',
-        'quelle est la date', 'quelle est l\'heure', 'il est quelle heure'
+        'sommes-nous', 'est-il', "c'est quel jour", "on est quel jour",
+        "quelle est la date", "quelle est l'heure", "il est quelle heure"
     ]
     message_lower = user_message.lower()
     return any(keyword in message_lower for keyword in datetime_keywords)
@@ -1834,7 +1834,7 @@ with col1:
     st.write("✅ Données historiques (1990-2025+)")
     st.write("✅ Scraping avancé de pages web")
     st.write("✅ DuckDuckGo (GRATUIT, illimité)")
-
+    
 with col2:
     st.write("**Sources disponibles:**")
     st.write("- Google Custom Search")
@@ -1842,7 +1842,7 @@ with col2:
     st.write("- YouTube Data API v3 + Stats")
     st.write("- Wikipedia FR/EN")
     st.write("- Google News RSS")
-
+    
 # -------------------------
 # Statistiques Sidebar
 # -------------------------
