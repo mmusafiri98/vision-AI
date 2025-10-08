@@ -223,33 +223,30 @@ def verify_user(email, password):
         return None
     except:
         return None
-
 def create_user(email, password, name, role="user"):
     if not supabase:
         return False
     try:
-        try:
-            response = supabase.auth.admin.create_user({
+        # Créer l'utilisateur dans la partie authentification
+        auth_response = supabase.auth.sign_up({"email": email, "password": password, "options": {"data": {"name": name, "role": role}}})
+        if auth_response.user:
+            # Insérer éventuellement dans la table "users" pour d'autres informations
+            user_data = {
+                "id": auth_response.user.id,
                 "email": email,
                 "password": password,
-                "email_confirm": True,
-                "user_metadata": {"name": name, "role": role}
-            })
-            return response.user is not None
-        except:
-            pass
-        user_data = {
-            "id": str(uuid.uuid4()),
-            "email": email,
-            "password": password,
-            "name": name,
-            "role": role,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        response = supabase.table("users").insert(user_data).execute()
-        return bool(response.data)
-    except:
+                "name": name,
+                "role": role,
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            response = supabase.table("users").insert(user_data).execute()
+            return bool(response.data)
         return False
+    except Exception as e:
+        st.error(f"Erreur lors de la création de compte: {e}")
+
+
+
 
 def get_conversations(user_id):
     if not supabase or not user_id:
