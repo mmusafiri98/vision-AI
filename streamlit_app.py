@@ -334,6 +334,7 @@ def add_message(conversation_id, sender, content, msg_type="text", image_data=No
             st.error(f"[DEBUG] No conversation found with conversation_id: {conversation_id}")
             return False
         message_data = {
+            "id": str(uuid.uuid4()),  # Ajout de l'ID
             "conversation_id": conversation_id,
             "sender": str(sender).strip(),
             "content": str(content).strip(),
