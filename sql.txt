@@ -26,6 +26,11 @@ CREATE TABLE public.password_resets (
 -- Créer un index pour optimiser les recherches
 CREATE INDEX idx_password_resets_email_token ON public.password_resets(email, reset_token);
 CREATE INDEX idx_password_resets_expires ON public.password_resets(expires_at);
+-- Ajouter les colonnes manquantes à la table user_quiz
+ALTER TABLE user_quiz 
+ADD COLUMN accent VARCHAR(50) AFTER skills,
+ADD COLUMN days INT AFTER accent,
+ADD COLUMN minutes INT AFTER days;
 
 -- Activer RLS (Row Level Security)
 ALTER TABLE public.password_resets ENABLE ROW LEVEL SECURITY;
