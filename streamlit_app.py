@@ -223,6 +223,7 @@ def verify_user(email, password):
         return None
     except:
         return None
+
 def create_user(email, password, name, role="user"):
     if not supabase:
         return False
@@ -244,9 +245,7 @@ def create_user(email, password, name, role="user"):
         return False
     except Exception as e:
         st.error(f"Erreur lors de la création de compte: {e}")
-
-
-
+        return False
 
 def get_conversations(user_id):
     if not supabase or not user_id:
@@ -434,6 +433,7 @@ def generate_comprehensive_description(image, blip_processor, blip_model, llama_
         descriptions['blip'] = blip_desc
     except Exception as e:
         descriptions['blip'] = "Image analysis unavailable"
+    
     if llava_client:
         try:
             llava_desc = generate_llava_description(
@@ -446,6 +446,7 @@ def generate_comprehensive_description(image, blip_processor, blip_model, llama_
                 return descriptions
         except:
             pass
+    
     descriptions['final'] = descriptions['blip']
     return descriptions
 
@@ -507,6 +508,7 @@ Timezone: {dt_info['timezone']}
 # -------------------------
 # RECHERCHE WEB MULTI-ANNÉES AMÉLIORÉE
 # -------------------------
+
 def extract_number(text):
     """Extrait les nombres d'un texte (pour vues, likes, etc.)"""
     if not text:
@@ -650,10 +652,12 @@ def get_youtube_comments(video_id, max_comments=20):
 def search_youtube_comprehensive(query, max_results=10, year_filter=None):
     """Recherche YouTube COMPLÈTE avec statistiques, commentaires et filtre par année"""
     results = []
+    
     if not year_filter:
         year_match = re.search(r'(20\d{2})', query)
         if year_match:
             year_filter = year_match.group(1)
+    
     if YOUTUBE_API_KEY:
         try:
             url = "https://www.googleapis.com/youtube/v3/search"
@@ -669,6 +673,7 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                 params["publishedAfter"] = f"{year_filter}-01-01T00:00:00Z"
                 if int(year_filter) < datetime.now().year:
                     params["publishedBefore"] = f"{int(year_filter)+1}-01-01T00:00:00Z"
+            
             response = requests.get(url, params=params, timeout=15)
             if response.status_code == 200:
                 data = response.json()
@@ -677,8 +682,10 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                     snippet = item['snippet']
                     stats = get_youtube_video_stats(video_id)
                     comments = get_youtube_comments(video_id, max_comments=5)
+                    
                     published_date = snippet.get('publishedAt', '')
                     published_year = published_date[:4] if published_date else 'N/A'
+                    
                     result = {
                         'title': snippet.get('title', ''),
                         'video_id': video_id,
@@ -694,6 +701,7 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                         'comment_count': 0,
                         'comments': comments
                     }
+                    
                     if stats:
                         result.update({
                             'view_count': stats['view_count'],
@@ -701,16 +709,21 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                             'comment_count': stats['comment_count'],
                             'duration': stats['duration']
                         })
+                    
                     results.append(result)
+                
                 if results:
                     return results
         except Exception as e:
             st.warning(f"YouTube API error: {e}")
+    
+    # Fallback to Google search
     try:
         if year_filter:
             search_query = f"{query} {year_filter} site:youtube.com"
         else:
             search_query = f"{query} site:youtube.com"
+        
         google_results = search_google(search_query, max_results=max_results)
         for item in google_results:
             if 'youtube.com/watch?v=' in item['url']:
@@ -719,6 +732,7 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                     video_id = video_id_match.group(1)
                     stats = get_youtube_video_stats(video_id) if YOUTUBE_API_KEY else None
                     comments = get_youtube_comments(video_id, max_comments=5) if YOUTUBE_API_KEY else []
+                    
                     result = {
                         'title': item['title'],
                         'video_id': video_id,
@@ -735,20 +749,25 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                         'comments': comments
                     }
                     results.append(result)
+        
         if results:
             return results
     except Exception as e:
         st.warning(f"Google YouTube search error: {e}")
+    
+    # Final fallback to YouTube scraping
     try:
         if year_filter:
             search_query_youtube = f"{query} {year_filter}"
         else:
             search_query_youtube = query
+            
         search_url = f"https://www.youtube.com/results?search_query={requests.utils.quote(search_query_youtube)}&sp=CAI%253D"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         response = requests.get(search_url, headers=headers, timeout=15)
+        
         if response.status_code == 200:
             start_marker = 'var ytInitialData = '
             end_marker = ';</script>'
@@ -759,7 +778,9 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                 if end_idx != -1:
                     json_str = response.text[start_idx:end_idx]
                     data = json.loads(json_str)
+                    
                     contents = data.get('contents', {}).get('twoColumnSearchResultsRenderer', {}).get('primaryContents', {}).get('sectionListRenderer', {}).get('contents', [])
+                    
                     for content in contents:
                         items = content.get('itemSectionRenderer', {}).get('contents', [])
                         for item in items[:max_results]:
@@ -769,6 +790,7 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                                 view_text = video_renderer.get('viewCountText', {}).get('simpleText', '0')
                                 view_count = extract_number(view_text)
                                 published_text = video_renderer.get('publishedTimeText', {}).get('simpleText', 'N/A')
+                                
                                 result = {
                                     'title': video_renderer.get('title', {}).get('runs', [{}])[0].get('text', ''),
                                     'video_id': video_id,
@@ -784,10 +806,12 @@ def search_youtube_comprehensive(query, max_results=10, year_filter=None):
                                     'comment_count': 'N/A',
                                     'comments': []
                                 }
+                                
                                 if video_id and result['title']:
                                     results.append(result)
     except Exception as e:
         st.warning(f"YouTube scraping error: {e}")
+    
     return results
 
 def get_youtube_transcript(video_id):
@@ -815,16 +839,23 @@ def scrape_page_content(url, max_chars=4000):
         response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Supprimer les scripts, styles et autres éléments indésirables
             for script in soup(["script", "style", "nav", "header", "footer", "aside", "form", "button"]):
                 script.decompose()
+            
+            # Essayer de trouver le contenu principal
             main_content = soup.find('main') or soup.find('article') or soup.find('div', class_=['content', 'main', 'article'])
             if main_content:
                 text = main_content.get_text()
             else:
                 text = soup.get_text()
+            
+            # Nettoyer le texte
             lines = (line.strip() for line in text.splitlines())
             chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
             text = ' '.join(chunk for chunk in chunks if chunk)
+            
             return text[:max_chars]
         return None
     except Exception as e:
@@ -834,6 +865,7 @@ def search_wikipedia(query):
     """Recherche sur Wikipedia multilingue"""
     results = []
     languages = ['fr', 'en']
+    
     for lang in languages:
         try:
             wiki_url = f"https://{lang}.wikipedia.org/w/api.php"
@@ -859,6 +891,7 @@ def search_wikipedia(query):
                     })
         except:
             continue
+    
     return results
 
 def search_news(query):
@@ -866,15 +899,18 @@ def search_news(query):
     try:
         news_url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=fr&gl=FR&ceid=FR:fr"
         response = requests.get(news_url, timeout=10)
+        
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'xml')
             items = soup.find_all('item')[:10]
             results = []
+            
             for item in items:
                 title = item.find('title')
                 link = item.find('link')
                 pub_date = item.find('pubDate')
                 description = item.find('description')
+                
                 if title and link:
                     results.append({
                         'title': title.text,
@@ -882,6 +918,7 @@ def search_news(query):
                         'date': pub_date.text if pub_date else 'N/A',
                         'snippet': description.text if description else ''
                     })
+            
             return results
         return []
     except Exception as e:
@@ -903,6 +940,7 @@ Période couverte: TOUTES LES ANNÉES disponibles sur Internet (1990-2025 et au-
 
 RÉSULTATS DÉTAILLÉS:
 """
+    
     if search_type == "google":
         results = search_google(query, max_results=15)
         if results:
@@ -913,42 +951,48 @@ RÉSULTATS DÉTAILLÉS:
                 results_text += f"   URL: {result['url']}\n"
                 results_text += f"   Année: {result.get('year', 'Non spécifiée')}\n"
                 results_text += f"   Contenu: {result['snippet']}\n"
-                if i <= 3:
+                
+                if i <= 3:  # Scraper le contenu des 3 premiers résultats
                     page_content = scrape_page_content(result['url'], max_chars=2500)
                     if page_content:
                         results_text += f"   📄 Contenu détaillé: {page_content}...\n"
                 results_text += f"   ---\n"
         else:
             results_text += "\n❌ Aucun résultat trouvé.\n"
+    
     elif search_type == "youtube":
         results = search_youtube_comprehensive(query, max_results=10)
         if results:
-                for i, result in enumerate(results, 1):
-                    results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
-                    results_text += f"   Titre: {result['title']}\n"
-                    results_text += f"   URL: {result['url']}\n"
-                    results_text += f"   Chaîne: {result['channel']}\n"
-                    results_text += f"   Date de publication: {result['published']}\n"
-                    results_text += f"   Année: {result.get('published_year', 'N/A')}\n"
-                    results_text += (f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n" 
-                                     if isinstance(result.get('view_count'), int) 
-                                     else f"   📊 Vues: {result.get('view_count', 'N/A')}\n")
-                    results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
-                    results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
-                    results_text += f"   Description: {result['description'][:500]}...\n"
-                if i <= 2:
+            for i, result in enumerate(results, 1):
+                results_text += f"\n🎥 VIDÉO #{i} ({result.get('source', 'YouTube')}):\n"
+                results_text += f"   Titre: {result['title']}\n"
+                results_text += f"   URL: {result['url']}\n"
+                results_text += f"   Chaîne: {result['channel']}\n"
+                results_text += f"   Date de publication: {result['published']}\n"
+                results_text += f"   Année: {result.get('published_year', 'N/A')}\n"
+                results_text += (f"   📊 Vues: {result.get('view_count', 'N/A'):,}\n" 
+                                 if isinstance(result.get('view_count'), int) 
+                                 else f"   📊 Vues: {result.get('view_count', 'N/A')}\n")
+                results_text += f"   👍 Likes: {result.get('like_count', 'N/A')}\n"
+                results_text += f"   💬 Commentaires: {result.get('comment_count', 'N/A')}\n"
+                results_text += f"   Description: {result['description'][:500]}...\n"
+                
+                if i <= 2:  # Transcription pour les 2 premières vidéos
                     transcript = get_youtube_transcript(result['video_id'])
                     if transcript:
                         results_text += f"   📝 Transcription: {transcript[:1000]}...\n"
+                
                 comments = result.get('comments', [])
                 if comments:
                     results_text += f"\n   💬 COMMENTAIRES POPULAIRES:\n"
                     for j, comment in enumerate(comments[:3], 1):
                         results_text += f"      {j}. {comment['author']}: {comment['text'][:200]}...\n"
                         results_text += f"         👍 {comment['likes']} likes\n"
+                
                 results_text += f"   ---\n"
         else:
             results_text += "\n❌ Aucune vidéo trouvée.\n"
+    
     elif search_type == "wikipedia":
         results = search_wikipedia(query)
         if results:
@@ -957,12 +1001,16 @@ RÉSULTATS DÉTAILLÉS:
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   URL: {result['url']}\n"
                 results_text += f"   Extrait: {result['snippet']}\n"
+                
+                # Contenu complet de la page Wikipedia
                 page_content = scrape_page_content(result['url'], max_chars=2500)
                 if page_content:
                     results_text += f"   📖 Contenu complet: {page_content}...\n"
+                
                 results_text += f"   ---\n"
         else:
             results_text += "\n❌ Aucun article trouvé.\n"
+    
     elif search_type == "news":
         results = search_news(query)
         if results:
@@ -971,13 +1019,16 @@ RÉSULTATS DÉTAILLÉS:
                 results_text += f"   Titre: {result['title']}\n"
                 results_text += f"   Date: {result['date']}\n"
                 results_text += f"   URL: {result['url']}\n"
-                if i <= 3:
+                
+                if i <= 3:  # Scraper le contenu des 3 premiers articles
                     page_content = scrape_page_content(result['url'], max_chars=2000)
                     if page_content:
                         results_text += f"   📄 Article: {page_content}...\n"
+                
                 results_text += f"   ---\n"
         else:
             results_text += "\n❌ Aucune actualité trouvée.\n"
+    
     results_text += """
 ==========================================
 ⚠️ RAPPEL CRITIQUE - DONNÉES MULTI-ANNÉES:
@@ -989,11 +1040,14 @@ RÉSULTATS DÉTAILLÉS:
 - Si aucun résultat, dites-le clairement
 ==========================================
 """
+    
     return results_text
 
 def detect_search_intent(user_message):
     """Détecte le type de recherche nécessaire"""
     message_lower = user_message.lower()
+    
+    # Mots-clés qui indiquent un besoin de recherche
     search_keywords = [
         'recherche', 'cherche', 'trouve', 'informations sur', 'info sur',
         'actualité', 'news', 'dernières nouvelles', 'quoi de neuf',
@@ -1003,28 +1057,38 @@ def detect_search_intent(user_message):
         'dernières infos', 'parle moi de', 'dis moi sur', 'connais tu',
         'combien de vues', 'statistiques', 'nombre de', 'comments'
     ]
+    
     news_keywords = [
         'actualité', 'news', 'nouvelles', 'dernières nouvelles',
         'quoi de neuf', 'info du jour', 'breaking', 'flash', "aujourd'hui"
     ]
+    
     wiki_keywords = [
         'définition', "c'est quoi", 'qui est', 'what is', 'who is',
         'expliquer', 'wikipedia', 'définir', "qu'est-ce que"
     ]
+    
     youtube_keywords = [
         'video', 'vidéo', 'youtube', 'regarde', 'montre moi',
         'voir video', 'regarder', 'visionner', 'film', 'clip',
         'vues', 'likes', 'commentaires', 'abonnés', 'chaîne'
     ]
+    
+    # Vérifier si recherche est nécessaire
     needs_search = any(keyword in message_lower for keyword in search_keywords)
+    
+    # Également rechercher si mention d'années spécifiques ou d'actualité
     if not needs_search:
         recent_indicators = ['2024', '2025', '2023', '2022', '2021', '2020',
                            'récent', 'dernier', 'nouveau', 'latest', 'ancien',
                            'historique', 'depuis', 'année']
         if any(indicator in message_lower for indicator in recent_indicators):
             needs_search = True
+    
     if not needs_search:
         return None, None
+    
+    # Déterminer le type de recherche
     if any(keyword in message_lower for keyword in youtube_keywords):
         return "youtube", user_message
     elif any(keyword in message_lower for keyword in news_keywords):
@@ -1055,9 +1119,9 @@ def get_ai_response(query):
     if not st.session_state.get('llama_client'):
         return "Vision AI non disponible."
     try:
+        # CORRECTION: Retirer le paramètre max_tokens qui cause l'erreur
         resp = st.session_state.llama_client.predict(
             message=query,
-            max_tokens=8192,
             temperature=0.7,
             top_p=0.95,
             api_name="/chat"
@@ -1098,29 +1162,39 @@ def edit_image_with_qwen(image: Image.Image, edit_instruction: str = ""):
     client = st.session_state.get("qwen_client")
     if not client:
         return None, "Client Qwen non disponible."
+    
     try:
         temp_path = os.path.join(TMP_DIR, f"input_{uuid.uuid4().hex}.png")
         image.save(temp_path)
+        
         prompt_message = edit_instruction if edit_instruction.strip() else "enhance and improve the image"
+        
         result = client.predict(
             input_image=handle_file(temp_path),
             prompt=prompt_message,
            	api_name="/edit_image_interface"
         )
+        
         if result and isinstance(result, (list, tuple)) and len(result) >= 2:
             result_path = result[0]
             status_message = result[1]
+            
             if isinstance(result_path, str) and os.path.exists(result_path):
                 edited_img = Image.open(result_path).convert("RGBA")
                 final_path = os.path.join(EDITED_IMAGES_DIR, f"edited_{uuid.uuid4().hex}.png")
                 edited_img.save(final_path)
+                
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
+                
                 edit_msg = f"Image éditée avec succès - {status_message}"
                 if edit_instruction:
                     edit_msg += f" (instruction: {edit_instruction})"
+                
                 return edited_img, edit_msg
+        
         return None, "Erreur traitement image"
+        
     except Exception as e:
         return None, str(e)
 
@@ -1136,33 +1210,46 @@ def create_edit_context(original_caption, edit_instruction, edited_caption, succ
 def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_id: str):
     progress_bar = st.progress(0)
     status_text = st.empty()
+    
     try:
         status_text.info("Analyse de l'image originale...")
         progress_bar.progress(20)
         time.sleep(0.5)
+        
         original_caption = generate_caption(image, st.session_state.processor, st.session_state.model)
+        
         status_text.info(f"Édition en cours: '{edit_instruction}'...")
         progress_bar.progress(40)
+        
         edited_img, result_info = edit_image_with_qwen(image, edit_instruction)
+        
         if edited_img:
             status_text.info("Analyse de l'image éditée...")
             progress_bar.progress(70)
             time.sleep(0.5)
+            
             edited_caption = generate_caption(edited_img, st.session_state.processor, st.session_state.model)
+            
             status_text.info("Sauvegarde et finalisation...")
             progress_bar.progress(90)
+            
             edit_context = create_edit_context(original_caption, edit_instruction, edited_caption, result_info)
+            
+            # Affichage côte à côte
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("Image originale")
                 st.image(image, caption="Avant", use_column_width=True)
                 st.write(f"**Description:** {original_caption}")
+            
             with col2:
                 st.subheader("Image éditée")
                 st.image(edited_img, caption=f"Après: {edit_instruction}", use_column_width=True)
                 st.write(f"**Description:** {edited_caption}")
                 st.write(f"**Info technique:** {result_info}")
+            
             st.success("Édition terminée avec succès !")
+            
             response_content = f"""**Édition d'image terminée !**
 
 **Instruction:** {edit_instruction}
@@ -1174,14 +1261,17 @@ def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_i
 **Modifications:** J'ai appliqué "{edit_instruction}". L'image montre maintenant: {edited_caption}
 
 **Info technique:** {result_info}"""
+            
             edited_b64 = image_to_base64(edited_img.convert("RGB"))
             success = add_message(conv_id, "assistant", response_content, "image", edited_b64, None)
+            
             if success:
                 progress_bar.progress(100)
                 status_text.success("Traitement terminé!")
                 time.sleep(1)
                 status_text.empty()
                 progress_bar.empty()
+                
                 st.session_state.messages_memory.append({
                     "message_id": str(uuid.uuid4()),
                     "sender": "assistant",
@@ -1191,6 +1281,8 @@ def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_i
                     "edit_context": str(edit_context),
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
+                
+                # Bouton téléchargement
                 img_buffer = io.BytesIO()
                 edited_img.convert("RGB").save(img_buffer, format="PNG")
                 st.download_button(
@@ -1199,6 +1291,7 @@ def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_i
                     file_name=f"edited_image_{int(time.time())}.png",
                     mime="image/png"
                 )
+                
                 return True
             else:
                 status_text.error("Erreur sauvegarde")
@@ -1208,6 +1301,7 @@ def process_image_edit_request(image: Image.Image, edit_instruction: str, conv_i
             status_text.error(f"Échec édition: {result_info}")
             progress_bar.empty()
             return False
+    
     except Exception as e:
         status_text.error(f"Erreur: {e}")
         progress_bar.empty()
@@ -1223,6 +1317,7 @@ def get_editing_context_from_conversation():
                     edit_ctx = ast.literal_eval(msg["edit_context"])
                 else:
                     edit_ctx = msg["edit_context"]
+                
                 context_info.append(f"""
 Édition précédente:
 - Image originale: {edit_ctx.get('original_description', 'N/A')}
@@ -1231,6 +1326,7 @@ def get_editing_context_from_conversation():
 """)
             except:
                 continue
+    
     return "\n".join(context_info) if context_info else ""
 
 # -------------------------
@@ -1239,10 +1335,12 @@ def get_editing_context_from_conversation():
 
 def show_password_reset():
     st.subheader("Récupération de mot de passe")
+    
     if st.session_state.reset_step == "request":
         with st.form("password_reset_request"):
             reset_email = st.text_input("Adresse email")
             submit_reset = st.form_submit_button("Envoyer le code")
+            
             if submit_reset and reset_email.strip() and supabase:
                 try:
                     user_check = supabase.table("users").select("*").eq("email", reset_email.strip()).execute()
@@ -1260,9 +1358,11 @@ def show_password_reset():
                         st.error("Email introuvable")
                 except Exception as e:
                     st.error(f"Erreur: {e}")
+        
         if st.button("← Retour connexion"):
             st.session_state.reset_step = "request"
             st.rerun()
+    
     elif st.session_state.reset_step == "verify":
         with st.form("password_reset_verify"):
             col1, col2 = st.columns([2, 1])
@@ -1270,10 +1370,13 @@ def show_password_reset():
                 token_input = st.text_input("Code de récupération")
                 new_password = st.text_input("Nouveau mot de passe", type="password")
                 confirm_password = st.text_input("Confirmer", type="password")
+            
             with col2:
                 st.write("**Code généré:**")
                 st.code(st.session_state.reset_token)
+            
             submit = st.form_submit_button("Réinitialiser")
+            
             if submit:
                 if not token_input.strip():
                     st.error("Entrez le code")
@@ -1302,10 +1405,13 @@ def show_password_reset():
 
 def show_admin_page():
     st.title("Interface Administrateur")
+    
     if st.button("← Retour"):
         st.session_state.page = "main"
         st.rerun()
+    
     tab1, tab2, tab3, tab4 = st.tabs(["Utilisateurs", "Conversations", "Messages", "Statistiques"])
+    
     with tab1:
         st.subheader("Gestion des Utilisateurs")
         if supabase:
@@ -1321,6 +1427,7 @@ def show_admin_page():
                                 st.write(f"**Nom:** {user.get('name', 'N/A')}")
                                 st.write(f"**Rôle actuel:** {user.get('role', 'user')}")
                                 st.write(f"**Créé le:** {user.get('created_at', 'N/A')[:16]}")
+                            
                             with col2:
                                 new_role = st.selectbox(
                                     "Changer rôle:",
@@ -1346,6 +1453,7 @@ def show_admin_page():
                     st.info("Aucun utilisateur trouvé")
             except Exception as e:
                 st.error(f"Erreur chargement utilisateurs: {e}")
+    
     with tab2:
         st.subheader("Toutes les Conversations")
         if supabase:
@@ -1359,6 +1467,7 @@ def show_admin_page():
                             st.write(f"**User ID:** {conv.get('user_id', 'N/A')[:12]}...")
                             st.write(f"**Description:** {conv.get('description', 'N/A')}")
                             st.write(f"**Créée le:** {conv.get('created_at', 'N/A')}")
+                            
                             try:
                                 msg_count = supabase.table("messages").select("id", count="exact").eq("conversation_id", conv_id).execute()
                                 st.write(f"**Nombre de messages:** {msg_count.count or 0}")
@@ -1368,6 +1477,7 @@ def show_admin_page():
                     st.info("Aucune conversation trouvée")
             except Exception as e:
                 st.error(f"Erreur chargement conversations: {e}")
+    
     with tab3:
         st.subheader("Messages par Conversation")
         if supabase:
@@ -1377,6 +1487,7 @@ def show_admin_page():
                     conv_options = {f"{c.get('description', 'Sans titre')} - {c.get('created_at', 'N/A')[:16]}": c.get('conversation_id') or c.get('id') for c in convs.data}
                     selected_conv_name = st.selectbox("Sélectionner une conversation:", list(conv_options.keys()))
                     selected_conv_id = conv_options[selected_conv_name]
+                    
                     if selected_conv_id:
                         messages = supabase.table("messages").select("*").eq("conversation_id", selected_conv_id).order("created_at", desc=False).execute()
                         if messages.data:
@@ -1384,10 +1495,12 @@ def show_admin_page():
                             for msg in messages.data:
                                 sender = msg.get('sender', 'unknown')
                                 msg_type = "👤 Utilisateur" if sender == "user" else "🤖 Assistant"
+                                
                                 with st.expander(f"{msg_type} - {msg.get('created_at', 'N/A')[:16]}"):
                                     st.write(f"**Type:** {msg.get('type', 'text')}")
                                     st.write(f"**Contenu:**")
                                     st.text(msg.get('content', 'N/A')[:500])
+                                    
                                     if msg.get('image_data'):
                                         st.write("📷 Contient une image")
                         else:
@@ -1396,6 +1509,7 @@ def show_admin_page():
                     st.info("Aucune conversation disponible")
             except Exception as e:
                 st.error(f"Erreur chargement messages: {e}")
+    
     with tab4:
         st.subheader("Statistiques Globales")
         if supabase:
@@ -1403,6 +1517,7 @@ def show_admin_page():
                 users_count = supabase.table("users").select("*", count="exact").execute()
                 convs_count = supabase.table("conversations").select("*", count="exact").execute()
                 messages_count = supabase.table("messages").select("*", count="exact").execute()
+                
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("👥 Utilisateurs", users_count.count or 0)
@@ -1410,11 +1525,14 @@ def show_admin_page():
                     st.metric("💬 Conversations", convs_count.count or 0)
                 with col3:
                     st.metric("📨 Messages", messages_count.count or 0)
+                
                 st.markdown("---")
                 st.subheader("Détails")
+                
                 try:
                     admins = supabase.table("users").select("*", count="exact").eq("role", "admin").execute()
                     users_regular = supabase.table("users").select("*", count="exact").eq("role", "user").execute()
+                    
                     col1, col2 = st.columns(2)
                     with col1:
                         st.metric("Admins", admins.count or 0)
@@ -1422,9 +1540,11 @@ def show_admin_page():
                         st.metric("Users", users_regular.count or 0)
                 except Exception as e:
                     st.warning(f"Erreur stats rôles: {e}")
+                
                 try:
                     text_msgs = supabase.table("messages").select("*", count="exact").eq("type", "text").execute()
                     image_msgs = supabase.table("messages").select("*", count="exact").eq("type", "image").execute()
+                    
                     col1, col2 = st.columns(2)
                     with col1:
                         st.metric("Messages texte", text_msgs.count or 0)
@@ -1432,6 +1552,7 @@ def show_admin_page():
                         st.metric("Messages image", image_msgs.count or 0)
                 except Exception as e:
                     st.warning(f"Erreur stats messages: {e}")
+                    
             except Exception as e:
                 st.error(f"Erreur statistiques: {e}")
 
@@ -1450,12 +1571,16 @@ def cleanup_temp_files():
 # -------------------------
 if "user" not in st.session_state:
     st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
+
 if "conversation" not in st.session_state:
     st.session_state.conversation = None
+
 if "messages_memory" not in st.session_state:
     st.session_state.messages_memory = []
+
 if "processor" not in st.session_state:
     st.session_state.processor, st.session_state.model = load_blip()
+
 if "llava_client" not in st.session_state:
     try:
         st.session_state.llava_client = load_llava_onevision()
@@ -1463,22 +1588,28 @@ if "llava_client" not in st.session_state:
             st.success("✅ LLaVA-OneVision chargé avec succès!")
     except:
         st.session_state.llava_client = None
+
 if "llama_client" not in st.session_state:
     try:
         st.session_state.llama_client = Client("akhaliq/MobileLLM-Pro")
     except:
         st.session_state.llama_client = None
+
 if "qwen_client" not in st.session_state:
     try:
         st.session_state.qwen_client = Client("Selfit/ImageEditPro")
     except:
         st.session_state.qwen_client = None
+
 if "reset_step" not in st.session_state:
     st.session_state.reset_step = "request"
+
 if "reset_email" not in st.session_state:
     st.session_state.reset_email = ""
+
 if "reset_token" not in st.session_state:
     st.session_state.reset_token = ""
+
 if "page" not in st.session_state:
     st.session_state.page = "main"
 
@@ -1493,11 +1624,14 @@ if st.session_state.page == "admin":
 # Sidebar
 # -------------------------
 st.sidebar.title("Authentification")
+
 if st.session_state.user["id"] == "guest":
     tab1, tab2, tab3 = st.sidebar.tabs(["Connexion", "Inscription", "Reset"])
+    
     with tab1:
         email = st.text_input("Email", key="login_email")
         password = st.text_input("Mot de passe", type="password", key="login_password")
+        
         if st.button("Se connecter", type="primary"):
             if email and password:
                 with st.spinner("Connexion..."):
@@ -1509,11 +1643,13 @@ if st.session_state.user["id"] == "guest":
                         st.rerun()
                     else:
                         st.error("Identifiants invalides")
+    
     with tab2:
         email_reg = st.text_input("Email", key="reg_email")
         name_reg = st.text_input("Nom", key="reg_name")
         pass_reg = st.text_input("Mot de passe", type="password", key="reg_pass")
         pass_confirm = st.text_input("Confirmer", type="password", key="reg_confirm")
+        
         if st.button("Créer compte"):
             if email_reg and name_reg and pass_reg and pass_confirm:
                 if pass_reg != pass_confirm:
@@ -1525,16 +1661,20 @@ if st.session_state.user["id"] == "guest":
                         if create_user(email_reg, pass_reg, name_reg):
                             st.success("Compte créé!")
                             time.sleep(1)
+    
     with tab3:
         show_password_reset()
+    
     st.stop()
 else:
     st.sidebar.success(f"Connecté: {st.session_state.user.get('email')}")
+    
     if st.session_state.user.get('role') == 'admin':
         st.sidebar.markdown("**Admin**")
         if st.sidebar.button("Interface Admin"):
             st.session_state.page = "admin"
             st.rerun()
+    
     if st.sidebar.button("Déconnexion"):
         st.session_state.user = {"id": "guest", "email": "Invité", "role": "guest"}
         st.session_state.conversation = None
@@ -1546,6 +1686,7 @@ else:
 # -------------------------
 if st.session_state.user["id"] != "guest":
     st.sidebar.title("Conversations")
+    
     if st.sidebar.button("Nouvelle conversation"):
         with st.spinner("Création..."):
             conv = create_conversation(st.session_state.user["id"], "Nouvelle discussion")
@@ -1555,23 +1696,28 @@ if st.session_state.user["id"] != "guest":
                 st.success("Créée!")
                 time.sleep(1)
                 st.rerun()
+    
     convs = get_conversations(st.session_state.user["id"])
     if convs:
         options = [f"{c['description']} ({c['created_at'][:16]})" for c in convs]
         current_idx = 0
+        
         if st.session_state.conversation:
             current_id = st.session_state.conversation.get("conversation_id")
             for i, c in enumerate(convs):
                 if c.get("conversation_id") == current_id:
                     current_idx = i
                     break
+        
         selected_idx = st.sidebar.selectbox(
             "Vos conversations:",
             range(len(options)),
             format_func=lambda i: options[i],
             index=current_idx
         )
+        
         selected_conv = convs[selected_idx]
+        
         if (not st.session_state.conversation or
             st.session_state.conversation.get("conversation_id") != selected_conv.get("conversation_id")):
             with st.spinner("Chargement..."):
@@ -1585,11 +1731,16 @@ if st.session_state.user["id"] != "guest":
 # Interface principale
 # -------------------------
 st.title("Vision AI Chat - Analyse & Édition d'Images")
+
 if st.session_state.conversation:
     st.subheader(f"Conversation: {st.session_state.conversation.get('description')}")
+
 tab1, tab2 = st.tabs(["Chat Normal", "Mode Éditeur"])
+
 with tab1:
     st.write("Mode chat avec analyse d'images et recherche web MULTI-ANNÉES avancée")
+    
+    # Affichage des messages
     if st.session_state.messages_memory:
         for msg in st.session_state.messages_memory:
             role = "user" if msg.get("sender") == "user" else "assistant"
@@ -1600,6 +1751,8 @@ with tab1:
                     except:
                         pass
                 st.markdown(msg.get("content", ""))
+    
+    # Formulaire de chat
     with st.form("chat_form", clear_on_submit=True):
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -1614,10 +1767,14 @@ with tab1:
                 type=["png", "jpg", "jpeg"],
                 key="chat_upload"
             )
+        
         submit_chat = st.form_submit_button("Envoyer")
+
 with tab2:
     st.write("Mode éditeur avec Qwen-Image-Edit")
+    
     col1, col2 = st.columns([1, 1])
+    
     with col1:
         st.subheader("Image à éditer")
         editor_file = st.file_uploader(
@@ -1625,9 +1782,11 @@ with tab2:
             type=["png", "jpg", "jpeg"],
             key="editor_upload"
         )
+        
         if editor_file:
             editor_image = Image.open(editor_file).convert("RGBA")
             st.image(editor_image, caption="Original", use_column_width=True)
+            
             with st.spinner("Analyse..."):
                 descriptions = generate_comprehensive_description(
                     editor_image,
@@ -1636,15 +1795,19 @@ with tab2:
                     st.session_state.llama_client,
                     st.session_state.llava_client
                 )
+                
                 final_desc = descriptions.get('final', descriptions.get('blip', 'N/A'))
+                
                 if len(final_desc) > 250:
                     st.write("**Description:**", final_desc[:250] + "...")
                     with st.expander("📖 Voir description complète"):
                         st.write(final_desc)
                 else:
                     st.write("**Description:**", final_desc)
+    
     with col2:
         st.subheader("Instructions d'édition")
+        
         example_prompts = [
             "Add a beautiful sunset background",
             "Change to black and white",
@@ -1657,7 +1820,9 @@ with tab2:
             "More colorful",
             "Add magic effects"
         ]
+        
         selected_example = st.selectbox("Exemples", ["Custom..."] + example_prompts)
+        
         if selected_example == "Custom...":
             edit_instruction = st.text_area(
                 "Instruction (en anglais):",
@@ -1670,15 +1835,19 @@ with tab2:
                 value=selected_example,
                 height=120
             )
+        
         if st.button("Éditer", type="primary", disabled=not (editor_file and edit_instruction.strip())):
             if not st.session_state.conversation:
                 conv = create_conversation(st.session_state.user["id"], "Édition d'images")
                 if conv:
                     st.session_state.conversation = conv
+            
             if st.session_state.conversation:
+                # Ajout du message utilisateur
                 original_caption = generate_caption(editor_image, st.session_state.processor, st.session_state.model)
                 user_msg = f"**Édition demandée**\n\n**Image:** {original_caption}\n\n**Instruction:** {edit_instruction}"
                 original_b64 = image_to_base64(editor_image.convert("RGB"))
+                
                 add_message(
                     st.session_state.conversation.get("conversation_id"),
                     "user",
@@ -1686,6 +1855,7 @@ with tab2:
                     "image",
                     original_b64
                 )
+                
                 st.session_state.messages_memory.append({
                     "message_id": str(uuid.uuid4()),
                     "sender": "user",
@@ -1694,13 +1864,18 @@ with tab2:
                     "image_data": original_b64,
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
+                
+                # Traitement de l'édition
                 success = process_image_edit_request(
                     editor_image,
                     edit_instruction,
                     st.session_state.conversation.get("conversation_id")
                 )
+                
                 if success:
                     st.rerun()
+
+# Traitement du chat
 if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded_file):
     if not st.session_state.conversation:
         with st.spinner("Création conversation..."):
@@ -1710,14 +1885,18 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
             else:
                 st.error("Impossible de créer conversation")
                 st.stop()
+    
     conv_id = st.session_state.conversation.get("conversation_id")
     message_content = user_input.strip()
     image_data = None
     msg_type = "text"
+    
+    # Traitement de l'image si uploadée
     if uploaded_file:
         with st.spinner("Analyse rapide de l'image..."):
             image = Image.open(uploaded_file)
             image_data = image_to_base64(image)
+            
             descriptions = generate_comprehensive_description(
                 image,
                 st.session_state.processor,
@@ -1725,15 +1904,19 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
                 st.session_state.llama_client,
                 st.session_state.llava_client
             )
+            
             preview = descriptions.get('final', descriptions.get('blip', 'N/A'))
             if len(preview) > 120:
                 preview = preview[:120] + "..."
             st.success(f"✅ {preview}")
+            
             message_content = format_image_analysis_for_prompt(descriptions)
             if user_input.strip():
                 message_content += f"\n\nQuestion utilisateur: {user_input.strip()}"
             msg_type = "image"
+    
     if message_content:
+        # Sauvegarde du message utilisateur
         add_message(conv_id, "user", message_content, msg_type, image_data)
         user_msg = {
             "sender": "user",
@@ -1743,6 +1926,8 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
         st.session_state.messages_memory.append(user_msg)
+        
+        # Vérification si édition d'image demandée
         lower = user_input.lower()
         if (any(k in lower for k in ["edit", "édite", "modifie"]) and uploaded_file):
             edit_instruction = user_input.strip()
@@ -1754,10 +1939,17 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
             if success:
                 st.rerun()
         else:
+            # Génération de la réponse IA
             edit_context = get_editing_context_from_conversation()
+            
+            # Construction du prompt
             prompt = f"{SYSTEM_PROMPT}\n\n"
+            
+            # Ajout des informations de date/heure
             datetime_info = format_datetime_for_prompt()
             prompt += f"{datetime_info}\n\n"
+            
+            # Détection et ajout de la recherche web si nécessaire
             search_type, search_query = detect_search_intent(user_input)
             if search_type and search_query:
                 with st.spinner(f"🔍 Recherche {search_type} en cours (toutes années)..."):
@@ -1768,8 +1960,10 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
                     search_info.success(f"✅ Recherche {search_type} terminée! (Multi-années)")
                     time.sleep(1)
                     search_info.empty()
+            
             if edit_context:
                 prompt += f"[EDIT_CONTEXT] {edit_context}\n\n"
+            
             prompt += f"""
 ==========================================
 INSTRUCTIONS FINALES:
@@ -1782,13 +1976,19 @@ INSTRUCTIONS FINALES:
 ==========================================
 
 Utilisateur: {message_content}"""
+            
+            # Génération de la réponse avec animation
             with st.chat_message("assistant"):
                 placeholder = st.empty()
+                
                 if edit_context and any(w in user_input.lower() for w in ["edit", "image", "avant", "après"]):
                     with st.spinner("Consultation mémoire..."):
                         time.sleep(1)
+                
                 response = get_ai_response(prompt)
                 stream_response_with_thinking(response, placeholder)
+                
+                # Sauvegarde de la réponse
                 add_message(conv_id, "assistant", response, "text")
                 ai_msg = {
                     "sender": "assistant",
@@ -1798,9 +1998,15 @@ Utilisateur: {message_content}"""
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
                 }
                 st.session_state.messages_memory.append(ai_msg)
+                
                 st.rerun()
+
+# -------------------------
+# Footer informatif
+# -------------------------
 st.markdown("---")
 col1, col2, col3 = st.columns(3)
+
 with col1:
     st.write("**Vision AI - Analyse Images:**")
     st.write("- 🔍 Analyse rapide optimisée")
@@ -1808,16 +2014,19 @@ with col1:
     st.write("- ⚡ Performance améliorée")
     st.write("- ✏️ Édition avec Qwen")
     st.write("- 💾 Mémoire des éditions")
+
 with col2:
     st.write("**Chat:**")
     st.write("- Conversations sauvegardées")
     st.write("- Contexte des éditions")
     st.write("- Discussion modifications")
+
 with col3:
     st.write("**Recherche Multi-Années:**")
     st.write("- Toutes années (1990-2025+)")
     st.write("- YouTube stats complètes")
     st.write("- Commentaires & historique")
+
 st.markdown("---")
 col1, col2 = st.columns(2)
 
