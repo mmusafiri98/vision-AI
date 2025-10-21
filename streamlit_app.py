@@ -1465,7 +1465,7 @@ if "llava_client" not in st.session_state:
         st.session_state.llava_client = None
 if "llama_client" not in st.session_state:
     try:
-        st.session_state.llama_client = Client("muryshev/LLaMA-3.1-70b-it-NeMo")
+        st.session_state.llama_client = Client("akhaliq/MobileLLM-Pro")
     except:
         st.session_state.llama_client = None
 if "qwen_client" not in st.session_state:
@@ -1989,7 +1989,7 @@ with st.expander("⚙️ Configuration APIs & Tests Multi-Années"):
     
     # LLaMA
     if st.session_state.llama_client:
-        st.success("✅ LLaMA 3.1 70B OK")
+        st.success("✅ akhaliq/MobileLLM-Pro OK")
     else:
         st.error("❌ LLaMA KO")
     
