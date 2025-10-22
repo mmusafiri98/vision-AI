@@ -1117,13 +1117,11 @@ def detect_datetime_intent(user_message):
 
 def get_ai_response(query):
     if not st.session_state.get('llama_client'):
-        return "Vision AI non disponible."
+        return "Vision AI non disponibile."
     try:
-        # CORRECTION: Retirer le paramètre max_tokens qui cause l'erreur
+        # CORREZIONE: parametri extra rimossi, solo quelli supportati
         resp = st.session_state.llama_client.predict(
             message=query,
-            temperature=0.7,
-            top_p=0.95,
             api_name="/chat"
         )
         return str(resp)
