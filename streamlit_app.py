@@ -1589,7 +1589,7 @@ if "llava_client" not in st.session_state:
 
 if "llama_client" not in st.session_state:
     try:
-        st.session_state.llama_client = Client("akhaliq/MobileLLM-Pro")
+        st.session_state.llama_client = Client("akhaliq/Apertus-8B-Instruct-2509")
     except:
         st.session_state.llama_client = None
 
@@ -2196,7 +2196,7 @@ with st.expander("⚙️ Configuration APIs & Tests Multi-Années"):
     
     # LLaMA
     if st.session_state.llama_client:
-        st.success("✅ akhaliq/MobileLLM-Pro OK")
+        st.success("✅ akhaliq/Apertus-8B-Instruct-2509 OK")
     else:
         st.error("❌ LLaMA KO")
     
@@ -2221,3 +2221,6 @@ with st.expander("⚙️ Configuration APIs & Tests Multi-Années"):
 
 # Cleanup
 cleanup_temp_files()
+
+
+
