@@ -1589,7 +1589,7 @@ if "llava_client" not in st.session_state:
 
 if "llama_client" not in st.session_state:
     try:
-        st.session_state.llama_client = Client("akhaliq/MobileLLM-Pro")
+        st.session_state.llama_client = Client("LLaVA-OneVision")
     except:
         st.session_state.llama_client = None
 
