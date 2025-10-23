@@ -1687,7 +1687,7 @@ with tab2:
                 if add_success:
                     debug_log("✅ Message utilisateur ajouté")
                     st.session_state.messages_memory.append({
-                        "conversation_id": str(uuid.uuid4()),
+                        "message_id": str(uuid.uuid4()),
                         "sender": "user",
                         "content": user_msg,
                         "type": "image",
@@ -1777,7 +1777,7 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
             st.error("⚠️ Le message n'a pas pu être sauvegardé dans la base")
         
         user_msg = {
-            "conversation_id": str(uuid.uuid4()),
+            "message_id": str(uuid.uuid4()),
             "sender": "user",
             "content": message_content,
             "type": msg_type,
@@ -1861,7 +1861,7 @@ Utilisateur: {message_content}"""
                     st.error(f"Erreur: {e}")
                 
                 ai_msg = {
-                    "conversation_id": str(uuid.uuid4()),
+                    "message_id": str(uuid.uuid4()),
                     "sender": "assistant",
                     "content": response,
                     "type": "text",
@@ -1951,6 +1951,7 @@ with st.expander("🧪 Tests de connexion"):
 
 # Cleanup
 cleanup_temp_files()
+
 
 
 
