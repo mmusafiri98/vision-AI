@@ -1781,7 +1781,6 @@ if 'submit_chat' in locals() and submit_chat and (user_input.strip() or uploaded
             "sender": "user",
             "content": message_content,
             "type": msg_type,
-            "edit_context":edit_context,
             "image_data": image_data,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
@@ -1951,6 +1950,7 @@ with st.expander("🧪 Tests de connexion"):
 
 # Cleanup
 cleanup_temp_files()
+
 
 
 
