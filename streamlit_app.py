@@ -1834,20 +1834,30 @@ Utilisateur: {message_content}"""
                     with st.spinner("Consultation mémoire..."):
                         time.sleep(1)
                 
-                response = get_ai_response(prompt)
-                debug_log("✅ Réponse IA reçue", {"length": len(response)})
-                
-                stream_response_with_thinking(response, placeholder)
-                
-                # Sauvegarde de la réponse
-                debug_log("💾 Sauvegarde de la réponse IA...")
-                ai_add_success = add_message(conv_id, "assistant", response, "text")
-                
-                if ai_add_success:
-                    debug_log("✅ Réponse IA sauvegardée dans la DB")
-                else:
-                    debug_log("❌ ÉCHEC sauvegarde réponse IA")
-                    st.warning("⚠️ La réponse n'a pas pu être sauvegardée dans la base")
+                try:
+                    response = get_ai_response(prompt)
+                    debug_log("✅ Réponse IA reçue", {"length": len(response)})
+                    
+                    stream_response_with_thinking(response, placeholder)
+                    
+                    # Sauvegarde de la réponse
+                    debug_log("💾 Sauvegarde de la réponse IA...")
+                    debug_log(f"📝 Conv ID pour réponse: {conv_id[:12]}...")
+                    debug_log(f"📝 Contenu réponse (preview): {response[:100]}...")
+                    
+                    ai_add_success = add_message(conv_id, "assistant", response, "text")
+                    
+                    if ai_add_success:
+                        debug_log("✅ Réponse IA sauvegardée dans la DB")
+                    else:
+                        debug_log("❌ ÉCHEC sauvegarde réponse IA")
+                        st.warning("⚠️ La réponse n'a pas pu être sauvegardée dans la base")
+                except Exception as e:
+                    debug_log("❌ EXCEPTION lors de la génération/sauvegarde IA", {
+                        "error": str(e),
+                        "traceback": traceback.format_exc()
+                    })
+                    st.error(f"Erreur: {e}")
                 
                 ai_msg = {
                     "message_id": str(uuid.uuid4()),
@@ -1939,6 +1949,5 @@ with st.expander("🧪 Tests de connexion"):
 
 # Cleanup
 cleanup_temp_files()
-
 
 
