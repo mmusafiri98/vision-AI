@@ -1,3 +1,39 @@
+CREATE DATABASE imagine_db;
+-- ======================================================
+-- TABLE : users
+-- ======================================================
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ======================================================
+-- TABLE : image_generate
+-- ======================================================
+CREATE TABLE IF NOT EXISTS image_generate (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    prompt TEXT NOT NULL,
+    image_url TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ======================================================
+-- TABLE : user_reset_password
+-- ======================================================
+CREATE TABLE IF NOT EXISTS user_reset_password (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+
 DO $$
 BEGIN
     IF NOT EXISTS (
